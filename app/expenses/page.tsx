@@ -1,8 +1,9 @@
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
-import DashboardOverview from "@/components/DashboardOverview";
+import ExpenseForm from "@/components/ExpenseForm";
+import ExpenseTable from "@/components/ExpenseTable";
 
-export default function Home() {
+export default function ExpensesPage() {
   return (
     <div className="flex min-h-screen bg-slate-100">
       <Sidebar />
@@ -13,15 +14,16 @@ export default function Home() {
         <main className="p-8">
           <div className="mb-8">
             <h1 className="text-4xl font-bold text-slate-900">
-              📊 Dashboard
+              💳 Expenses
             </h1>
 
             <p className="mt-2 text-lg text-slate-600">
-              Monitor sales, purchases, stock and recent business activity.
+              Track business expenses such as rent, salary, transport and utilities.
             </p>
           </div>
 
-          <DashboardOverview />
+          <ExpenseForm />
+          <ExpenseTable />
         </main>
       </div>
     </div>
