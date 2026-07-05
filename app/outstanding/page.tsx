@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
+import { createClient } from "@/lib/supabase/client";
 
 type PaymentType = "Customer Receipt" | "Supplier Payment";
 
@@ -40,13 +41,6 @@ type Payment = {
   createdAt: string;
 };
 
-type CreditEntry = {
-  partyId: string;
-  partyName: string;
-  date: string;
-  amount: number;
-};
-
 type PartyOutstanding = {
   id: string;
   name: string;
@@ -57,17 +51,49 @@ type PartyOutstanding = {
   latestDate: string;
 };
 
-const SALES_KEY = "smarterp_sales";
-const PURCHASES_KEY = "smarterp_purchases";
-const PAYMENTS_KEY = "smarterp_payments";
+type ProfileRow = {
+  active_company_id: string | null;
+};
 
-const SALES_EVENT = "smarterp-sales-updated";
-const PURCHASE_EVENT = "smarterp-purchases-updated";
-const PAYMENTS_EVENT = "smarterp-payments-updated";
+type LedgerRow = {
+  id: string;
+  name: string;
+};
+
+type SaleRow = {
+  id: string;
+  invoice_number: string;
+  invoice_date: string;
+  payment_mode: string;
+  customer_id: string | null;
+  grand_total: number | string | null;
+  customer: LedgerRow | LedgerRow[] | null;
+};
+
+type PurchaseRow = {
+  id: string;
+  bill_number: string;
+  purchase_date: string;
+  payment_mode: string;
+  supplier_id: string | null;
+  grand_total: number | string | null;
+  supplier: LedgerRow | LedgerRow[] | null;
+};
+
+type PaymentRow = {
+  id: string;
+  payment_type: PaymentType;
+  party_id: string;
+  payment_date: string;
+  amount: number | string | null;
+  payment_mode: string;
+  reference_number: string | null;
+  notes: string | null;
+  created_at: string;
+};
 
 function toNumber(value: unknown) {
   const parsedValue = Number(value);
-
   return Number.isFinite(parsedValue) ? parsedValue : 0;
 }
 
@@ -97,24 +123,19 @@ function formatDate(dateValue: string) {
   });
 }
 
-function readSavedArray<T>(storageKey: string): T[] {
-  try {
-    const savedData = window.localStorage.getItem(storageKey);
-
-    if (!savedData) {
-      return [];
-    }
-
-    const parsedData = JSON.parse(savedData);
-
-    return Array.isArray(parsedData) ? (parsedData as T[]) : [];
-  } catch {
-    return [];
-  }
+function getJoinedLedger(
+  ledger: LedgerRow | LedgerRow[] | null
+): LedgerRow | null {
+  return Array.isArray(ledger) ? ledger[0] || null : ledger;
 }
 
 function buildOutstanding(
-  entries: CreditEntry[],
+  entries: {
+    partyId: string;
+    partyName: string;
+    date: string;
+    amount: number;
+  }[],
   payments: Payment[],
   paymentType: PaymentType
 ) {
@@ -124,7 +145,7 @@ function buildOutstanding(
     const existingParty = partyMap.get(entry.partyId);
 
     if (existingParty) {
-      existingParty.totalCredit += toNumber(entry.amount);
+      existingParty.totalCredit += entry.amount;
       existingParty.billCount += 1;
 
       if (entry.date > existingParty.latestDate) {
@@ -137,7 +158,7 @@ function buildOutstanding(
     partyMap.set(entry.partyId, {
       id: entry.partyId,
       name: entry.partyName,
-      totalCredit: toNumber(entry.amount),
+      totalCredit: entry.amount,
       paidAmount: 0,
       outstanding: 0,
       billCount: 1,
@@ -151,7 +172,7 @@ function buildOutstanding(
       const party = partyMap.get(payment.partyId);
 
       if (party) {
-        party.paidAmount += toNumber(payment.amount);
+        party.paidAmount += payment.amount;
       }
     });
 
@@ -169,32 +190,234 @@ export default function OutstandingPage() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState("");
 
-  function loadOutstandingData() {
-    const savedSales = readSavedArray<Sale>(SALES_KEY);
-    const savedPurchases = readSavedArray<Purchase>(PURCHASES_KEY);
-    const savedPayments = readSavedArray<Payment>(PAYMENTS_KEY);
+  function showMessage(nextMessage: string) {
+    setMessage(nextMessage);
 
-    setSales(savedSales);
-    setPurchases(savedPurchases);
-    setPayments(savedPayments);
-    setIsLoaded(true);
+    window.setTimeout(() => {
+      setMessage("");
+    }, 4000);
+  }
+
+  async function loadOutstandingData() {
+    setIsLoading(true);
+
+    try {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setSales([]);
+        setPurchases([]);
+        setPayments([]);
+        showMessage("Please sign in to view outstanding balances.");
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      const activeCompanyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      if (!activeCompanyId) {
+        setSales([]);
+        setPurchases([]);
+        setPayments([]);
+        showMessage("Select an active company from the Companies page first.");
+        return;
+      }
+
+      const [salesResponse, purchasesResponse, paymentsResponse, ledgersResponse] =
+        await Promise.all([
+          supabase
+            .from("sales")
+            .select(
+              `
+                id,
+                invoice_number,
+                invoice_date,
+                payment_mode,
+                customer_id,
+                grand_total,
+                customer:ledgers!sales_customer_id_fkey(
+                  id,
+                  name
+                )
+              `
+            )
+            .eq("company_id", activeCompanyId)
+            .order("invoice_date", { ascending: false }),
+          supabase
+            .from("purchases")
+            .select(
+              `
+                id,
+                bill_number,
+                purchase_date,
+                payment_mode,
+                supplier_id,
+                grand_total,
+                supplier:ledgers!purchases_supplier_id_fkey(
+                  id,
+                  name
+                )
+              `
+            )
+            .eq("company_id", activeCompanyId)
+            .order("purchase_date", { ascending: false }),
+          supabase
+            .from("payments")
+            .select(
+              "id, payment_type, party_id, payment_date, amount, payment_mode, reference_number, notes, created_at"
+            )
+            .eq("company_id", activeCompanyId)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("ledgers")
+            .select("id, name")
+            .eq("company_id", activeCompanyId),
+        ]);
+
+      if (salesResponse.error) {
+        throw salesResponse.error;
+      }
+
+      if (purchasesResponse.error) {
+        throw purchasesResponse.error;
+      }
+
+      if (paymentsResponse.error) {
+        throw paymentsResponse.error;
+      }
+
+      if (ledgersResponse.error) {
+        throw ledgersResponse.error;
+      }
+
+      const ledgerNameById = new Map(
+        ((ledgersResponse.data || []) as LedgerRow[]).map((ledger) => [
+          ledger.id,
+          ledger.name,
+        ])
+      );
+
+      const nextSales = (
+        (salesResponse.data || []) as unknown as SaleRow[]
+      ).map((sale) => {
+        const customer = getJoinedLedger(sale.customer);
+
+        return {
+          id: sale.id,
+          invoiceNumber: sale.invoice_number || "",
+          date: sale.invoice_date || "",
+          paymentMode: sale.payment_mode || "Cash",
+          customerId: sale.customer_id || customer?.id || "",
+          customerName: customer?.name || "Unknown Customer",
+          grandTotal: toNumber(sale.grand_total),
+        };
+      });
+
+      const nextPurchases = (
+        (purchasesResponse.data || []) as unknown as PurchaseRow[]
+      ).map((purchase) => {
+        const supplier = getJoinedLedger(purchase.supplier);
+
+        return {
+          id: purchase.id,
+          billNumber: purchase.bill_number || "",
+          date: purchase.purchase_date || "",
+          paymentMode: purchase.payment_mode || "Cash",
+          supplierId: purchase.supplier_id || supplier?.id || "",
+          supplierName: supplier?.name || "Unknown Supplier",
+          grandTotal: toNumber(purchase.grand_total),
+        };
+      });
+
+      const nextPayments = (
+        (paymentsResponse.data || []) as PaymentRow[]
+      ).map((payment) => ({
+        id: payment.id,
+        type: payment.payment_type,
+        partyId: payment.party_id,
+        partyName:
+          ledgerNameById.get(payment.party_id) || "Unknown Party",
+        date: payment.payment_date,
+        amount: toNumber(payment.amount),
+        paymentMode: payment.payment_mode || "Cash",
+        referenceNumber: payment.reference_number || "",
+        notes: payment.notes || "",
+        createdAt: payment.created_at,
+      }));
+
+      setSales(nextSales);
+      setPurchases(nextPurchases);
+      setPayments(nextPayments);
+    } catch (error) {
+      setSales([]);
+      setPurchases([]);
+      setPayments([]);
+
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : "Outstanding data could not be loaded from the cloud database."
+      );
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   useEffect(() => {
     loadOutstandingData();
 
-    window.addEventListener(SALES_EVENT, loadOutstandingData);
-    window.addEventListener(PURCHASE_EVENT, loadOutstandingData);
-    window.addEventListener(PAYMENTS_EVENT, loadOutstandingData);
-    window.addEventListener("storage", loadOutstandingData);
+    window.addEventListener(
+      "vertexerp-sales-updated",
+      loadOutstandingData
+    );
+    window.addEventListener(
+      "vertexerp-purchases-updated",
+      loadOutstandingData
+    );
+    window.addEventListener(
+      "vertexerp-payments-updated",
+      loadOutstandingData
+    );
+    window.addEventListener(
+      "vertexerp-active-company-updated",
+      loadOutstandingData
+    );
 
     return () => {
-      window.removeEventListener(SALES_EVENT, loadOutstandingData);
-      window.removeEventListener(PURCHASE_EVENT, loadOutstandingData);
-      window.removeEventListener(PAYMENTS_EVENT, loadOutstandingData);
-      window.removeEventListener("storage", loadOutstandingData);
+      window.removeEventListener(
+        "vertexerp-sales-updated",
+        loadOutstandingData
+      );
+      window.removeEventListener(
+        "vertexerp-purchases-updated",
+        loadOutstandingData
+      );
+      window.removeEventListener(
+        "vertexerp-payments-updated",
+        loadOutstandingData
+      );
+      window.removeEventListener(
+        "vertexerp-active-company-updated",
+        loadOutstandingData
+      );
     };
   }, []);
 
@@ -209,39 +432,51 @@ export default function OutstandingPage() {
     [purchases]
   );
 
-  const customerCreditEntries = useMemo(() => {
-    return creditSales.map((sale) => ({
-      partyId: sale.customerId || sale.customerName || sale.id,
-      partyName: sale.customerName || "Unknown Customer",
-      date: sale.date,
-      amount: toNumber(sale.grandTotal),
-    }));
-  }, [creditSales]);
+  const customerCreditEntries = useMemo(
+    () =>
+      creditSales
+        .filter((sale) => Boolean(sale.customerId))
+        .map((sale) => ({
+          partyId: sale.customerId,
+          partyName: sale.customerName,
+          date: sale.date,
+          amount: sale.grandTotal,
+        })),
+    [creditSales]
+  );
 
-  const supplierCreditEntries = useMemo(() => {
-    return creditPurchases.map((purchase) => ({
-      partyId: purchase.supplierId || purchase.supplierName || purchase.id,
-      partyName: purchase.supplierName || "Unknown Supplier",
-      date: purchase.date,
-      amount: toNumber(purchase.grandTotal),
-    }));
-  }, [creditPurchases]);
+  const supplierCreditEntries = useMemo(
+    () =>
+      creditPurchases
+        .filter((purchase) => Boolean(purchase.supplierId))
+        .map((purchase) => ({
+          partyId: purchase.supplierId,
+          partyName: purchase.supplierName,
+          date: purchase.date,
+          amount: purchase.grandTotal,
+        })),
+    [creditPurchases]
+  );
 
-  const customerOutstanding = useMemo(() => {
-    return buildOutstanding(
-      customerCreditEntries,
-      payments,
-      "Customer Receipt"
-    );
-  }, [customerCreditEntries, payments]);
+  const customerOutstanding = useMemo(
+    () =>
+      buildOutstanding(
+        customerCreditEntries,
+        payments,
+        "Customer Receipt"
+      ),
+    [customerCreditEntries, payments]
+  );
 
-  const supplierOutstanding = useMemo(() => {
-    return buildOutstanding(
-      supplierCreditEntries,
-      payments,
-      "Supplier Payment"
-    );
-  }, [supplierCreditEntries, payments]);
+  const supplierOutstanding = useMemo(
+    () =>
+      buildOutstanding(
+        supplierCreditEntries,
+        payments,
+        "Supplier Payment"
+      ),
+    [supplierCreditEntries, payments]
+  );
 
   const totalReceivable = customerOutstanding.reduce(
     (total, customer) => total + customer.outstanding,
@@ -250,16 +485,6 @@ export default function OutstandingPage() {
 
   const totalPayable = supplierOutstanding.reduce(
     (total, supplier) => total + supplier.outstanding,
-    0
-  );
-
-  const totalCustomerPaid = customerOutstanding.reduce(
-    (total, customer) => total + customer.paidAmount,
-    0
-  );
-
-  const totalSupplierPaid = supplierOutstanding.reduce(
-    (total, supplier) => total + supplier.paidAmount,
     0
   );
 
@@ -296,6 +521,12 @@ export default function OutstandingPage() {
             </Link>
           </div>
 
+          {message && (
+            <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+              {message}
+            </div>
+          )}
+
           <section
             className="mb-8 rounded-3xl border p-5 shadow-sm"
             style={{
@@ -327,7 +558,7 @@ export default function OutstandingPage() {
                 className="mt-3 text-3xl font-bold"
                 style={{ color: "#2563eb" }}
               >
-                {formatCurrency(totalReceivable)}
+                {isLoading ? "..." : formatCurrency(totalReceivable)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -344,7 +575,7 @@ export default function OutstandingPage() {
                 className="mt-3 text-3xl font-bold"
                 style={{ color: "#7e22ce" }}
               >
-                {formatCurrency(totalPayable)}
+                {isLoading ? "..." : formatCurrency(totalPayable)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -361,7 +592,7 @@ export default function OutstandingPage() {
                 className="mt-3 text-3xl font-bold"
                 style={{ color: "#ea580c" }}
               >
-                {customerOutstanding.length}
+                {isLoading ? "..." : customerOutstanding.length}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -380,7 +611,9 @@ export default function OutstandingPage() {
                   color: netOutstanding >= 0 ? "#059669" : "#dc2626",
                 }}
               >
-                {formatCurrency(Math.abs(netOutstanding))}
+                {isLoading
+                  ? "..."
+                  : formatCurrency(Math.abs(netOutstanding))}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -404,7 +637,7 @@ export default function OutstandingPage() {
               </div>
 
               <div className="rounded-full bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700">
-                Customers: {customerOutstanding.length}
+                Customers: {isLoading ? "..." : customerOutstanding.length}
               </div>
             </div>
 
@@ -435,13 +668,13 @@ export default function OutstandingPage() {
                 </thead>
 
                 <tbody>
-                  {!isLoaded ? (
+                  {isLoading ? (
                     <tr>
                       <td
                         colSpan={5}
                         className="px-6 py-12 text-center text-slate-500"
                       >
-                        Loading receivable data...
+                        Loading receivable data from the cloud database...
                       </td>
                     </tr>
                   ) : customerOutstanding.length === 0 ? (
@@ -521,7 +754,7 @@ export default function OutstandingPage() {
               </div>
 
               <div className="rounded-full bg-purple-50 px-4 py-2 text-sm font-bold text-purple-700">
-                Suppliers: {supplierOutstanding.length}
+                Suppliers: {isLoading ? "..." : supplierOutstanding.length}
               </div>
             </div>
 
@@ -552,13 +785,13 @@ export default function OutstandingPage() {
                 </thead>
 
                 <tbody>
-                  {!isLoaded ? (
+                  {isLoading ? (
                     <tr>
                       <td
                         colSpan={5}
                         className="px-6 py-12 text-center text-slate-500"
                       >
-                        Loading payable data...
+                        Loading payable data from the cloud database...
                       </td>
                     </tr>
                   ) : supplierOutstanding.length === 0 ? (
@@ -661,7 +894,7 @@ export default function OutstandingPage() {
                   </div>
                 ))}
 
-                {creditSales.length === 0 && (
+                {!isLoading && creditSales.length === 0 && (
                   <p className="px-6 py-10 text-center text-slate-500">
                     No credit sales invoices yet.
                   </p>
@@ -691,8 +924,7 @@ export default function OutstandingPage() {
                       </Link>
 
                       <p className="mt-1 truncate text-sm text-slate-500">
-                        {purchase.supplierName} ·{" "}
-                        {formatDate(purchase.date)}
+                        {purchase.supplierName} · {formatDate(purchase.date)}
                       </p>
                     </div>
 
@@ -705,7 +937,7 @@ export default function OutstandingPage() {
                   </div>
                 ))}
 
-                {creditPurchases.length === 0 && (
+                {!isLoading && creditPurchases.length === 0 && (
                   <p className="px-6 py-10 text-center text-slate-500">
                     No credit purchase bills yet.
                   </p>

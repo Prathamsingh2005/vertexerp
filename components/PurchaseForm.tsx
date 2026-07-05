@@ -1,30 +1,40 @@
 "use client";
 
 import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type Product = {
   id: string;
   name: string;
   sku: string;
-  category: string;
-  unit: string;
   purchasePrice: number;
-  sellingPrice: number;
-  quantity: number;
-  lowStockAlert: number;
   gst: number;
-  description: string;
 };
 
 type Ledger = {
   id: string;
   name: string;
-  group: string;
-  openingBalance: number;
   mobile: string;
-  email: string;
   gst: string;
-  address: string;
+};
+
+type ProductRow = {
+  id: string;
+  name: string;
+  sku: string | null;
+  purchase_price: number | string | null;
+  gst_rate: number | string | null;
+};
+
+type LedgerRow = {
+  id: string;
+  name: string;
+  mobile: string | null;
+  gst_number: string | null;
+};
+
+type ProfileRow = {
+  active_company_id: string | null;
 };
 
 type PurchaseItemForm = {
@@ -35,7 +45,7 @@ type PurchaseItemForm = {
   discount: string;
 };
 
-type SavedPurchaseItem = {
+type CalculatedPurchaseItem = {
   productId: string;
   productName: string;
   quantity: number;
@@ -47,27 +57,9 @@ type SavedPurchaseItem = {
   amount: number;
 };
 
-type Purchase = {
-  id: string;
-  billNumber: string;
-  date: string;
-  paymentMode: string;
-  supplierId: string;
-  supplierName: string;
-  supplierMobile: string;
-  supplierGst: string;
-  items: SavedPurchaseItem[];
-  subtotal: number;
-  gstTotal: number;
-  discountTotal: number;
-  grandTotal: number;
-  createdAt: string;
-};
-
-const PRODUCTS_KEY = "VertexERP_products";
-const LEDGERS_KEY = "VertexERP_ledgers";
-const PURCHASES_KEY = "VertexERP_purchases";
-const PURCHASE_EVENT = "VertexERP-purchases-updated";
+function getToday() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function createEmptyItem(): PurchaseItemForm {
   return {
@@ -79,14 +71,36 @@ function createEmptyItem(): PurchaseItemForm {
   };
 }
 
+function mapProductRow(row: ProductRow): Product {
+  return {
+    id: row.id,
+    name: row.name || "",
+    sku: row.sku || "",
+    purchasePrice: Number(row.purchase_price || 0),
+    gst: Number(row.gst_rate || 0),
+  };
+}
+
+function mapLedgerRow(row: LedgerRow): Ledger {
+  return {
+    id: row.id,
+    name: row.name || "",
+    mobile: row.mobile || "",
+    gst: row.gst_number || "",
+  };
+}
+
 export default function PurchaseForm() {
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<Ledger[]>([]);
+  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [form, setForm] = useState({
     billNumber: "",
-    date: "",
+    date: getToday(),
     paymentMode: "Cash",
     supplierId: "",
   });
@@ -95,36 +109,108 @@ export default function PurchaseForm() {
     createEmptyItem(),
   ]);
 
-  useEffect(() => {
+  function showMessage(nextMessage: string) {
+    setMessage(nextMessage);
+
+    window.setTimeout(() => {
+      setMessage("");
+    }, 4000);
+  }
+
+  async function loadFormData() {
+    setIsLoading(true);
+
     try {
-      const savedProducts = window.localStorage.getItem(PRODUCTS_KEY);
-      const savedLedgers = window.localStorage.getItem(LEDGERS_KEY);
+      const supabase = createClient();
 
-      if (savedProducts) {
-        const parsedProducts = JSON.parse(savedProducts);
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-        if (Array.isArray(parsedProducts)) {
-          setProducts(parsedProducts);
-        }
+      if (userError || !user) {
+        setProducts([]);
+        setSuppliers([]);
+        setActiveCompanyId(null);
+        showMessage("Please sign in before creating a purchase bill.");
+        return;
       }
 
-      if (savedLedgers) {
-        const parsedLedgers = JSON.parse(savedLedgers);
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
 
-        if (Array.isArray(parsedLedgers)) {
-          const supplierLedgers = parsedLedgers.filter(
-            (ledger: Ledger) => ledger.group === "Supplier"
-          );
-
-          setSuppliers(supplierLedgers);
-        }
+      if (profileError) {
+        throw profileError;
       }
-    } catch {
-      setMessage("Saved data could not be loaded. Please refresh the page and try again.");
+
+      const companyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      setActiveCompanyId(companyId);
+
+      if (!companyId) {
+        setProducts([]);
+        setSuppliers([]);
+        showMessage("Select an active company from the Companies page first.");
+        return;
+      }
+
+      const [productsResponse, suppliersResponse] = await Promise.all([
+        supabase
+          .from("products")
+          .select("id, name, sku, purchase_price, gst_rate")
+          .eq("company_id", companyId)
+          .order("name"),
+        supabase
+          .from("ledgers")
+          .select("id, name, mobile, gst_number")
+          .eq("company_id", companyId)
+          .eq("ledger_type", "Supplier")
+          .order("name"),
+      ]);
+
+      if (productsResponse.error) {
+        throw productsResponse.error;
+      }
+
+      if (suppliersResponse.error) {
+        throw suppliersResponse.error;
+      }
+
+      setProducts((productsResponse.data || []).map(mapProductRow));
+      setSuppliers((suppliersResponse.data || []).map(mapLedgerRow));
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Purchase form data could not be loaded.";
+
+      showMessage(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
+  }
+
+  useEffect(() => {
+    loadFormData();
+
+    window.addEventListener(
+      "vertexerp-active-company-updated",
+      loadFormData
+    );
+
+    return () => {
+      window.removeEventListener(
+        "vertexerp-active-company-updated",
+        loadFormData
+      );
+    };
   }, []);
 
-  const calculatedItems = useMemo(() => {
+  const calculatedItems = useMemo<CalculatedPurchaseItem[]>(() => {
     return items.map((item) => {
       const selectedProduct = products.find(
         (product) => product.id === item.productId
@@ -211,7 +297,7 @@ export default function PurchaseForm() {
 
   function removeItem(index: number) {
     if (items.length === 1) {
-      setMessage("At least one purchase item is required.");
+      showMessage("At least one purchase item is required.");
       return;
     }
 
@@ -223,17 +309,20 @@ export default function PurchaseForm() {
   function resetForm() {
     setForm({
       billNumber: "",
-      date: "",
+      date: getToday(),
       paymentMode: "Cash",
       supplierId: "",
     });
-
     setItems([createEmptyItem()]);
-    setMessage("");
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!activeCompanyId) {
+      showMessage("Select an active company before creating a purchase bill.");
+      return;
+    }
 
     const selectedSupplier = suppliers.find(
       (supplier) => supplier.id === form.supplierId
@@ -248,19 +337,19 @@ export default function PurchaseForm() {
     );
 
     if (!form.date) {
-      setMessage("Please select a purchase date.");
+      showMessage("Please select a purchase date.");
       return;
     }
 
     if (!selectedSupplier) {
-      setMessage(
-  "Please select a supplier. Create a ledger with the Supplier group from the Ledger page first."
-);
+      showMessage(
+        "Please select a supplier. Create a ledger with the Supplier group first."
+      );
       return;
     }
 
     if (validItems.length === 0) {
-      setMessage("Add at least one valid product with quantity and rate.");
+      showMessage("Add at least one valid product with quantity and rate.");
       return;
     }
 
@@ -268,78 +357,71 @@ export default function PurchaseForm() {
       form.billNumber.trim() ||
       `PUR-${Date.now().toString().slice(-6)}`;
 
-    const newPurchase: Purchase = {
-      id: crypto.randomUUID(),
-      billNumber,
-      date: form.date,
-      paymentMode: form.paymentMode,
-      supplierId: selectedSupplier.id,
-      supplierName: selectedSupplier.name,
-      supplierMobile: selectedSupplier.mobile || "",
-      supplierGst: selectedSupplier.gst || "",
-      items: validItems,
-      subtotal: totals.subtotal,
-      gstTotal: totals.gstTotal,
-      discountTotal: totals.discountTotal,
-      grandTotal: totals.grandTotal,
-      createdAt: new Date().toISOString(),
-    };
-
-    const updatedProducts = products.map((product) => {
-      const relatedItems = validItems.filter(
-        (item) => item.productId === product.id
-      );
-
-      if (relatedItems.length === 0) {
-        return product;
-      }
-
-      const totalAddedQuantity = relatedItems.reduce(
-        (sum, item) => sum + item.quantity,
-        0
-      );
-
-      const latestItem = relatedItems[relatedItems.length - 1];
-
-      return {
-        ...product,
-        quantity: Number(product.quantity || 0) + totalAddedQuantity,
-        purchasePrice: latestItem.rate,
-        gst: latestItem.gst,
-      };
-    });
+    setIsSaving(true);
 
     try {
-      const savedPurchases = window.localStorage.getItem(PURCHASES_KEY);
-      const oldPurchases: Purchase[] = savedPurchases
-        ? JSON.parse(savedPurchases)
-        : [];
+      const supabase = createClient();
 
-      window.localStorage.setItem(
-        PURCHASES_KEY,
-        JSON.stringify([newPurchase, ...oldPurchases])
-      );
+      const { error } = await supabase.rpc("create_purchase_with_stock", {
+        p_company_id: activeCompanyId,
+        p_supplier_id: selectedSupplier.id,
+        p_bill_number: billNumber,
+        p_purchase_date: form.date,
+        p_payment_mode: form.paymentMode,
+        p_subtotal: totals.subtotal,
+        p_gst_total: totals.gstTotal,
+        p_discount_total: totals.discountTotal,
+        p_grand_total: totals.grandTotal,
+        p_items: validItems.map((item) => ({
+          product_id: item.productId,
+          product_name: item.productName,
+          quantity: item.quantity,
+          rate: item.rate,
+          gst_rate: item.gst,
+          discount: item.discount,
+          base_amount: item.baseAmount,
+          gst_amount: item.gstAmount,
+          amount: item.amount,
+        })),
+      });
 
-      window.localStorage.setItem(
-        PRODUCTS_KEY,
-        JSON.stringify(updatedProducts)
-      );
+      if (error) {
+        if (error.code === "23505") {
+          showMessage(
+            `Purchase bill number "${billNumber}" already exists for this company.`
+          );
+          return;
+        }
 
-      setProducts(updatedProducts);
-      window.dispatchEvent(new Event(PURCHASE_EVENT));
+        throw error;
+      }
 
       resetForm();
-      setMessage(
-        `Purchase bill ${billNumber} saved. Product stock updated successfully.`
-      );
+      await loadFormData();
 
-      window.setTimeout(() => {
-        setMessage("");
-      }, 3500);
-    } catch {
-      setMessage("Purchase could not be saved. Please try again.");
+      window.dispatchEvent(new Event("vertexerp-purchases-updated"));
+      window.dispatchEvent(new Event("vertexerp-products-updated"));
+
+      showMessage(
+        `Purchase bill ${billNumber} saved and product stock updated successfully.`
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Purchase bill could not be saved.";
+
+      showMessage(errorMessage);
+    } finally {
+      setIsSaving(false);
     }
   }
+
+  const selectedSupplier = suppliers.find(
+    (supplier) => supplier.id === form.supplierId
+  );
+
+  const isFormDisabled = isLoading || !activeCompanyId || isSaving;
 
   return (
     <form
@@ -358,7 +440,7 @@ export default function PurchaseForm() {
         </div>
 
         <div className="w-fit rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
-          New Stock Entry
+          Cloud Stock Entry
         </div>
       </div>
 
@@ -368,316 +450,333 @@ export default function PurchaseForm() {
         </div>
       )}
 
-      {suppliers.length === 0 && (
-  <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-700">
-    No supplier ledger found. Create a ledger with the{" "}
-    <strong>Supplier</strong> group from the Ledger page first.
+      {!isLoading && !activeCompanyId && (
+        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-700">
+          Select an active company from the <strong>Companies</strong> page
+          before creating a purchase bill.
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-        <div>
-          <label className="mb-2 block font-semibold text-slate-800">
-            Purchase Bill Number
-          </label>
-
-          <input
-            type="text"
-            value={form.billNumber}
-            onChange={(event) =>
-              setForm({ ...form, billNumber: event.target.value })
-            }
-            placeholder="Example: PUR-0001"
-            className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
-          />
+      {!isLoading && activeCompanyId && suppliers.length === 0 && (
+        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-700">
+          No supplier ledger found. Create a ledger with the{" "}
+          <strong>Supplier</strong> group from the Ledger page first.
         </div>
+      )}
 
-        <div>
-          <label className="mb-2 block font-semibold text-slate-800">
-            Purchase Date *
-          </label>
-
-          <input
-            type="date"
-            value={form.date}
-            onChange={(event) =>
-              setForm({ ...form, date: event.target.value })
-            }
-            className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
-          />
+      {!isLoading && activeCompanyId && products.length === 0 && (
+        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-700">
+          No products found. Add products from the <strong>Inventory</strong>{" "}
+          page first.
         </div>
+      )}
 
-        <div>
-          <label className="mb-2 block font-semibold text-slate-800">
-            Payment Mode
-          </label>
-
-          <select
-            value={form.paymentMode}
-            onChange={(event) =>
-              setForm({ ...form, paymentMode: event.target.value })
-            }
-            className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
-          >
-            <option>Cash</option>
-            <option>UPI</option>
-            <option>Bank Transfer</option>
-            <option>Credit</option>
-            <option>Card</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-2 block font-semibold text-slate-800">
-            Supplier Name *
-          </label>
-
-          <select
-            value={form.supplierId}
-            onChange={(event) =>
-              setForm({ ...form, supplierId: event.target.value })
-            }
-            className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
-          >
-            <option value="">Select supplier</option>
-
-            {suppliers.map((supplier) => (
-              <option key={supplier.id} value={supplier.id}>
-                {supplier.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-2 block font-semibold text-slate-800">
-            Supplier Mobile
-          </label>
-
-          <input
-            type="text"
-            value={
-              suppliers.find((supplier) => supplier.id === form.supplierId)
-                ?.mobile || ""
-            }
-            readOnly
-            placeholder="Supplier mobile will appear here"
-            className="w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-slate-700 placeholder:text-slate-500 outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="mb-2 block font-semibold text-slate-800">
-            Supplier GST Number
-          </label>
-
-          <input
-            type="text"
-            value={
-              suppliers.find((supplier) => supplier.id === form.supplierId)
-                ?.gst || ""
-            }
-            readOnly
-            placeholder="Supplier GST will appear here"
-            className="w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-slate-700 placeholder:text-slate-500 outline-none"
-          />
-        </div>
-      </div>
-
-      <div className="mt-10">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <fieldset disabled={isFormDisabled}>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
           <div>
-            <h3 className="text-xl font-bold text-slate-900">
-              Purchase Items
-            </h3>
+            <label className="mb-2 block font-semibold text-slate-800">
+              Purchase Bill Number
+            </label>
 
-            <p className="mt-1 text-sm text-slate-600">
-              Select products received from the supplier.
-            </p>
+            <input
+              type="text"
+              value={form.billNumber}
+              onChange={(event) =>
+                setForm({ ...form, billNumber: event.target.value })
+              }
+              placeholder="Example: PUR-0001"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed"
+            />
           </div>
+
+          <div>
+            <label className="mb-2 block font-semibold text-slate-800">
+              Purchase Date *
+            </label>
+
+            <input
+              type="date"
+              value={form.date}
+              onChange={(event) =>
+                setForm({ ...form, date: event.target.value })
+              }
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block font-semibold text-slate-800">
+              Payment Mode
+            </label>
+
+            <select
+              value={form.paymentMode}
+              onChange={(event) =>
+                setForm({ ...form, paymentMode: event.target.value })
+              }
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed"
+            >
+              <option>Cash</option>
+              <option>UPI</option>
+              <option>Bank Transfer</option>
+              <option>Credit</option>
+              <option>Card</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block font-semibold text-slate-800">
+              Supplier Name *
+            </label>
+
+            <select
+              value={form.supplierId}
+              onChange={(event) =>
+                setForm({ ...form, supplierId: event.target.value })
+              }
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed"
+            >
+              <option value="">Select supplier</option>
+
+              {suppliers.map((supplier) => (
+                <option key={supplier.id} value={supplier.id}>
+                  {supplier.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block font-semibold text-slate-800">
+              Supplier Mobile
+            </label>
+
+            <input
+              type="text"
+              value={selectedSupplier?.mobile || ""}
+              readOnly
+              placeholder="Supplier mobile will appear here"
+              className="w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-slate-700 placeholder:text-slate-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block font-semibold text-slate-800">
+              Supplier GST Number
+            </label>
+
+            <input
+              type="text"
+              value={selectedSupplier?.gst || ""}
+              readOnly
+              placeholder="Supplier GST will appear here"
+              className="w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-slate-700 placeholder:text-slate-500 outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="mt-10">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-xl font-bold text-slate-900">
+                Purchase Items
+              </h3>
+
+              <p className="mt-1 text-sm text-slate-600">
+                Select products received from the supplier.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={addItem}
+              className="w-fit rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 font-semibold text-blue-700 transition hover:bg-blue-100"
+            >
+              + Add Item
+            </button>
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="w-full min-w-[1000px]">
+              <thead className="bg-slate-50">
+                <tr className="text-left">
+                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
+                    Product
+                  </th>
+
+                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
+                    Quantity
+                  </th>
+
+                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
+                    Purchase Rate
+                  </th>
+
+                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
+                    GST
+                  </th>
+
+                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
+                    Discount
+                  </th>
+
+                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
+                    Amount
+                  </th>
+
+                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
+                    Action
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {items.map((item, index) => (
+                  <tr key={index} className="border-t border-slate-200">
+                    <td className="px-5 py-4">
+                      <select
+                        value={item.productId}
+                        onChange={(event) =>
+                          updateItem(index, "productId", event.target.value)
+                        }
+                        className="w-full min-w-[190px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-800 outline-none focus:border-blue-500"
+                      >
+                        <option value="">Select product</option>
+
+                        {products.map((product) => (
+                          <option key={product.id} value={product.id}>
+                            {product.name}
+                            {product.sku ? ` (${product.sku})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <input
+                        type="number"
+                        min="1"
+                        value={item.quantity}
+                        onChange={(event) =>
+                          updateItem(index, "quantity", event.target.value)
+                        }
+                        placeholder="0"
+                        className="w-24 rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
+                      />
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.rate}
+                        onChange={(event) =>
+                          updateItem(index, "rate", event.target.value)
+                        }
+                        placeholder="₹ 0"
+                        className="w-28 rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
+                      />
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <select
+                        value={item.gst}
+                        onChange={(event) =>
+                          updateItem(index, "gst", event.target.value)
+                        }
+                        className="w-24 rounded-xl border border-slate-300 px-3 py-2 text-slate-800 outline-none focus:border-blue-500"
+                      >
+                        <option value="0">0%</option>
+                        <option value="5">5%</option>
+                        <option value="12">12%</option>
+                        <option value="18">18%</option>
+                        <option value="28">28%</option>
+                      </select>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.discount}
+                        onChange={(event) =>
+                          updateItem(index, "discount", event.target.value)
+                        }
+                        placeholder="₹ 0"
+                        className="w-28 rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
+                      />
+                    </td>
+
+                    <td className="px-5 py-4 font-bold text-slate-900">
+                      ₹
+                      {calculatedItems[index].amount.toLocaleString("en-IN", {
+                        maximumFractionDigits: 2,
+                      })}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <button
+                        type="button"
+                        onClick={() => removeItem(index)}
+                        className="font-semibold text-red-500 transition hover:text-red-700"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="mt-8 ml-auto max-w-md rounded-2xl bg-slate-50 p-6">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-3 text-slate-700">
+            <span>Subtotal</span>
+            <span className="font-semibold">
+              ₹{totals.subtotal.toLocaleString("en-IN")}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between border-b border-slate-200 py-3 text-slate-700">
+            <span>Total GST</span>
+            <span className="font-semibold">
+              ₹{totals.gstTotal.toLocaleString("en-IN")}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between border-b border-slate-200 py-3 text-slate-700">
+            <span>Discount</span>
+            <span className="font-semibold">
+              ₹{totals.discountTotal.toLocaleString("en-IN")}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between pt-4">
+            <span className="text-lg font-bold text-slate-900">Grand Total</span>
+            <span className="text-2xl font-bold text-blue-600">
+              ₹{totals.grandTotal.toLocaleString("en-IN")}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-8 flex flex-wrap gap-4">
+          <button
+            type="submit"
+            className="rounded-xl bg-blue-600 px-7 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl"
+          >
+            {isSaving ? "Saving Purchase..." : "Save Purchase & Update Stock"}
+          </button>
 
           <button
             type="button"
-            onClick={addItem}
-            className="w-fit rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 font-semibold text-blue-700 transition hover:bg-blue-100"
+            onClick={resetForm}
+            className="rounded-xl border border-slate-300 bg-white px-7 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
           >
-            + Add Item
+            Reset
           </button>
         </div>
-
-        <div className="overflow-x-auto rounded-2xl border border-slate-200">
-          <table className="w-full min-w-[1000px]">
-            <thead className="bg-slate-50">
-              <tr className="text-left">
-                <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                  Product
-                </th>
-                <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                  Quantity
-                </th>
-                <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                  Purchase Rate
-                </th>
-                <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                  GST
-                </th>
-                <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                  Discount
-                </th>
-                <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                  Amount
-                </th>
-                <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                  Action
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {items.map((item, index) => (
-                <tr key={index} className="border-t border-slate-200">
-                  <td className="px-5 py-4">
-                    <select
-                      value={item.productId}
-                      onChange={(event) =>
-                        updateItem(index, "productId", event.target.value)
-                      }
-                      className="w-full min-w-[190px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-800 outline-none focus:border-blue-500"
-                    >
-                      <option value="">Select product</option>
-
-                      {products.map((product) => (
-                        <option key={product.id} value={product.id}>
-                          {product.name} ({product.sku})
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <input
-                      type="number"
-                      min="1"
-                      value={item.quantity}
-                      onChange={(event) =>
-                        updateItem(index, "quantity", event.target.value)
-                      }
-                      placeholder="0"
-                      className="w-24 rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
-                    />
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <input
-                      type="number"
-                      min="0"
-                      value={item.rate}
-                      onChange={(event) =>
-                        updateItem(index, "rate", event.target.value)
-                      }
-                      placeholder="₹ 0"
-                      className="w-28 rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
-                    />
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <select
-                      value={item.gst}
-                      onChange={(event) =>
-                        updateItem(index, "gst", event.target.value)
-                      }
-                      className="w-24 rounded-xl border border-slate-300 px-3 py-2 text-slate-800 outline-none focus:border-blue-500"
-                    >
-                      <option value="0">0%</option>
-                      <option value="5">5%</option>
-                      <option value="12">12%</option>
-                      <option value="18">18%</option>
-                      <option value="28">28%</option>
-                    </select>
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <input
-                      type="number"
-                      min="0"
-                      value={item.discount}
-                      onChange={(event) =>
-                        updateItem(index, "discount", event.target.value)
-                      }
-                      placeholder="₹ 0"
-                      className="w-28 rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
-                    />
-                  </td>
-
-                  <td className="px-5 py-4 font-bold text-slate-900">
-                    ₹
-                    {calculatedItems[index].amount.toLocaleString("en-IN", {
-                      maximumFractionDigits: 2,
-                    })}
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <button
-                      type="button"
-                      onClick={() => removeItem(index)}
-                      className="font-semibold text-red-500 transition hover:text-red-700"
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="mt-8 ml-auto max-w-md rounded-2xl bg-slate-50 p-6">
-        <div className="flex items-center justify-between border-b border-slate-200 pb-3 text-slate-700">
-          <span>Subtotal</span>
-          <span className="font-semibold">
-            ₹{totals.subtotal.toLocaleString("en-IN")}
-          </span>
-        </div>
-
-        <div className="flex items-center justify-between border-b border-slate-200 py-3 text-slate-700">
-          <span>Total GST</span>
-          <span className="font-semibold">
-            ₹{totals.gstTotal.toLocaleString("en-IN")}
-          </span>
-        </div>
-
-        <div className="flex items-center justify-between border-b border-slate-200 py-3 text-slate-700">
-          <span>Discount</span>
-          <span className="font-semibold">
-            ₹{totals.discountTotal.toLocaleString("en-IN")}
-          </span>
-        </div>
-
-        <div className="flex items-center justify-between pt-4">
-          <span className="text-lg font-bold text-slate-900">Grand Total</span>
-          <span className="text-2xl font-bold text-blue-600">
-            ₹{totals.grandTotal.toLocaleString("en-IN")}
-          </span>
-        </div>
-      </div>
-
-      <div className="mt-8 flex flex-wrap gap-4">
-        <button
-          type="submit"
-          className="rounded-xl bg-blue-600 px-7 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl"
-        >
-          Save Purchase & Update Stock
-        </button>
-
-        <button
-          type="button"
-          onClick={resetForm}
-          className="rounded-xl border border-slate-300 bg-white px-7 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
-        >
-          Reset
-        </button>
-      </div>
+      </fieldset>
     </form>
   );
 }

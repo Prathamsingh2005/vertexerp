@@ -1,93 +1,133 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import InventoryManager from "@/components/InventoryManager";
+import { createClient } from "@/lib/supabase/client";
 
-type Product = {
-  id: string;
-  name: string;
-  sku: string;
-  category: string;
-  unit: string;
-  purchasePrice: number;
-  sellingPrice: number;
-  quantity: number;
-  lowStockAlert: number;
-  gst: number;
-  description: string;
+type ProductStatRow = {
+  quantity: number | string | null;
+  purchase_price: number | string | null;
+  low_stock_alert: number | string | null;
 };
 
-const PRODUCTS_KEY = "VertexERP_products";
-const PRODUCT_EVENT = "VertexERP-products-updated";
-const PURCHASE_EVENT = "VertexERP-purchases-updated";
-const SALES_EVENT = "VertexERP-sales-updated";
+type ProfileRow = {
+  active_company_id: string | null;
+};
 
 function formatCurrency(amount: number) {
   return `₹${Number(amount || 0).toLocaleString("en-IN")}`;
 }
 
 export default function InventoryPage() {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<ProductStatRow[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
-  function loadProducts() {
+  async function loadProductStats() {
+    setIsLoading(true);
+
     try {
-      const savedProducts = window.localStorage.getItem(PRODUCTS_KEY);
+      const supabase = createClient();
 
-      if (!savedProducts) {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
         setProducts([]);
         return;
       }
 
-      const parsedProducts = JSON.parse(savedProducts);
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
 
-      if (Array.isArray(parsedProducts)) {
-        setProducts(parsedProducts);
-      } else {
-        setProducts([]);
+      if (profileError) {
+        throw profileError;
       }
+
+      const activeCompanyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      if (!activeCompanyId) {
+        setProducts([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("products")
+        .select("quantity, purchase_price, low_stock_alert")
+        .eq("company_id", activeCompanyId);
+
+      if (error) {
+        throw error;
+      }
+
+      setProducts(data || []);
     } catch {
       setProducts([]);
+    } finally {
+      setIsLoading(false);
     }
   }
 
   useEffect(() => {
-    loadProducts();
+    loadProductStats();
 
-    window.addEventListener(PRODUCT_EVENT, loadProducts);
-    window.addEventListener(PURCHASE_EVENT, loadProducts);
-    window.addEventListener(SALES_EVENT, loadProducts);
-    window.addEventListener("storage", loadProducts);
+    window.addEventListener(
+      "vertexerp-products-updated",
+      loadProductStats
+    );
+    window.addEventListener(
+      "vertexerp-active-company-updated",
+      loadProductStats
+    );
 
     return () => {
-      window.removeEventListener(PRODUCT_EVENT, loadProducts);
-      window.removeEventListener(PURCHASE_EVENT, loadProducts);
-      window.removeEventListener(SALES_EVENT, loadProducts);
-      window.removeEventListener("storage", loadProducts);
+      window.removeEventListener(
+        "vertexerp-products-updated",
+        loadProductStats
+      );
+      window.removeEventListener(
+        "vertexerp-active-company-updated",
+        loadProductStats
+      );
     };
   }, []);
 
-  const totalProducts = products.length;
+  const productStats = useMemo(() => {
+    const totalProducts = products.length;
 
-  const inStockProducts = products.filter(
-    (product) => Number(product.quantity || 0) > 0
-  ).length;
+    const inStockProducts = products.filter(
+      (product) => Number(product.quantity || 0) > 0
+    ).length;
 
-  const lowStockProducts = products.filter((product) => {
-    const quantity = Number(product.quantity || 0);
-    const lowStockAlert = Number(product.lowStockAlert || 0);
+    const lowStockProducts = products.filter((product) => {
+      const quantity = Number(product.quantity || 0);
+      const lowStockAlert = Number(product.low_stock_alert || 0);
 
-    return quantity > 0 && lowStockAlert > 0 && quantity <= lowStockAlert;
-  }).length;
+      return quantity > 0 && lowStockAlert > 0 && quantity <= lowStockAlert;
+    }).length;
 
-  const stockValue = products.reduce((total, product) => {
-    const quantity = Number(product.quantity || 0);
-    const purchasePrice = Number(product.purchasePrice || 0);
+    const stockValue = products.reduce((total, product) => {
+      return (
+        total +
+        Number(product.quantity || 0) * Number(product.purchase_price || 0)
+      );
+    }, 0);
 
-    return total + quantity * purchasePrice;
-  }, 0);
+    return {
+      totalProducts,
+      inStockProducts,
+      lowStockProducts,
+      stockValue,
+    };
+  }, [products]);
 
   function scrollToAddProductForm() {
     document
@@ -99,10 +139,10 @@ export default function InventoryPage() {
     <div className="flex min-h-screen bg-slate-100">
       <Sidebar />
 
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-8">
+        <main className="p-6 md:p-8">
           <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h1 className="text-4xl font-bold text-slate-900">
@@ -128,7 +168,7 @@ export default function InventoryPage() {
               <p className="font-medium text-slate-600">Total Products</p>
 
               <h2 className="mt-3 text-4xl font-bold text-blue-600">
-                {totalProducts}
+                {isLoading ? "..." : productStats.totalProducts}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -140,7 +180,7 @@ export default function InventoryPage() {
               <p className="font-medium text-slate-600">In Stock</p>
 
               <h2 className="mt-3 text-4xl font-bold text-green-600">
-                {inStockProducts}
+                {isLoading ? "..." : productStats.inStockProducts}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -152,7 +192,7 @@ export default function InventoryPage() {
               <p className="font-medium text-slate-600">Low Stock</p>
 
               <h2 className="mt-3 text-4xl font-bold text-orange-500">
-                {lowStockProducts}
+                {isLoading ? "..." : productStats.lowStockProducts}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -164,7 +204,7 @@ export default function InventoryPage() {
               <p className="font-medium text-slate-600">Stock Value</p>
 
               <h2 className="mt-3 text-4xl font-bold text-purple-600">
-                {formatCurrency(stockValue)}
+                {isLoading ? "..." : formatCurrency(productStats.stockValue)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">

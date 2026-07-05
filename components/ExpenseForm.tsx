@@ -1,8 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-
-const EXPENSES_KEY = "VertexERP_expenses";
+import { type FormEvent, useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 const categories = [
   "Rent",
@@ -17,15 +16,26 @@ const categories = [
 
 const paymentModes = ["Cash", "UPI", "Bank Transfer", "Card"];
 
+type ProfileRow = {
+  active_company_id: string | null;
+};
+
 function getTodayDate() {
   return new Date().toISOString().split("T")[0];
 }
 
 function formatCurrency(amount: number) {
-  return `₹${amount.toLocaleString("en-IN")}`;
+  return `₹${Number(amount || 0).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 export default function ExpenseForm() {
+  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
+  const [activeCompanyName, setActiveCompanyName] = useState("");
+  const [isLoadingCompany, setIsLoadingCompany] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
   const [date, setDate] = useState(getTodayDate());
   const [category, setCategory] = useState("Rent");
   const [amount, setAmount] = useState("");
@@ -38,56 +48,159 @@ export default function ExpenseForm() {
 
   const expenseAmount = Number(amount || 0);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function showMessage(type: "success" | "error", text: string) {
+    setMessage({ type, text });
+
+    window.setTimeout(() => {
+      setMessage(null);
+    }, 4500);
+  }
+
+  async function loadActiveCompany() {
+    setIsLoadingCompany(true);
+
+    try {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setActiveCompanyId(null);
+        setActiveCompanyName("");
+        showMessage("error", "Please sign in before recording an expense.");
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      const companyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      setActiveCompanyId(companyId);
+
+      if (!companyId) {
+        setActiveCompanyName("");
+        showMessage(
+          "error",
+          "Select an active company from the Companies page first."
+        );
+        return;
+      }
+
+      const { data: company, error: companyError } = await supabase
+        .from("companies")
+        .select("name")
+        .eq("id", companyId)
+        .maybeSingle();
+
+      if (companyError) {
+        throw companyError;
+      }
+
+      setActiveCompanyName(company?.name || "");
+    } catch (error) {
+      setActiveCompanyId(null);
+      setActiveCompanyName("");
+
+      showMessage(
+        "error",
+        error instanceof Error
+          ? error.message
+          : "Active company could not be loaded."
+      );
+    } finally {
+      setIsLoadingCompany(false);
+    }
+  }
+
+  useEffect(() => {
+    loadActiveCompany();
+
+    window.addEventListener(
+      "vertexerp-active-company-updated",
+      loadActiveCompany
+    );
+
+    return () => {
+      window.removeEventListener(
+        "vertexerp-active-company-updated",
+        loadActiveCompany
+      );
+    };
+  }, []);
+
+  function resetForm() {
+    setDate(getTodayDate());
+    setCategory("Rent");
+    setAmount("");
+    setPaymentMode("Cash");
+    setDescription("");
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!date || !amount || expenseAmount <= 0) {
-      setMessage({
-        type: "error",
-        text: "Please enter a valid date and amount.",
-      });
+    if (!activeCompanyId) {
+      showMessage(
+        "error",
+        "Select an active company before saving an expense."
+      );
       return;
     }
 
-    const newExpense = {
-      id: crypto.randomUUID(),
-      date,
-      category,
-      amount: expenseAmount,
-      paymentMode,
-      description: description.trim(),
-      createdAt: new Date().toISOString(),
-    };
+    if (!date || !amount || expenseAmount <= 0) {
+      showMessage("error", "Please enter a valid date and amount.");
+      return;
+    }
+
+    setIsSaving(true);
 
     try {
-      const savedExpenses = window.localStorage.getItem(EXPENSES_KEY);
+      const supabase = createClient();
 
-      const expenses = savedExpenses ? JSON.parse(savedExpenses) : [];
+      const { error } = await supabase.from("expenses").insert({
+        company_id: activeCompanyId,
+        expense_date: date,
+        category,
+        amount: expenseAmount,
+        payment_mode: paymentMode,
+        description: description.trim() || null,
+      });
 
-      window.localStorage.setItem(
-        EXPENSES_KEY,
-        JSON.stringify([newExpense, ...expenses])
+      if (error) {
+        throw error;
+      }
+
+      resetForm();
+
+      window.dispatchEvent(new Event("vertexerp-expenses-updated"));
+
+      showMessage("success", "Expense saved to the cloud database.");
+    } catch (error) {
+      showMessage(
+        "error",
+        error instanceof Error
+          ? error.message
+          : "Unable to save the expense. Please try again."
       );
-
-      window.dispatchEvent(new Event("VertexERP-expenses-updated"));
-
-      setDate(getTodayDate());
-      setCategory("Rent");
-      setAmount("");
-      setPaymentMode("Cash");
-      setDescription("");
-
-      setMessage({
-        type: "success",
-        text: "Expense saved successfully.",
-      });
-    } catch {
-      setMessage({
-        type: "error",
-        text: "Unable to save the expense. Please try again.",
-      });
+    } finally {
+      setIsSaving(false);
     }
   }
+
+  const isFormDisabled =
+    isLoadingCompany || !activeCompanyId || isSaving;
 
   return (
     <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -120,150 +233,171 @@ export default function ExpenseForm() {
       </div>
 
       <form onSubmit={handleSubmit} className="p-6 md:p-8">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="space-y-5 lg:col-span-2">
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <div>
-                <label className="mb-2 flex items-center justify-between text-sm font-semibold text-slate-700">
-                  Expense Date
-                  <span className="text-xs font-medium text-red-500">
-                    Required
-                  </span>
-                </label>
+        {!isLoadingCompany && !activeCompanyId && (
+          <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-700">
+            Select an active company from the <strong>Companies</strong> page
+            before saving expenses.
+          </div>
+        )}
 
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(event) => setDate(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                />
-              </div>
+        {activeCompanyId && (
+          <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+            <p className="text-sm font-semibold text-blue-700">
+              Saving expense for
+            </p>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Expense Category
-                </label>
+            <p className="mt-1 font-bold text-slate-900">
+              {activeCompanyName || "Active Company"}
+            </p>
+          </div>
+        )}
 
-                <select
-                  value={category}
-                  onChange={(event) => setCategory(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                >
-                  {categories.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 flex items-center justify-between text-sm font-semibold text-slate-700">
-                  Amount
-                  <span className="text-xs font-medium text-red-500">
-                    Required
-                  </span>
-                </label>
-
-                <div className="flex overflow-hidden rounded-xl border border-slate-300 bg-white transition focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-100">
-                  <span className="flex items-center border-r border-slate-200 bg-slate-50 px-4 font-bold text-slate-600">
-                    ₹
-                  </span>
+        <fieldset disabled={isFormDisabled}>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="space-y-5 lg:col-span-2">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 flex items-center justify-between text-sm font-semibold text-slate-700">
+                    Expense Date
+                    <span className="text-xs font-medium text-red-500">
+                      Required
+                    </span>
+                  </label>
 
                   <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={amount}
-                    onChange={(event) => setAmount(event.target.value)}
-                    className="w-full px-4 py-3 text-slate-800 outline-none"
+                    type="date"
+                    value={date}
+                    onChange={(event) => setDate(event.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                   />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">
+                    Expense Category
+                  </label>
+
+                  <select
+                    value={category}
+                    onChange={(event) => setCategory(event.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  >
+                    {categories.map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 flex items-center justify-between text-sm font-semibold text-slate-700">
+                    Amount
+                    <span className="text-xs font-medium text-red-500">
+                      Required
+                    </span>
+                  </label>
+
+                  <div className="flex overflow-hidden rounded-xl border border-slate-300 bg-white transition focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-100">
+                    <span className="flex items-center border-r border-slate-200 bg-slate-50 px-4 font-bold text-slate-600">
+                      ₹
+                    </span>
+
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={amount}
+                      onChange={(event) => setAmount(event.target.value)}
+                      className="w-full px-4 py-3 text-slate-800 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">
+                    Payment Mode
+                  </label>
+
+                  <select
+                    value={paymentMode}
+                    onChange={(event) => setPaymentMode(event.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  >
+                    {paymentModes.map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Payment Mode
+                  Description
                 </label>
 
-                <select
-                  value={paymentMode}
-                  onChange={(event) => setPaymentMode(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                >
-                  {paymentModes.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
+                <textarea
+                  rows={4}
+                  placeholder="Example: Office electricity bill for July"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                />
               </div>
             </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
-                Description
-              </label>
+            <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+              <p className="text-sm font-bold uppercase tracking-wider text-slate-500">
+                Entry Summary
+              </p>
 
-              <textarea
-                rows={4}
-                placeholder="Example: Office electricity bill for July"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-              />
-            </div>
+              <div className="mt-5 space-y-4">
+                <div className="border-b border-slate-200 pb-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Category
+                  </p>
+
+                  <p className="mt-1 font-bold text-slate-900">
+                    {category}
+                  </p>
+                </div>
+
+                <div className="border-b border-slate-200 pb-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Payment Mode
+                  </p>
+
+                  <p className="mt-1 font-bold text-slate-900">
+                    {paymentMode}
+                  </p>
+                </div>
+
+                <div className="border-b border-slate-200 pb-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Expense Date
+                  </p>
+
+                  <p className="mt-1 font-bold text-slate-900">
+                    {date || "Not selected"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Total Expense
+                  </p>
+
+                  <p className="mt-1 text-2xl font-bold text-blue-600">
+                    {formatCurrency(expenseAmount)}
+                  </p>
+                </div>
+              </div>
+            </aside>
           </div>
-
-          <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-            <p className="text-sm font-bold uppercase tracking-wider text-slate-500">
-              Entry Summary
-            </p>
-
-            <div className="mt-5 space-y-4">
-              <div className="border-b border-slate-200 pb-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Category
-                </p>
-
-                <p className="mt-1 font-bold text-slate-900">
-                  {category}
-                </p>
-              </div>
-
-              <div className="border-b border-slate-200 pb-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Payment Mode
-                </p>
-
-                <p className="mt-1 font-bold text-slate-900">
-                  {paymentMode}
-                </p>
-              </div>
-
-              <div className="border-b border-slate-200 pb-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Expense Date
-                </p>
-
-                <p className="mt-1 font-bold text-slate-900">
-                  {date || "Not selected"}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Total Expense
-                </p>
-
-                <p className="mt-1 text-2xl font-bold text-blue-600">
-                  {formatCurrency(expenseAmount)}
-                </p>
-              </div>
-            </div>
-          </aside>
-        </div>
+        </fieldset>
 
         <div className="mt-7 flex flex-col gap-4 border-t border-slate-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            {message && (
+            {message ? (
               <p
                 className={
                   message.type === "success"
@@ -273,20 +407,19 @@ export default function ExpenseForm() {
               >
                 {message.text}
               </p>
-            )}
-
-            {!message && (
+            ) : (
               <p className="text-sm text-slate-500">
-                Expense data is saved locally in this browser.
+                Expense data is saved securely in the cloud database.
               </p>
             )}
           </div>
 
           <button
             type="submit"
-            className="rounded-xl bg-blue-600 px-7 py-3 font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 hover:shadow-xl"
+            disabled={isFormDisabled}
+            className="rounded-xl bg-blue-600 px-7 py-3 font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Save Expense
+            {isSaving ? "Saving Expense..." : "Save Expense"}
           </button>
         </div>
       </form>

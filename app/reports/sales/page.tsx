@@ -4,13 +4,33 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
+import { createClient } from "@/lib/supabase/client";
 
-type SaleItem = {
-  productId: string;
-  productName: string;
-  quantity: number;
-  rate: number;
-  amount: number;
+type LedgerRow = {
+  id: string;
+  name: string;
+  mobile: string | null;
+};
+
+type SaleItemRow = {
+  product_id: string | null;
+  product_name: string;
+  quantity: number | string | null;
+};
+
+type SaleRow = {
+  id: string;
+  invoice_number: string;
+  invoice_date: string;
+  payment_mode: string;
+  customer_id: string | null;
+  grand_total: number | string | null;
+  customer: LedgerRow | LedgerRow[] | null;
+  sale_items: SaleItemRow[] | null;
+};
+
+type ProfileRow = {
+  active_company_id: string | null;
 };
 
 type Sale = {
@@ -21,13 +41,61 @@ type Sale = {
   customerName: string;
   customerMobile: string;
   grandTotal: number;
-  items: SaleItem[];
+  itemCount: number;
 };
 
-const SALES_KEY = "VertexERP_sales";
+function toNumber(value: unknown) {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
 
 function formatCurrency(amount: number) {
-  return `₹${Number(amount || 0).toLocaleString("en-IN")}`;
+  return `₹${toNumber(amount).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatDate(dateValue: string) {
+  if (!dateValue) {
+    return "—";
+  }
+
+  const date = new Date(`${dateValue}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return dateValue;
+  }
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function isCreditPayment(paymentMode: string) {
+  return String(paymentMode || "").trim().toLowerCase() === "credit";
+}
+
+function getJoinedLedger(
+  ledger: LedgerRow | LedgerRow[] | null
+): LedgerRow | null {
+  return Array.isArray(ledger) ? ledger[0] || null : ledger;
+}
+
+function mapSale(row: SaleRow): Sale {
+  const customer = getJoinedLedger(row.customer);
+
+  return {
+    id: row.id,
+    invoiceNumber: row.invoice_number || "Sales Invoice",
+    date: row.invoice_date || "",
+    paymentMode: row.payment_mode || "Cash",
+    customerName: customer?.name || "Unknown Customer",
+    customerMobile: customer?.mobile || "",
+    grandTotal: toNumber(row.grand_total),
+    itemCount: (row.sale_items || []).length,
+  };
 }
 
 export default function SalesReportPage() {
@@ -35,16 +103,116 @@ export default function SalesReportPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState("");
+
+  function showMessage(nextMessage: string) {
+    setMessage(nextMessage);
+
+    window.setTimeout(() => {
+      setMessage("");
+    }, 4500);
+  }
+
+  async function loadSales() {
+    setIsLoading(true);
+
+    try {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setSales([]);
+        showMessage("Please sign in to view the sales report.");
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      const activeCompanyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      if (!activeCompanyId) {
+        setSales([]);
+        showMessage("Select an active company from the Companies page first.");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("sales")
+        .select(
+          `
+            id,
+            invoice_number,
+            invoice_date,
+            payment_mode,
+            customer_id,
+            grand_total,
+            customer:ledgers!sales_customer_id_fkey(
+              id,
+              name,
+              mobile
+            ),
+            sale_items(
+              product_id,
+              product_name,
+              quantity
+            )
+          `
+        )
+        .eq("company_id", activeCompanyId)
+        .order("invoice_date", { ascending: false })
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      setSales(
+        ((data || []) as unknown as SaleRow[]).map(mapSale)
+      );
+    } catch (error) {
+      setSales([]);
+
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : "Sales report data could not be loaded from the cloud database."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   useEffect(() => {
-    try {
-      const savedSales = window.localStorage.getItem(SALES_KEY);
-      const parsedSales = savedSales ? JSON.parse(savedSales) : [];
+    loadSales();
 
-      setSales(Array.isArray(parsedSales) ? parsedSales : []);
-    } catch {
-      setSales([]);
-    }
+    const refreshEvents = [
+      "vertexerp-sales-updated",
+      "vertexerp-active-company-updated",
+    ];
+
+    refreshEvents.forEach((eventName) => {
+      window.addEventListener(eventName, loadSales);
+    });
+
+    return () => {
+      refreshEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, loadSales);
+      });
+    };
   }, []);
 
   const filteredSales = useMemo(() => {
@@ -55,7 +223,7 @@ export default function SalesReportPage() {
         !search ||
         sale.invoiceNumber.toLowerCase().includes(search) ||
         sale.customerName.toLowerCase().includes(search) ||
-        (sale.customerMobile || "").includes(search);
+        sale.customerMobile.includes(search);
 
       const matchesFromDate = !fromDate || sale.date >= fromDate;
       const matchesToDate = !toDate || sale.date <= toDate;
@@ -65,17 +233,17 @@ export default function SalesReportPage() {
   }, [sales, searchTerm, fromDate, toDate]);
 
   const totalSales = filteredSales.reduce(
-    (total, sale) => total + Number(sale.grandTotal || 0),
+    (total, sale) => total + sale.grandTotal,
     0
   );
 
   const paidSales = filteredSales
-    .filter((sale) => sale.paymentMode !== "Credit")
-    .reduce((total, sale) => total + Number(sale.grandTotal || 0), 0);
+    .filter((sale) => !isCreditPayment(sale.paymentMode))
+    .reduce((total, sale) => total + sale.grandTotal, 0);
 
-  const pendingSales = filteredSales
-    .filter((sale) => sale.paymentMode === "Credit")
-    .reduce((total, sale) => total + Number(sale.grandTotal || 0), 0);
+  const creditSales = filteredSales
+    .filter((sale) => isCreditPayment(sale.paymentMode))
+    .reduce((total, sale) => total + sale.grandTotal, 0);
 
   function resetFilters() {
     setSearchTerm("");
@@ -87,10 +255,10 @@ export default function SalesReportPage() {
     <div className="flex min-h-screen bg-slate-100">
       <Sidebar />
 
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-8">
+        <main className="p-6 md:p-8">
           <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h1 className="text-4xl font-bold text-slate-900">
@@ -110,40 +278,46 @@ export default function SalesReportPage() {
             </Link>
           </div>
 
+          {message && (
+            <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+              {message}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
             <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
               <p className="font-medium text-slate-600">Total Sales</p>
 
               <h2 className="mt-3 text-4xl font-bold text-blue-600">
-                {formatCurrency(totalSales)}
+                {isLoading ? "..." : formatCurrency(totalSales)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                From filtered invoices
+                From filtered cloud invoices
               </p>
             </div>
 
             <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
-              <p className="font-medium text-slate-600">Paid Amount</p>
+              <p className="font-medium text-slate-600">Paid Sales</p>
 
               <h2 className="mt-3 text-4xl font-bold text-green-600">
-                {formatCurrency(paidSales)}
+                {isLoading ? "..." : formatCurrency(paidSales)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Cash, UPI, bank transfer and card payments
+                Cash, UPI, bank transfer and card invoices
               </p>
             </div>
 
             <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
-              <p className="font-medium text-slate-600">Pending Amount</p>
+              <p className="font-medium text-slate-600">Credit Sales</p>
 
               <h2 className="mt-3 text-4xl font-bold text-orange-500">
-                {formatCurrency(pendingSales)}
+                {isLoading ? "..." : formatCurrency(creditSales)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Credit invoices pending for collection
+                Use Outstanding for receipt-adjusted pending balance
               </p>
             </div>
           </div>
@@ -190,13 +364,16 @@ export default function SalesReportPage() {
                 </h2>
 
                 <p className="mt-1 text-slate-600">
-                  {filteredSales.length} invoice
-                  {filteredSales.length !== 1 ? "s" : ""} found
+                  {isLoading
+                    ? "Loading cloud invoices..."
+                    : `${filteredSales.length} invoice${
+                        filteredSales.length !== 1 ? "s" : ""
+                      } found`}
                 </p>
               </div>
 
               <div className="rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
-                Total: {formatCurrency(totalSales)}
+                Total: {isLoading ? "..." : formatCurrency(totalSales)}
               </div>
             </div>
 
@@ -235,7 +412,16 @@ export default function SalesReportPage() {
                 </thead>
 
                 <tbody>
-                  {filteredSales.length === 0 ? (
+                  {isLoading ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-6 py-12 text-center text-slate-500"
+                      >
+                        Loading sales invoices from the cloud database...
+                      </td>
+                    </tr>
+                  ) : filteredSales.length === 0 ? (
                     <tr>
                       <td
                         colSpan={7}
@@ -251,59 +437,64 @@ export default function SalesReportPage() {
                       </td>
                     </tr>
                   ) : (
-                    filteredSales.map((sale) => (
-                      <tr
-                        key={sale.id}
-                        className="border-b border-slate-100 transition hover:bg-blue-50"
-                      >
-                        <td className="px-6 py-5">
-                          <p className="font-bold text-blue-600">
-                            {sale.invoiceNumber}
-                          </p>
-                        </td>
+                    filteredSales.map((sale) => {
+                      const isCredit = isCreditPayment(sale.paymentMode);
 
-                        <td className="px-6 py-5">
-                          <p className="font-bold text-slate-900">
-                            {sale.customerName}
-                          </p>
+                      return (
+                        <tr
+                          key={sale.id}
+                          className="border-b border-slate-100 transition hover:bg-blue-50"
+                        >
+                          <td className="px-6 py-5">
+                            <Link
+                              href={`/sales/invoice/${sale.id}`}
+                              className="font-bold text-blue-600 transition hover:text-blue-800 hover:underline"
+                            >
+                              {sale.invoiceNumber}
+                            </Link>
+                          </td>
 
-                          <p className="mt-1 text-sm text-slate-500">
-                            {sale.customerMobile || "No mobile added"}
-                          </p>
-                        </td>
+                          <td className="px-6 py-5">
+                            <p className="font-bold text-slate-900">
+                              {sale.customerName}
+                            </p>
 
-                        <td className="px-6 py-5 text-slate-700">
-                          {sale.date}
-                        </td>
+                            <p className="mt-1 text-sm text-slate-500">
+                              {sale.customerMobile || "No mobile added"}
+                            </p>
+                          </td>
 
-                        <td className="px-6 py-5 text-slate-700">
-                          {sale.items.length} Item
-                          {sale.items.length !== 1 ? "s" : ""}
-                        </td>
+                          <td className="px-6 py-5 text-slate-700">
+                            {formatDate(sale.date)}
+                          </td>
 
-                        <td className="px-6 py-5 text-slate-700">
-                          {sale.paymentMode}
-                        </td>
+                          <td className="px-6 py-5 text-slate-700">
+                            {sale.itemCount} Item
+                            {sale.itemCount !== 1 ? "s" : ""}
+                          </td>
 
-                        <td className="px-6 py-5 font-bold text-slate-900">
-                          {formatCurrency(sale.grandTotal)}
-                        </td>
+                          <td className="px-6 py-5 text-slate-700">
+                            {sale.paymentMode}
+                          </td>
 
-                        <td className="px-6 py-5">
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-bold ${
-                              sale.paymentMode === "Credit"
-                                ? "bg-orange-100 text-orange-700"
-                                : "bg-green-100 text-green-700"
-                            }`}
-                          >
-                            {sale.paymentMode === "Credit"
-                              ? "Pending"
-                              : "Paid"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))
+                          <td className="px-6 py-5 font-bold text-slate-900">
+                            {formatCurrency(sale.grandTotal)}
+                          </td>
+
+                          <td className="px-6 py-5">
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-bold ${
+                                isCredit
+                                  ? "bg-orange-100 text-orange-700"
+                                  : "bg-green-100 text-green-700"
+                              }`}
+                            >
+                              {isCredit ? "Credit" : "Paid"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

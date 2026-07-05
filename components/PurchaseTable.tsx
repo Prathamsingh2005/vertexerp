@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type PurchaseItem = {
   productId: string;
@@ -32,65 +33,222 @@ type Purchase = {
   createdAt: string;
 };
 
-type Product = {
-  id: string;
-  name: string;
-  quantity: number;
-  [key: string]: unknown;
+type ProfileRow = {
+  active_company_id: string | null;
 };
 
-const PURCHASES_KEY = "VertexERP_purchases";
-const PRODUCTS_KEY = "VertexERP_products";
+type PurchaseRow = {
+  id: string;
+  bill_number: string;
+  purchase_date: string;
+  payment_mode: string;
+  subtotal: number | string | null;
+  gst_total: number | string | null;
+  discount_total: number | string | null;
+  grand_total: number | string | null;
+  created_at: string;
+  supplier_id: string | null;
+  supplier:
+    | {
+        id: string;
+        name: string;
+        mobile: string | null;
+        gst_number: string | null;
+      }
+    | {
+        id: string;
+        name: string;
+        mobile: string | null;
+        gst_number: string | null;
+      }[]
+    | null;
+  purchase_items:
+    | {
+        product_id: string | null;
+        product_name: string;
+        quantity: number | string | null;
+        rate: number | string | null;
+        gst_rate: number | string | null;
+        discount: number | string | null;
+        base_amount: number | string | null;
+        gst_amount: number | string | null;
+        amount: number | string | null;
+      }[]
+    | null;
+};
 
-const PURCHASE_EVENT = "VertexERP-purchases-updated";
-const PRODUCT_EVENT = "VertexERP-products-updated";
+function getSupplier(
+  supplier: PurchaseRow["supplier"]
+): {
+  id: string;
+  name: string;
+  mobile: string | null;
+  gst_number: string | null;
+} | null {
+  return Array.isArray(supplier) ? supplier[0] || null : supplier;
+}
+
+function mapPurchaseRow(row: PurchaseRow): Purchase {
+  const supplier = getSupplier(row.supplier);
+
+  return {
+    id: row.id,
+    billNumber: row.bill_number || "",
+    date: row.purchase_date || "",
+    paymentMode: row.payment_mode || "Cash",
+    supplierId: row.supplier_id || supplier?.id || "",
+    supplierName: supplier?.name || "Unknown Supplier",
+    supplierMobile: supplier?.mobile || "",
+    supplierGst: supplier?.gst_number || "",
+    items: (row.purchase_items || []).map((item) => ({
+      productId: item.product_id || "",
+      productName: item.product_name || "Product",
+      quantity: Number(item.quantity || 0),
+      rate: Number(item.rate || 0),
+      gst: Number(item.gst_rate || 0),
+      discount: Number(item.discount || 0),
+      baseAmount: Number(item.base_amount || 0),
+      gstAmount: Number(item.gst_amount || 0),
+      amount: Number(item.amount || 0),
+    })),
+    subtotal: Number(row.subtotal || 0),
+    gstTotal: Number(row.gst_total || 0),
+    discountTotal: Number(row.discount_total || 0),
+    grandTotal: Number(row.grand_total || 0),
+    createdAt: row.created_at || "",
+  };
+}
 
 export default function PurchaseTable() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState("");
 
-  function loadPurchases() {
+  function showMessage(nextMessage: string) {
+    setMessage(nextMessage);
+
+    window.setTimeout(() => {
+      setMessage("");
+    }, 4000);
+  }
+
+  async function loadPurchases() {
+    setIsLoading(true);
+
     try {
-      const savedPurchases = window.localStorage.getItem(PURCHASES_KEY);
+      const supabase = createClient();
 
-      if (!savedPurchases) {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
         setPurchases([]);
         return;
       }
 
-      const parsedPurchases = JSON.parse(savedPurchases);
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
 
-      if (Array.isArray(parsedPurchases)) {
-        setPurchases(parsedPurchases);
-      } else {
-        setPurchases([]);
+      if (profileError) {
+        throw profileError;
       }
-    } catch {
+
+      const activeCompanyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      if (!activeCompanyId) {
+        setPurchases([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("purchases")
+        .select(
+          `
+            id,
+            bill_number,
+            purchase_date,
+            payment_mode,
+            subtotal,
+            gst_total,
+            discount_total,
+            grand_total,
+            created_at,
+            supplier_id,
+            supplier:ledgers!purchases_supplier_id_fkey(
+              id,
+              name,
+              mobile,
+              gst_number
+            ),
+            purchase_items(
+              product_id,
+              product_name,
+              quantity,
+              rate,
+              gst_rate,
+              discount,
+              base_amount,
+              gst_amount,
+              amount
+            )
+          `
+        )
+        .eq("company_id", activeCompanyId)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      setPurchases(
+        ((data || []) as unknown as PurchaseRow[]).map(mapPurchaseRow)
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Purchase bills could not be loaded.";
+
       setPurchases([]);
+      showMessage(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   }
 
   useEffect(() => {
     loadPurchases();
 
-    window.addEventListener(PURCHASE_EVENT, loadPurchases);
+    window.addEventListener(
+      "vertexerp-purchases-updated",
+      loadPurchases
+    );
+    window.addEventListener(
+      "vertexerp-active-company-updated",
+      loadPurchases
+    );
 
     return () => {
-      window.removeEventListener(PURCHASE_EVENT, loadPurchases);
+      window.removeEventListener(
+        "vertexerp-purchases-updated",
+        loadPurchases
+      );
+      window.removeEventListener(
+        "vertexerp-active-company-updated",
+        loadPurchases
+      );
     };
   }, []);
 
-  function deletePurchase(purchaseId: string, billNumber: string) {
-    const purchaseToDelete = purchases.find(
-      (purchase) => purchase.id === purchaseId
-    );
-
-    if (!purchaseToDelete) {
-      window.alert("Purchase bill not found.");
-      return;
-    }
-
+  async function deletePurchase(purchase: Purchase) {
     const shouldDelete = window.confirm(
-      `Delete purchase bill ${billNumber}?\n\nThis will also remove the purchased quantity from inventory.`
+      `Delete purchase bill ${purchase.billNumber}?\n\nThe purchased quantity will be reversed from inventory. Deletion is blocked if any of this stock has already been sold or adjusted.`
     );
 
     if (!shouldDelete) {
@@ -98,103 +256,31 @@ export default function PurchaseTable() {
     }
 
     try {
-      const savedProducts = window.localStorage.getItem(PRODUCTS_KEY);
+      const supabase = createClient();
 
-      const parsedProducts: Product[] = savedProducts
-        ? JSON.parse(savedProducts)
-        : [];
-
-      if (!Array.isArray(parsedProducts)) {
-        window.alert("Inventory data is invalid. Purchase bill was not deleted.");
-        return;
-      }
-
-      const purchaseItems = Array.isArray(purchaseToDelete.items)
-        ? purchaseToDelete.items
-        : [];
-
-      const quantityByProduct = new Map<string, number>();
-
-      purchaseItems.forEach((item) => {
-        const currentQuantity = quantityByProduct.get(item.productId) || 0;
-
-        quantityByProduct.set(
-          item.productId,
-          currentQuantity + Number(item.quantity || 0)
-        );
+      const { error } = await supabase.rpc("delete_purchase_with_stock", {
+        p_purchase_id: purchase.id,
       });
 
-      const missingProduct = Array.from(quantityByProduct.keys()).find(
-        (productId) =>
-          !parsedProducts.some((product) => product.id === productId)
-      );
-
-      if (missingProduct) {
-        window.alert(
-          "This purchase bill cannot be deleted because one or more products no longer exist in inventory."
-        );
-        return;
+      if (error) {
+        throw error;
       }
 
-      const insufficientStock = Array.from(
-        quantityByProduct.entries()
-      ).find(([productId, purchasedQuantity]) => {
-        const product = parsedProducts.find(
-          (savedProduct) => savedProduct.id === productId
-        );
-
-        return Number(product?.quantity || 0) < purchasedQuantity;
-      });
-
-      if (insufficientStock) {
-        const [productId] = insufficientStock;
-
-        const product = parsedProducts.find(
-          (savedProduct) => savedProduct.id === productId
-        );
-
-        window.alert(
-          `Cannot delete this purchase bill because some stock of "${product?.name || "this product"}" has already been sold or adjusted.`
-        );
-
-        return;
-      }
-
-      const updatedProducts = parsedProducts.map((product) => {
-        const quantityToReverse = quantityByProduct.get(product.id) || 0;
-
-        if (quantityToReverse === 0) {
-          return product;
-        }
-
-        return {
-          ...product,
-          quantity: Number(product.quantity || 0) - quantityToReverse,
-        };
-      });
-
-      const updatedPurchases = purchases.filter(
-        (purchase) => purchase.id !== purchaseId
+      setPurchases((currentPurchases) =>
+        currentPurchases.filter((item) => item.id !== purchase.id)
       );
 
-      window.localStorage.setItem(
-        PRODUCTS_KEY,
-        JSON.stringify(updatedProducts)
-      );
+      window.dispatchEvent(new Event("vertexerp-purchases-updated"));
+      window.dispatchEvent(new Event("vertexerp-products-updated"));
 
-      window.localStorage.setItem(
-        PURCHASES_KEY,
-        JSON.stringify(updatedPurchases)
-      );
+      showMessage("Purchase bill deleted and inventory stock reversed.");
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Purchase bill could not be deleted.";
 
-      setPurchases(updatedPurchases);
-
-      window.dispatchEvent(new Event(PRODUCT_EVENT));
-      window.dispatchEvent(new Event(PURCHASE_EVENT));
-    } catch {
-      window.alert(
-        "Purchase bill could not be deleted. Please refresh the page and try again."
-      );
+      showMessage(errorMessage);
     }
   }
 
@@ -215,6 +301,12 @@ export default function PurchaseTable() {
           Total Bills: {purchases.length}
         </div>
       </div>
+
+      {message && (
+        <div className="mx-6 mt-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+          {message}
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1000px]">
@@ -251,7 +343,16 @@ export default function PurchaseTable() {
           </thead>
 
           <tbody>
-            {purchases.length === 0 ? (
+            {isLoading ? (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="px-6 py-12 text-center text-slate-500"
+                >
+                  Loading purchase bills from the cloud database...
+                </td>
+              </tr>
+            ) : purchases.length === 0 ? (
               <tr>
                 <td
                   colSpan={7}
@@ -325,9 +426,7 @@ export default function PurchaseTable() {
 
                       <button
                         type="button"
-                        onClick={() =>
-                          deletePurchase(purchase.id, purchase.billNumber)
-                        }
+                        onClick={() => deletePurchase(purchase)}
                         className="font-semibold text-red-500 transition hover:text-red-700"
                       >
                         Delete

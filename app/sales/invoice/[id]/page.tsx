@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
+import { createClient } from "@/lib/supabase/client";
 
 type SaleItem = {
   productId: string;
@@ -13,10 +14,12 @@ type SaleItem = {
   rate: number;
   gst: number;
   discount: number;
+  baseAmount: number;
+  gstAmount: number;
   amount: number;
 };
 
-type Sale = {
+type Invoice = {
   id: string;
   invoiceNumber: string;
   date: string;
@@ -40,59 +43,263 @@ type Company = {
   email: string;
 };
 
-const SALES_KEY = "VertexERP_sales";
-const COMPANIES_KEY = "VertexERP_companies";
+type ProfileRow = {
+  active_company_id: string | null;
+};
+
+type CustomerRow = {
+  id: string;
+  name: string;
+  mobile: string | null;
+  gst_number: string | null;
+};
+
+type CompanyRow = {
+  id: string;
+  name: string;
+  address: string | null;
+  gst_number: string | null;
+  phone: string | null;
+  email: string | null;
+};
+
+type SaleRow = {
+  id: string;
+  invoice_number: string;
+  invoice_date: string;
+  payment_mode: string;
+  customer_id: string | null;
+  subtotal: number | string | null;
+  gst_total: number | string | null;
+  discount_total: number | string | null;
+  grand_total: number | string | null;
+  customer: CustomerRow | CustomerRow[] | null;
+  sale_items:
+    | {
+        product_id: string | null;
+        product_name: string;
+        quantity: number | string | null;
+        rate: number | string | null;
+        gst_rate: number | string | null;
+        discount: number | string | null;
+        base_amount: number | string | null;
+        gst_amount: number | string | null;
+        amount: number | string | null;
+      }[]
+    | null;
+};
 
 function formatCurrency(amount: number) {
-  return `₹${Number(amount || 0).toLocaleString("en-IN")}`;
+  return `₹${Number(amount || 0).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function getCustomer(
+  customer: SaleRow["customer"]
+): CustomerRow | null {
+  return Array.isArray(customer) ? customer[0] || null : customer;
+}
+
+function mapInvoice(row: SaleRow): Invoice {
+  const customer = getCustomer(row.customer);
+
+  return {
+    id: row.id,
+    invoiceNumber: row.invoice_number || "",
+    date: row.invoice_date || "",
+    paymentMode: row.payment_mode || "Cash",
+    customerName: customer?.name || "Unknown Customer",
+    customerMobile: customer?.mobile || "",
+    customerGst: customer?.gst_number || "",
+    subtotal: Number(row.subtotal || 0),
+    gstTotal: Number(row.gst_total || 0),
+    discountTotal: Number(row.discount_total || 0),
+    grandTotal: Number(row.grand_total || 0),
+    items: (row.sale_items || []).map((item) => ({
+      productId: item.product_id || "",
+      productName: item.product_name || "Product",
+      quantity: Number(item.quantity || 0),
+      rate: Number(item.rate || 0),
+      gst: Number(item.gst_rate || 0),
+      discount: Number(item.discount || 0),
+      baseAmount: Number(item.base_amount || 0),
+      gstAmount: Number(item.gst_amount || 0),
+      amount: Number(item.amount || 0),
+    })),
+  };
+}
+
+function mapCompany(row: CompanyRow): Company {
+  return {
+    id: row.id,
+    name: row.name || "Your Company Name",
+    address: row.address || "",
+    gstNumber: row.gst_number || "",
+    phone: row.phone || "",
+    email: row.email || "",
+  };
 }
 
 export default function InvoicePreviewPage() {
   const params = useParams();
+  const invoiceId =
+    typeof params.id === "string"
+      ? params.id
+      : Array.isArray(params.id)
+        ? params.id[0]
+        : "";
 
-  const invoiceId = typeof params.id === "string" ? params.id : "";
-
-  const [invoice, setInvoice] = useState<Sale | null>(null);
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [company, setCompany] = useState<Company | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    try {
-      const savedSales = window.localStorage.getItem(SALES_KEY);
-      const savedCompanies = window.localStorage.getItem(COMPANIES_KEY);
+    async function loadInvoice() {
+      setIsLoading(true);
+      setErrorMessage("");
 
-      const sales: Sale[] = savedSales ? JSON.parse(savedSales) : [];
+      try {
+        if (!invoiceId) {
+          setInvoice(null);
+          setCompany(null);
+          setErrorMessage("Invoice ID is missing.");
+          return;
+        }
 
-      const companies: Company[] = savedCompanies
-        ? JSON.parse(savedCompanies)
-        : [];
+        const supabase = createClient();
 
-      const selectedInvoice = sales.find(
-        (sale) => sale.id === invoiceId
-      );
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
 
-      setInvoice(selectedInvoice || null);
-      setCompany(companies[0] || null);
-    } catch {
-      setInvoice(null);
-      setCompany(null);
-    } finally {
-      setIsLoaded(true);
+        if (userError || !user) {
+          setInvoice(null);
+          setCompany(null);
+          setErrorMessage("Please sign in to view this invoice.");
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("active_company_id")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (profileError) {
+          throw profileError;
+        }
+
+        const activeCompanyId =
+          (profile as ProfileRow | null)?.active_company_id || null;
+
+        if (!activeCompanyId) {
+          setInvoice(null);
+          setCompany(null);
+          setErrorMessage(
+            "Select an active company from the Companies page first."
+          );
+          return;
+        }
+
+        const [invoiceResponse, companyResponse] = await Promise.all([
+          supabase
+            .from("sales")
+            .select(
+              `
+                id,
+                invoice_number,
+                invoice_date,
+                payment_mode,
+                customer_id,
+                subtotal,
+                gst_total,
+                discount_total,
+                grand_total,
+                customer:ledgers!sales_customer_id_fkey(
+                  id,
+                  name,
+                  mobile,
+                  gst_number
+                ),
+                sale_items(
+                  product_id,
+                  product_name,
+                  quantity,
+                  rate,
+                  gst_rate,
+                  discount,
+                  base_amount,
+                  gst_amount,
+                  amount
+                )
+              `
+            )
+            .eq("id", invoiceId)
+            .eq("company_id", activeCompanyId)
+            .maybeSingle(),
+          supabase
+            .from("companies")
+            .select("id, name, address, gst_number, phone, email")
+            .eq("id", activeCompanyId)
+            .maybeSingle(),
+        ]);
+
+        if (invoiceResponse.error) {
+          throw invoiceResponse.error;
+        }
+
+        if (companyResponse.error) {
+          throw companyResponse.error;
+        }
+
+        if (!invoiceResponse.data) {
+          setInvoice(null);
+          setCompany(null);
+          setErrorMessage(
+            "This invoice is unavailable for the currently active company."
+          );
+          return;
+        }
+
+        setInvoice(mapInvoice(invoiceResponse.data as unknown as SaleRow));
+        setCompany(
+          companyResponse.data
+            ? mapCompany(companyResponse.data as CompanyRow)
+            : null
+        );
+      } catch (error) {
+        setInvoice(null);
+        setCompany(null);
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "Invoice could not be loaded."
+        );
+      } finally {
+        setIsLoading(false);
+      }
     }
+
+    loadInvoice();
   }, [invoiceId]);
 
-  if (!isLoaded) {
+  if (isLoading) {
     return (
       <div className="flex min-h-screen bg-slate-100">
         <Sidebar />
 
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <Navbar />
 
-          <main className="p-8">
-            <p className="text-lg font-semibold text-slate-700">
-              Loading invoice...
-            </p>
+          <main className="p-6 md:p-8">
+            <div className="rounded-3xl border border-slate-100 bg-white p-10 text-center shadow-xl">
+              <p className="text-lg font-semibold text-slate-700">
+                Loading invoice from the cloud database...
+              </p>
+            </div>
           </main>
         </div>
       </div>
@@ -104,17 +311,18 @@ export default function InvoicePreviewPage() {
       <div className="flex min-h-screen bg-slate-100">
         <Sidebar />
 
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <Navbar />
 
-          <main className="p-8">
+          <main className="p-6 md:p-8">
             <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-lg">
               <h1 className="text-3xl font-bold text-slate-900">
                 Invoice Not Found
               </h1>
 
               <p className="mt-3 text-slate-600">
-                This invoice may have been deleted or is unavailable.
+                {errorMessage ||
+                  "This invoice may have been deleted or is unavailable."}
               </p>
 
               <Link
@@ -130,25 +338,40 @@ export default function InvoicePreviewPage() {
     );
   }
 
+  const isCreditPayment =
+    invoice.paymentMode.trim().toLowerCase() === "credit";
+
   return (
     <>
       <style jsx global>{`
         @media print {
           @page {
+            size: A4 portrait;
             margin: 12mm;
+          }
+
+          html,
+          body {
+            background: white !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
 
           .invoice-print-hide {
             display: none !important;
           }
 
-          .invoice-page-root {
+          .invoice-page-root,
+          .invoice-content-root,
+          .invoice-main-content {
             display: block !important;
             min-height: auto !important;
+            width: 100% !important;
             background: white !important;
           }
 
           .invoice-main-content {
+            margin: 0 !important;
             padding: 0 !important;
           }
 
@@ -157,6 +380,21 @@ export default function InvoicePreviewPage() {
             border: 0 !important;
             border-radius: 0 !important;
             box-shadow: none !important;
+            padding: 0 !important;
+          }
+
+          .invoice-table-wrap {
+            overflow: visible !important;
+          }
+
+          .invoice-table {
+            min-width: 0 !important;
+            font-size: 10px !important;
+          }
+
+          .invoice-table th,
+          .invoice-table td {
+            padding: 7px !important;
           }
         }
       `}</style>
@@ -166,12 +404,12 @@ export default function InvoicePreviewPage() {
           <Sidebar />
         </aside>
 
-        <div className="flex-1">
+        <div className="invoice-content-root min-w-0 flex-1">
           <div className="invoice-print-hide">
             <Navbar />
           </div>
 
-          <main className="invoice-main-content p-8">
+          <main className="invoice-main-content p-6 md:p-8">
             <div className="invoice-print-hide mb-6 flex flex-wrap items-center justify-between gap-4">
               <Link
                 href="/sales"
@@ -238,7 +476,7 @@ export default function InvoicePreviewPage() {
                   </p>
                 </div>
 
-                <div className="rounded-2xl bg-blue-50 px-5 py-4">
+                <div className="rounded-2xl bg-blue-50 px-5 py-4 print:border print:border-slate-200 print:bg-white">
                   <p className="text-sm font-semibold text-blue-700">
                     Grand Total
                   </p>
@@ -281,21 +519,19 @@ export default function InvoicePreviewPage() {
                     Status:{" "}
                     <span
                       className={
-                        invoice.paymentMode === "Credit"
+                        isCreditPayment
                           ? "font-bold text-orange-600"
                           : "font-bold text-green-600"
                       }
                     >
-                      {invoice.paymentMode === "Credit"
-                        ? "Pending"
-                        : "Paid"}
+                      {isCreditPayment ? "Pending" : "Paid"}
                     </span>
                   </p>
                 </div>
               </div>
 
-              <div className="mt-8 overflow-x-auto border-y border-slate-200">
-                <table className="w-full min-w-[750px]">
+              <div className="invoice-table-wrap mt-8 overflow-x-auto border-y border-slate-200">
+                <table className="invoice-table w-full min-w-[750px]">
                   <thead className="bg-slate-50">
                     <tr className="text-left">
                       <th className="px-5 py-4 text-sm font-bold text-slate-700">
@@ -359,7 +595,7 @@ export default function InvoicePreviewPage() {
                 </table>
               </div>
 
-              <div className="ml-auto mt-6 max-w-sm rounded-2xl bg-slate-50 p-5">
+              <div className="ml-auto mt-6 max-w-sm rounded-2xl bg-slate-50 p-5 print:border print:border-slate-200 print:bg-white">
                 <div className="flex justify-between border-b border-slate-200 pb-3 text-slate-700">
                   <span>Subtotal</span>
 

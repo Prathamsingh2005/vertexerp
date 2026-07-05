@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type Expense = {
   id: string;
@@ -9,13 +10,27 @@ type Expense = {
   amount: number;
   paymentMode: string;
   description: string;
+  createdAt: string;
 };
 
-const EXPENSES_KEY = "VertexERP_expenses";
-const EXPENSE_EVENT = "VertexERP-expenses-updated";
+type ProfileRow = {
+  active_company_id: string | null;
+};
+
+type ExpenseRow = {
+  id: string;
+  expense_date: string;
+  category: string;
+  amount: number | string | null;
+  payment_mode: string;
+  description: string | null;
+  created_at: string;
+};
 
 function formatCurrency(amount: number) {
-  return `₹${Number(amount || 0).toLocaleString("en-IN")}`;
+  return `₹${Number(amount || 0).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function formatDate(dateValue: string) {
@@ -36,36 +51,120 @@ function formatDate(dateValue: string) {
   });
 }
 
+function mapExpense(row: ExpenseRow): Expense {
+  return {
+    id: row.id,
+    date: row.expense_date || "",
+    category: row.category || "Other",
+    amount: Number(row.amount || 0),
+    paymentMode: row.payment_mode || "Cash",
+    description: row.description || "",
+    createdAt: row.created_at || "",
+  };
+}
+
 export default function ExpenseTable() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState("");
 
-  function loadExpenses() {
+  function showMessage(nextMessage: string) {
+    setMessage(nextMessage);
+
+    window.setTimeout(() => {
+      setMessage("");
+    }, 4000);
+  }
+
+  async function loadExpenses() {
+    setIsLoading(true);
+
     try {
-      const savedExpenses = window.localStorage.getItem(EXPENSES_KEY);
+      const supabase = createClient();
 
-      const parsedExpenses: Expense[] = savedExpenses
-        ? JSON.parse(savedExpenses)
-        : [];
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      setExpenses(parsedExpenses);
-    } catch {
+      if (userError || !user) {
+        setExpenses([]);
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      const activeCompanyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      if (!activeCompanyId) {
+        setExpenses([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("expenses")
+        .select(
+          "id, expense_date, category, amount, payment_mode, description, created_at"
+        )
+        .eq("company_id", activeCompanyId)
+        .order("expense_date", { ascending: false })
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      setExpenses(
+        ((data || []) as ExpenseRow[]).map(mapExpense)
+      );
+    } catch (error) {
       setExpenses([]);
+
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : "Expenses could not be loaded from the cloud database."
+      );
+    } finally {
+      setIsLoading(false);
     }
   }
 
   useEffect(() => {
     loadExpenses();
 
-    window.addEventListener(EXPENSE_EVENT, loadExpenses);
+    window.addEventListener("vertexerp-expenses-updated", loadExpenses);
+    window.addEventListener(
+      "vertexerp-active-company-updated",
+      loadExpenses
+    );
 
     return () => {
-      window.removeEventListener(EXPENSE_EVENT, loadExpenses);
+      window.removeEventListener(
+        "vertexerp-expenses-updated",
+        loadExpenses
+      );
+      window.removeEventListener(
+        "vertexerp-active-company-updated",
+        loadExpenses
+      );
     };
   }, []);
 
-  function deleteExpense(expenseId: string) {
+  async function deleteExpense(expense: Expense) {
     const shouldDelete = window.confirm(
-      "Are you sure you want to delete this expense?"
+      `Delete ${formatCurrency(expense.amount)} expense from ${formatDate(
+        expense.date
+      )}?`
     );
 
     if (!shouldDelete) {
@@ -73,26 +172,39 @@ export default function ExpenseTable() {
     }
 
     try {
-      const updatedExpenses = expenses.filter(
-        (expense) => expense.id !== expenseId
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from("expenses")
+        .delete()
+        .eq("id", expense.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setExpenses((currentExpenses) =>
+        currentExpenses.filter((item) => item.id !== expense.id)
       );
 
-      window.localStorage.setItem(
-        EXPENSES_KEY,
-        JSON.stringify(updatedExpenses)
+      window.dispatchEvent(new Event("vertexerp-expenses-updated"));
+      showMessage("Expense deleted successfully.");
+    } catch (error) {
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete the expense. Please try again."
       );
-
-      setExpenses(updatedExpenses);
-
-      window.dispatchEvent(new Event(EXPENSE_EVENT));
-    } catch {
-      window.alert("Unable to delete the expense. Please try again.");
     }
   }
 
-  const totalExpenses = expenses.reduce(
-    (total, expense) => total + Number(expense.amount || 0),
-    0
+  const totalExpenses = useMemo(
+    () =>
+      expenses.reduce(
+        (total, expense) => total + Number(expense.amount || 0),
+        0
+      ),
+    [expenses]
   );
 
   return (
@@ -114,12 +226,24 @@ export default function ExpenseTable() {
           </p>
 
           <p className="mt-1 text-xl font-bold text-blue-700">
-            {formatCurrency(totalExpenses)}
+            {isLoading ? "..." : formatCurrency(totalExpenses)}
           </p>
         </div>
       </div>
 
-      {expenses.length === 0 ? (
+      {message && (
+        <div className="mx-6 mt-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700 md:mx-8">
+          {message}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="px-6 py-14 text-center md:px-8">
+          <p className="text-lg font-bold text-slate-800">
+            Loading expenses from the cloud database...
+          </p>
+        </div>
+      ) : expenses.length === 0 ? (
         <div className="px-6 py-14 text-center md:px-8">
           <p className="text-lg font-bold text-slate-800">
             No expenses saved yet
@@ -191,7 +315,7 @@ export default function ExpenseTable() {
                   <td className="px-6 py-5 text-right">
                     <button
                       type="button"
-                      onClick={() => deleteExpense(expense.id)}
+                      onClick={() => deleteExpense(expense)}
                       className="font-semibold text-red-500 transition hover:text-red-700"
                     >
                       Delete

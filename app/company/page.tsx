@@ -4,91 +4,85 @@ import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import CompanyManager from "@/components/CompanyManager";
+import { createClient } from "@/lib/supabase/client";
 
-type Company = {
+type CompanyStatRow = {
   id: string;
-  name: string;
-  gstNumber: string;
-  panNumber: string;
-  email: string;
-  phone: string;
-  city: string;
-  address: string;
-  createdAt?: string;
+  gst_number: string | null;
+  created_at: string;
 };
 
-const COMPANIES_KEY = "VertexERP_companies";
-const COMPANIES_EVENT = "VertexERP-companies-updated";
-
-function readCompanies(): Company[] {
-  try {
-    const savedCompanies = window.localStorage.getItem(COMPANIES_KEY);
-
-    if (!savedCompanies) {
-      return [];
-    }
-
-    const parsedCompanies = JSON.parse(savedCompanies);
-
-    return Array.isArray(parsedCompanies) ? parsedCompanies : [];
-  } catch {
-    return [];
-  }
-}
-
-function isCurrentMonth(dateValue?: string) {
-  if (!dateValue) {
-    return false;
-  }
-
-  const date = new Date(dateValue);
-  const today = new Date();
-
-  if (Number.isNaN(date.getTime())) {
-    return false;
-  }
-
-  return (
-    date.getMonth() === today.getMonth() &&
-    date.getFullYear() === today.getFullYear()
-  );
-}
-
 export default function CompanyPage() {
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companies, setCompanies] = useState<CompanyStatRow[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
-  function loadCompanies() {
-    setCompanies(readCompanies());
+  async function loadCompanyStats() {
+    setIsLoading(true);
+
+    try {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setCompanies([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("companies")
+        .select("id, gst_number, created_at")
+        .eq("owner_id", user.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setCompanies(data || []);
+    } catch {
+      setCompanies([]);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   useEffect(() => {
-    loadCompanies();
+    loadCompanyStats();
 
-    window.addEventListener(COMPANIES_EVENT, loadCompanies);
-    window.addEventListener("storage", loadCompanies);
+    window.addEventListener(
+      "smarterp-companies-updated",
+      loadCompanyStats
+    );
 
     return () => {
-      window.removeEventListener(COMPANIES_EVENT, loadCompanies);
-      window.removeEventListener("storage", loadCompanies);
+      window.removeEventListener(
+        "smarterp-companies-updated",
+        loadCompanyStats
+      );
     };
   }, []);
 
-  const companyStats = useMemo(() => {
-    const gstRegistered = companies.filter((company) =>
-      Boolean(company.gstNumber?.trim())
-    ).length;
+  const currentMonthCompanies = useMemo(() => {
+    const currentDate = new Date();
 
-    const recentlyAdded = companies.filter((company) =>
-      isCurrentMonth(company.createdAt)
-    ).length;
+    return companies.filter((company) => {
+      const createdDate = new Date(company.created_at);
 
-    return {
-      totalCompanies: companies.length,
-      activeCompanies: companies.length,
-      gstRegistered,
-      recentlyAdded,
-    };
+      return (
+        createdDate.getMonth() === currentDate.getMonth() &&
+        createdDate.getFullYear() === currentDate.getFullYear()
+      );
+    }).length;
+  }, [companies]);
+
+  const gstRegisteredCompanies = useMemo(() => {
+    return companies.filter((company) =>
+      Boolean(company.gst_number?.trim())
+    ).length;
   }, [companies]);
 
   function scrollToCompanyForm() {
@@ -106,45 +100,43 @@ export default function CompanyPage() {
         <Navbar />
 
         <main className="p-6 md:p-8">
-          <div className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h1 className="text-4xl font-bold text-slate-900">
-                🏢 Company Management
-              </h1>
+          <section className="mb-8">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h1 className="text-4xl font-bold text-slate-900">
+                  🏢 Company Management
+                </h1>
 
-              <p className="mt-2 text-lg text-slate-600">
-                Create, manage and organize all your companies from one place.
-              </p>
+                <p className="mt-2 text-lg text-slate-600">
+                  Create, manage and organize all your companies from one place.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={scrollToCompanyForm}
+                className="rounded-xl bg-blue-600 px-6 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] hover:bg-blue-700 active:scale-[0.98]"
+              >
+                + Add Company
+              </button>
             </div>
+          </section>
 
-            <button
-              type="button"
-              onClick={scrollToCompanyForm}
-              className="w-fit rounded-xl px-7 py-3 font-semibold text-white shadow-xl transition hover:scale-[1.02] active:scale-[0.98]"
-              style={{
-                backgroundColor: "#2563eb",
-                color: "#ffffff",
-              }}
-            >
-              + Add Company
-            </button>
-          </div>
-
-          <section className="mb-8 grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
+          <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-3xl border border-blue-100 bg-white p-6 shadow-lg">
               <p className="font-medium text-slate-600">
                 Total Companies
               </p>
 
               <h2
-                className="mt-3 text-4xl font-bold"
+                className="mt-3 text-3xl font-bold"
                 style={{ color: "#2563eb" }}
               >
-                {companyStats.totalCompanies}
+                {isLoading ? "..." : companies.length}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Companies saved in this VertexERP account
+                Companies saved in your cloud account
               </p>
             </div>
 
@@ -154,10 +146,10 @@ export default function CompanyPage() {
               </p>
 
               <h2
-                className="mt-3 text-4xl font-bold"
+                className="mt-3 text-3xl font-bold"
                 style={{ color: "#059669" }}
               >
-                {companyStats.activeCompanies}
+                {isLoading ? "..." : companies.length}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -171,10 +163,10 @@ export default function CompanyPage() {
               </p>
 
               <h2
-                className="mt-3 text-4xl font-bold"
+                className="mt-3 text-3xl font-bold"
                 style={{ color: "#7e22ce" }}
               >
-                {companyStats.gstRegistered}
+                {isLoading ? "..." : gstRegisteredCompanies}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -188,10 +180,10 @@ export default function CompanyPage() {
               </p>
 
               <h2
-                className="mt-3 text-4xl font-bold"
+                className="mt-3 text-3xl font-bold"
                 style={{ color: "#ea580c" }}
               >
-                {companyStats.recentlyAdded}
+                {isLoading ? "..." : currentMonthCompanies}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -200,20 +192,18 @@ export default function CompanyPage() {
             </div>
           </section>
 
-          <section className="mb-8 rounded-3xl border border-slate-100 bg-white p-5 shadow-lg">
-            <div className="relative">
-              <span className="absolute left-5 top-3.5 text-lg text-slate-400">
-                🔍
-              </span>
+          <section className="mt-10 rounded-3xl border border-slate-100 bg-white p-6 shadow-xl">
+            <label className="mb-3 block font-semibold text-slate-800">
+              Search Companies
+            </label>
 
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search by company name, GST, PAN, city, email or phone..."
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 py-3 pl-14 pr-5 text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
-              />
-            </div>
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search by company name, GST, PAN, city, email or phone..."
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-5 py-4 text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+            />
           </section>
 
           <CompanyManager searchQuery={searchQuery} />

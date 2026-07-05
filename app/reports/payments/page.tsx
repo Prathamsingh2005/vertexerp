@@ -4,8 +4,31 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
+import { createClient } from "@/lib/supabase/client";
 
 type PaymentType = "Customer Receipt" | "Supplier Payment";
+
+type LedgerRow = {
+  id: string;
+  name: string;
+};
+
+type PaymentRow = {
+  id: string;
+  payment_type: PaymentType;
+  party_id: string | null;
+  payment_date: string;
+  amount: number | string | null;
+  payment_mode: string | null;
+  reference_number: string | null;
+  notes: string | null;
+  created_at: string;
+  party: LedgerRow | LedgerRow[] | null;
+};
+
+type ProfileRow = {
+  active_company_id: string | null;
+};
 
 type Payment = {
   id: string;
@@ -20,9 +43,6 @@ type Payment = {
   createdAt: string;
 };
 
-const PAYMENTS_KEY = "VertexERP_payments";
-const PAYMENTS_EVENT = "VertexERP-payments-updated";
-
 function toNumber(value: unknown) {
   const numberValue = Number(value);
 
@@ -30,7 +50,9 @@ function toNumber(value: unknown) {
 }
 
 function formatCurrency(amount: number) {
-  return `₹${toNumber(amount).toLocaleString("en-IN")}`;
+  return `₹${toNumber(amount).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function formatDate(dateValue: string) {
@@ -55,46 +77,149 @@ function getToday() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function getJoinedLedger(
+  party: LedgerRow | LedgerRow[] | null
+): LedgerRow | null {
+  return Array.isArray(party) ? party[0] || null : party;
+}
+
+function mapPayment(row: PaymentRow): Payment {
+  const party = getJoinedLedger(row.party);
+
+  return {
+    id: row.id,
+    type: row.payment_type,
+    partyId: row.party_id || "",
+    partyName: party?.name || "Unknown Party",
+    date: row.payment_date || "",
+    amount: toNumber(row.amount),
+    paymentMode: row.payment_mode || "Cash",
+    referenceNumber: row.reference_number || "",
+    notes: row.notes || "",
+    createdAt: row.created_at || "",
+  };
+}
+
 export default function PaymentReportPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState(getToday());
   const [paymentType, setPaymentType] = useState("All");
   const [paymentMode, setPaymentMode] = useState("All");
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState("");
 
-  function loadPayments() {
+  function showMessage(nextMessage: string) {
+    setMessage(nextMessage);
+
+    window.setTimeout(() => {
+      setMessage("");
+    }, 4500);
+  }
+
+  async function loadPayments() {
+    setIsLoading(true);
+
     try {
-      const savedPayments = window.localStorage.getItem(PAYMENTS_KEY);
+      const supabase = createClient();
 
-      if (!savedPayments) {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
         setPayments([]);
+        showMessage("Please sign in to view the payment report.");
         return;
       }
 
-      const parsedPayments = JSON.parse(savedPayments);
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
 
-      setPayments(Array.isArray(parsedPayments) ? parsedPayments : []);
-    } catch {
+      if (profileError) {
+        throw profileError;
+      }
+
+      const activeCompanyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      if (!activeCompanyId) {
+        setPayments([]);
+        showMessage("Select an active company from the Companies page first.");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("payments")
+        .select(
+          `
+            id,
+            payment_type,
+            party_id,
+            payment_date,
+            amount,
+            payment_mode,
+            reference_number,
+            notes,
+            created_at,
+            party:ledgers!payments_party_id_fkey(
+              id,
+              name
+            )
+          `
+        )
+        .eq("company_id", activeCompanyId)
+        .order("payment_date", { ascending: false })
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      setPayments(
+        ((data || []) as unknown as PaymentRow[]).map(mapPayment)
+      );
+    } catch (error) {
       setPayments([]);
+
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : "Payment report data could not be loaded from the cloud database."
+      );
+    } finally {
+      setIsLoading(false);
     }
   }
 
   useEffect(() => {
     loadPayments();
 
-    window.addEventListener(PAYMENTS_EVENT, loadPayments);
-    window.addEventListener("storage", loadPayments);
+    const refreshEvents = [
+      "vertexerp-payments-updated",
+      "vertexerp-ledgers-updated",
+      "vertexerp-active-company-updated",
+    ];
+
+    refreshEvents.forEach((eventName) => {
+      window.addEventListener(eventName, loadPayments);
+    });
 
     return () => {
-      window.removeEventListener(PAYMENTS_EVENT, loadPayments);
-      window.removeEventListener("storage", loadPayments);
+      refreshEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, loadPayments);
+      });
     };
   }, []);
 
   const availableModes = useMemo(() => {
     const modes = new Set(
       payments
-        .map((payment) => payment.paymentMode?.trim())
+        .map((payment) => payment.paymentMode.trim())
         .filter(Boolean)
     );
 
@@ -123,7 +248,10 @@ export default function PaymentReportPage() {
         );
       })
       .sort((first, second) => {
-        return second.date.localeCompare(first.date);
+        const firstDate = `${first.date}-${first.createdAt}`;
+        const secondDate = `${second.date}-${second.createdAt}`;
+
+        return secondDate.localeCompare(firstDate);
       });
   }, [payments, startDate, endDate, paymentType, paymentMode]);
 
@@ -210,6 +338,12 @@ export default function PaymentReportPage() {
               </button>
             </div>
           </div>
+
+          {message && (
+            <div className="payment-report-no-print mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+              {message}
+            </div>
+          )}
 
           <section className="payment-report-no-print rounded-3xl border border-slate-100 bg-white p-6 shadow-xl">
             <div className="mb-6">
@@ -311,7 +445,7 @@ export default function PaymentReportPage() {
                 className="mt-3 text-3xl font-bold"
                 style={{ color: "#059669" }}
               >
-                {formatCurrency(totalReceipts)}
+                {isLoading ? "..." : formatCurrency(totalReceipts)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -328,7 +462,7 @@ export default function PaymentReportPage() {
                 className="mt-3 text-3xl font-bold"
                 style={{ color: "#7e22ce" }}
               >
-                {formatCurrency(totalSupplierPayments)}
+                {isLoading ? "..." : formatCurrency(totalSupplierPayments)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -347,7 +481,9 @@ export default function PaymentReportPage() {
                   color: netCollection >= 0 ? "#2563eb" : "#dc2626",
                 }}
               >
-                {formatCurrency(Math.abs(netCollection))}
+                {isLoading
+                  ? "..."
+                  : formatCurrency(Math.abs(netCollection))}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -366,7 +502,7 @@ export default function PaymentReportPage() {
                 className="mt-3 text-3xl font-bold"
                 style={{ color: "#ea580c" }}
               >
-                {filteredPayments.length}
+                {isLoading ? "..." : filteredPayments.length}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -388,7 +524,11 @@ export default function PaymentReportPage() {
               </div>
 
               <div className="divide-y divide-slate-100">
-                {modeSummary.length === 0 ? (
+                {isLoading ? (
+                  <p className="px-6 py-12 text-center text-slate-500">
+                    Loading cloud payment data...
+                  </p>
+                ) : modeSummary.length === 0 ? (
                   <p className="px-6 py-12 text-center text-slate-500">
                     No payment data found.
                   </p>
@@ -427,7 +567,7 @@ export default function PaymentReportPage() {
                 </div>
 
                 <span className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700">
-                  Entries: {filteredPayments.length}
+                  Entries: {isLoading ? "..." : filteredPayments.length}
                 </span>
               </div>
 
@@ -462,7 +602,16 @@ export default function PaymentReportPage() {
                   </thead>
 
                   <tbody>
-                    {filteredPayments.length === 0 ? (
+                    {isLoading ? (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          className="px-6 py-14 text-center text-slate-500"
+                        >
+                          Loading payment entries from the cloud database...
+                        </td>
+                      </tr>
+                    ) : filteredPayments.length === 0 ? (
                       <tr>
                         <td
                           colSpan={6}
@@ -546,104 +695,104 @@ export default function PaymentReportPage() {
       </div>
 
       <style jsx global>{`
-  @page {
-    size: A4 landscape;
-    margin: 8mm;
-  }
+        @page {
+          size: A4 landscape;
+          margin: 8mm;
+        }
 
-  @media print {
-    .payment-report-sidebar,
-    .payment-report-navbar,
-    .payment-report-no-print {
-      display: none !important;
-    }
+        @media print {
+          .payment-report-sidebar,
+          .payment-report-navbar,
+          .payment-report-no-print {
+            display: none !important;
+          }
 
-    html,
-    body {
-      width: 100%;
-      background: white !important;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
+          html,
+          body {
+            width: 100%;
+            background: white !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
 
-    .payment-report-main {
-      padding: 0 !important;
-    }
+          .payment-report-main {
+            padding: 0 !important;
+          }
 
-    .payment-report-main > div:first-child {
-      margin-bottom: 12px !important;
-    }
+          .payment-report-main > div:first-child {
+            margin-bottom: 12px !important;
+          }
 
-    .payment-report-main h1 {
-      font-size: 24px !important;
-    }
+          .payment-report-main h1 {
+            font-size: 24px !important;
+          }
 
-    .payment-report-main h2 {
-      font-size: 16px !important;
-    }
+          .payment-report-main h2 {
+            font-size: 16px !important;
+          }
 
-    .payment-report-main p {
-      font-size: 10px !important;
-    }
+          .payment-report-main p {
+            font-size: 10px !important;
+          }
 
-    .payment-report-main > section:nth-of-type(2) {
-      display: grid !important;
-      grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-      gap: 8px !important;
-      margin-top: 12px !important;
-    }
+          .payment-report-main > section:nth-of-type(2) {
+            display: grid !important;
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+            margin-top: 12px !important;
+          }
 
-    .payment-report-main > section:nth-of-type(2) > div {
-      padding: 12px !important;
-      border-radius: 12px !important;
-      box-shadow: none !important;
-    }
+          .payment-report-main > section:nth-of-type(2) > div {
+            padding: 12px !important;
+            border-radius: 12px !important;
+            box-shadow: none !important;
+          }
 
-    .payment-report-main > section:nth-of-type(2) h2 {
-      margin-top: 6px !important;
-      font-size: 20px !important;
-    }
+          .payment-report-main > section:nth-of-type(2) h2 {
+            margin-top: 6px !important;
+            font-size: 20px !important;
+          }
 
-    .payment-report-main > section:nth-of-type(3) {
-      display: grid !important;
-      grid-template-columns: 30% 70% !important;
-      gap: 10px !important;
-      margin-top: 14px !important;
-      break-inside: avoid;
-      page-break-inside: avoid;
-    }
+          .payment-report-main > section:nth-of-type(3) {
+            display: grid !important;
+            grid-template-columns: 30% 70% !important;
+            gap: 10px !important;
+            margin-top: 14px !important;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
 
-    .payment-report-main > section:nth-of-type(3) > div {
-      box-shadow: none !important;
-      border-radius: 12px !important;
-    }
+          .payment-report-main > section:nth-of-type(3) > div {
+            box-shadow: none !important;
+            border-radius: 12px !important;
+          }
 
-    .payment-report-main .overflow-x-auto {
-      overflow: visible !important;
-    }
+          .payment-report-main .overflow-x-auto {
+            overflow: visible !important;
+          }
 
-    .payment-report-main table {
-      width: 100% !important;
-      min-width: 0 !important;
-      font-size: 9px !important;
-    }
+          .payment-report-main table {
+            width: 100% !important;
+            min-width: 0 !important;
+            font-size: 9px !important;
+          }
 
-    .payment-report-main th,
-    .payment-report-main td {
-      padding: 6px !important;
-      white-space: normal !important;
-    }
+          .payment-report-main th,
+          .payment-report-main td {
+            padding: 6px !important;
+            white-space: normal !important;
+          }
 
-    .payment-report-main thead {
-      display: table-header-group;
-    }
+          .payment-report-main thead {
+            display: table-header-group;
+          }
 
-    .payment-report-main tr {
-      break-inside: avoid;
-      page-break-inside: avoid;
-    }
-  }
-`}</style>
+          .payment-report-main tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+        }
+      `}</style>
     </div>
   );
 }

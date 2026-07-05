@@ -4,77 +4,108 @@ import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import LedgerManager from "@/components/LedgerManager";
+import { createClient } from "@/lib/supabase/client";
 
-type Ledger = {
-  id: string;
-  name: string;
-  group: string;
-  openingBalance: number;
-  mobile: string;
-  email: string;
-  gst: string;
-  address: string;
+type LedgerStatRow = {
+  ledger_type: string;
 };
 
-const LEDGERS_KEY = "VertexERP_ledgers";
-const LEDGERS_EVENT = "VertexERP-ledgers-updated";
-
-function readLedgers(): Ledger[] {
-  try {
-    const savedLedgers = window.localStorage.getItem(LEDGERS_KEY);
-
-    if (!savedLedgers) {
-      return [];
-    }
-
-    const parsedLedgers = JSON.parse(savedLedgers);
-
-    return Array.isArray(parsedLedgers) ? parsedLedgers : [];
-  } catch {
-    return [];
-  }
-}
+type ProfileRow = {
+  active_company_id: string | null;
+};
 
 export default function LedgerPage() {
-  const [ledgers, setLedgers] = useState<Ledger[]>([]);
+  const [ledgers, setLedgers] = useState<LedgerStatRow[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
-  function loadLedgers() {
-    setLedgers(readLedgers());
+  async function loadLedgerStats() {
+    setIsLoading(true);
+
+    try {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setLedgers([]);
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      const activeCompanyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      if (!activeCompanyId) {
+        setLedgers([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("ledgers")
+        .select("ledger_type")
+        .eq("company_id", activeCompanyId);
+
+      if (error) {
+        throw error;
+      }
+
+      setLedgers(data || []);
+    } catch {
+      setLedgers([]);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   useEffect(() => {
-    loadLedgers();
+    loadLedgerStats();
 
-    window.addEventListener(LEDGERS_EVENT, loadLedgers);
-    window.addEventListener("storage", loadLedgers);
+    window.addEventListener(
+      "vertexerp-ledgers-updated",
+      loadLedgerStats
+    );
+    window.addEventListener(
+      "vertexerp-active-company-updated",
+      loadLedgerStats
+    );
 
     return () => {
-      window.removeEventListener(LEDGERS_EVENT, loadLedgers);
-      window.removeEventListener("storage", loadLedgers);
+      window.removeEventListener(
+        "vertexerp-ledgers-updated",
+        loadLedgerStats
+      );
+      window.removeEventListener(
+        "vertexerp-active-company-updated",
+        loadLedgerStats
+      );
     };
   }, []);
 
   const ledgerStats = useMemo(() => {
-    const customers = ledgers.filter((ledger) =>
-      String(ledger.group || "").toLowerCase().includes("customer")
-    ).length;
-
-    const suppliers = ledgers.filter((ledger) =>
-      String(ledger.group || "").toLowerCase().includes("supplier")
-    ).length;
-
-    const bankAccounts = ledgers.filter((ledger) => {
-      const group = String(ledger.group || "").toLowerCase();
-
-      return group.includes("bank") || group.includes("cash");
-    }).length;
+    const normalizedTypes = ledgers.map((ledger) =>
+      String(ledger.ledger_type || "").toLowerCase()
+    );
 
     return {
       totalLedgers: ledgers.length,
-      customers,
-      suppliers,
-      bankAccounts,
+      customers: normalizedTypes.filter((type) => type === "customer").length,
+      suppliers: normalizedTypes.filter((type) => type === "supplier").length,
+      bankAccounts: normalizedTypes.filter(
+        (type) => type === "bank" || type === "cash"
+      ).length,
     };
   }, [ledgers]);
 
@@ -125,7 +156,7 @@ export default function LedgerPage() {
                 className="mt-3 text-4xl font-bold"
                 style={{ color: "#2563eb" }}
               >
-                {ledgerStats.totalLedgers}
+                {isLoading ? "..." : ledgerStats.totalLedgers}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -140,7 +171,7 @@ export default function LedgerPage() {
                 className="mt-3 text-4xl font-bold"
                 style={{ color: "#059669" }}
               >
-                {ledgerStats.customers}
+                {isLoading ? "..." : ledgerStats.customers}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -155,7 +186,7 @@ export default function LedgerPage() {
                 className="mt-3 text-4xl font-bold"
                 style={{ color: "#ea580c" }}
               >
-                {ledgerStats.suppliers}
+                {isLoading ? "..." : ledgerStats.suppliers}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -170,7 +201,7 @@ export default function LedgerPage() {
                 className="mt-3 text-4xl font-bold"
                 style={{ color: "#7e22ce" }}
               >
-                {ledgerStats.bankAccounts}
+                {isLoading ? "..." : ledgerStats.bankAccounts}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">

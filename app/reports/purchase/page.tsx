@@ -4,13 +4,33 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
+import { createClient } from "@/lib/supabase/client";
 
-type PurchaseItem = {
-  productId: string;
-  productName: string;
-  quantity: number;
-  rate: number;
-  amount: number;
+type LedgerRow = {
+  id: string;
+  name: string;
+  mobile: string | null;
+};
+
+type PurchaseItemRow = {
+  product_id: string | null;
+  product_name: string;
+  quantity: number | string | null;
+};
+
+type PurchaseRow = {
+  id: string;
+  bill_number: string;
+  purchase_date: string;
+  payment_mode: string;
+  supplier_id: string | null;
+  grand_total: number | string | null;
+  supplier: LedgerRow | LedgerRow[] | null;
+  purchase_items: PurchaseItemRow[] | null;
+};
+
+type ProfileRow = {
+  active_company_id: string | null;
 };
 
 type Purchase = {
@@ -21,13 +41,61 @@ type Purchase = {
   supplierName: string;
   supplierMobile: string;
   grandTotal: number;
-  items: PurchaseItem[];
+  itemCount: number;
 };
 
-const PURCHASES_KEY = "VertexERP_purchases";
+function toNumber(value: unknown) {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
 
 function formatCurrency(amount: number) {
-  return `₹${Number(amount || 0).toLocaleString("en-IN")}`;
+  return `₹${toNumber(amount).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatDate(dateValue: string) {
+  if (!dateValue) {
+    return "—";
+  }
+
+  const date = new Date(`${dateValue}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return dateValue;
+  }
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function isCreditPayment(paymentMode: string) {
+  return String(paymentMode || "").trim().toLowerCase() === "credit";
+}
+
+function getJoinedLedger(
+  ledger: LedgerRow | LedgerRow[] | null
+): LedgerRow | null {
+  return Array.isArray(ledger) ? ledger[0] || null : ledger;
+}
+
+function mapPurchase(row: PurchaseRow): Purchase {
+  const supplier = getJoinedLedger(row.supplier);
+
+  return {
+    id: row.id,
+    billNumber: row.bill_number || "Purchase Bill",
+    date: row.purchase_date || "",
+    paymentMode: row.payment_mode || "Cash",
+    supplierName: supplier?.name || "Unknown Supplier",
+    supplierMobile: supplier?.mobile || "",
+    grandTotal: toNumber(row.grand_total),
+    itemCount: (row.purchase_items || []).length,
+  };
 }
 
 export default function PurchaseReportPage() {
@@ -35,21 +103,116 @@ export default function PurchaseReportPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState("");
 
-  useEffect(() => {
+  function showMessage(nextMessage: string) {
+    setMessage(nextMessage);
+
+    window.setTimeout(() => {
+      setMessage("");
+    }, 4500);
+  }
+
+  async function loadPurchases() {
+    setIsLoading(true);
+
     try {
-      const savedPurchases = window.localStorage.getItem(PURCHASES_KEY);
+      const supabase = createClient();
 
-      const parsedPurchases = savedPurchases
-        ? JSON.parse(savedPurchases)
-        : [];
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setPurchases([]);
+        showMessage("Please sign in to view the purchase report.");
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      const activeCompanyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      if (!activeCompanyId) {
+        setPurchases([]);
+        showMessage("Select an active company from the Companies page first.");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("purchases")
+        .select(
+          `
+            id,
+            bill_number,
+            purchase_date,
+            payment_mode,
+            supplier_id,
+            grand_total,
+            supplier:ledgers!purchases_supplier_id_fkey(
+              id,
+              name,
+              mobile
+            ),
+            purchase_items(
+              product_id,
+              product_name,
+              quantity
+            )
+          `
+        )
+        .eq("company_id", activeCompanyId)
+        .order("purchase_date", { ascending: false })
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        throw error;
+      }
 
       setPurchases(
-        Array.isArray(parsedPurchases) ? parsedPurchases : []
+        ((data || []) as unknown as PurchaseRow[]).map(mapPurchase)
       );
-    } catch {
+    } catch (error) {
       setPurchases([]);
+
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : "Purchase report data could not be loaded from the cloud database."
+      );
+    } finally {
+      setIsLoading(false);
     }
+  }
+
+  useEffect(() => {
+    loadPurchases();
+
+    const refreshEvents = [
+      "vertexerp-purchases-updated",
+      "vertexerp-active-company-updated",
+    ];
+
+    refreshEvents.forEach((eventName) => {
+      window.addEventListener(eventName, loadPurchases);
+    });
+
+    return () => {
+      refreshEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, loadPurchases);
+      });
+    };
   }, []);
 
   const filteredPurchases = useMemo(() => {
@@ -60,39 +223,27 @@ export default function PurchaseReportPage() {
         !search ||
         purchase.billNumber.toLowerCase().includes(search) ||
         purchase.supplierName.toLowerCase().includes(search) ||
-        (purchase.supplierMobile || "").includes(search);
+        purchase.supplierMobile.includes(search);
 
-      const matchesFromDate =
-        !fromDate || purchase.date >= fromDate;
-
-      const matchesToDate =
-        !toDate || purchase.date <= toDate;
+      const matchesFromDate = !fromDate || purchase.date >= fromDate;
+      const matchesToDate = !toDate || purchase.date <= toDate;
 
       return matchesSearch && matchesFromDate && matchesToDate;
     });
   }, [purchases, searchTerm, fromDate, toDate]);
 
   const totalPurchase = filteredPurchases.reduce(
-    (total, purchase) =>
-      total + Number(purchase.grandTotal || 0),
+    (total, purchase) => total + purchase.grandTotal,
     0
   );
 
   const paidPurchase = filteredPurchases
-    .filter((purchase) => purchase.paymentMode !== "Credit")
-    .reduce(
-      (total, purchase) =>
-        total + Number(purchase.grandTotal || 0),
-      0
-    );
+    .filter((purchase) => !isCreditPayment(purchase.paymentMode))
+    .reduce((total, purchase) => total + purchase.grandTotal, 0);
 
-  const pendingPurchase = filteredPurchases
-    .filter((purchase) => purchase.paymentMode === "Credit")
-    .reduce(
-      (total, purchase) =>
-        total + Number(purchase.grandTotal || 0),
-      0
-    );
+  const creditPurchase = filteredPurchases
+    .filter((purchase) => isCreditPayment(purchase.paymentMode))
+    .reduce((total, purchase) => total + purchase.grandTotal, 0);
 
   function resetFilters() {
     setSearchTerm("");
@@ -104,10 +255,10 @@ export default function PurchaseReportPage() {
     <div className="flex min-h-screen bg-slate-100">
       <Sidebar />
 
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-8">
+        <main className="p-6 md:p-8">
           <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h1 className="text-4xl font-bold text-slate-900">
@@ -127,6 +278,12 @@ export default function PurchaseReportPage() {
             </Link>
           </div>
 
+          {message && (
+            <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+              {message}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
             <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
               <p className="font-medium text-slate-600">
@@ -134,37 +291,37 @@ export default function PurchaseReportPage() {
               </p>
 
               <h2 className="mt-3 text-4xl font-bold text-purple-600">
-                {formatCurrency(totalPurchase)}
+                {isLoading ? "..." : formatCurrency(totalPurchase)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                From filtered purchase bills
+                From filtered cloud purchase bills
               </p>
             </div>
 
             <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
-              <p className="font-medium text-slate-600">Paid Amount</p>
+              <p className="font-medium text-slate-600">Paid Purchases</p>
 
               <h2 className="mt-3 text-4xl font-bold text-green-600">
-                {formatCurrency(paidPurchase)}
+                {isLoading ? "..." : formatCurrency(paidPurchase)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Cash, UPI, bank transfer and card payments
+                Cash, UPI, bank transfer and card purchase bills
               </p>
             </div>
 
             <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
               <p className="font-medium text-slate-600">
-                Pending Amount
+                Credit Purchases
               </p>
 
               <h2 className="mt-3 text-4xl font-bold text-orange-500">
-                {formatCurrency(pendingPurchase)}
+                {isLoading ? "..." : formatCurrency(creditPurchase)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Credit purchases pending for payment
+                Use Outstanding for payment-adjusted pending balance
               </p>
             </div>
           </div>
@@ -211,13 +368,16 @@ export default function PurchaseReportPage() {
                 </h2>
 
                 <p className="mt-1 text-slate-600">
-                  {filteredPurchases.length} bill
-                  {filteredPurchases.length !== 1 ? "s" : ""} found
+                  {isLoading
+                    ? "Loading cloud purchase bills..."
+                    : `${filteredPurchases.length} bill${
+                        filteredPurchases.length !== 1 ? "s" : ""
+                      } found`}
                 </p>
               </div>
 
               <div className="rounded-full bg-purple-50 px-4 py-2 text-sm font-semibold text-purple-700">
-                Total: {formatCurrency(totalPurchase)}
+                Total: {isLoading ? "..." : formatCurrency(totalPurchase)}
               </div>
             </div>
 
@@ -256,7 +416,16 @@ export default function PurchaseReportPage() {
                 </thead>
 
                 <tbody>
-                  {filteredPurchases.length === 0 ? (
+                  {isLoading ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-6 py-12 text-center text-slate-500"
+                      >
+                        Loading purchase bills from the cloud database...
+                      </td>
+                    </tr>
+                  ) : filteredPurchases.length === 0 ? (
                     <tr>
                       <td
                         colSpan={7}
@@ -272,59 +441,66 @@ export default function PurchaseReportPage() {
                       </td>
                     </tr>
                   ) : (
-                    filteredPurchases.map((purchase) => (
-                      <tr
-                        key={purchase.id}
-                        className="border-b border-slate-100 transition hover:bg-purple-50"
-                      >
-                        <td className="px-6 py-5">
-                          <p className="font-bold text-purple-600">
-                            {purchase.billNumber}
-                          </p>
-                        </td>
+                    filteredPurchases.map((purchase) => {
+                      const isCredit = isCreditPayment(
+                        purchase.paymentMode
+                      );
 
-                        <td className="px-6 py-5">
-                          <p className="font-bold text-slate-900">
-                            {purchase.supplierName}
-                          </p>
+                      return (
+                        <tr
+                          key={purchase.id}
+                          className="border-b border-slate-100 transition hover:bg-purple-50"
+                        >
+                          <td className="px-6 py-5">
+                            <Link
+                              href={`/purchase/bill/${purchase.id}`}
+                              className="font-bold text-purple-600 transition hover:text-purple-800 hover:underline"
+                            >
+                              {purchase.billNumber}
+                            </Link>
+                          </td>
 
-                          <p className="mt-1 text-sm text-slate-500">
-                            {purchase.supplierMobile || "No mobile added"}
-                          </p>
-                        </td>
+                          <td className="px-6 py-5">
+                            <p className="font-bold text-slate-900">
+                              {purchase.supplierName}
+                            </p>
 
-                        <td className="px-6 py-5 text-slate-700">
-                          {purchase.date}
-                        </td>
+                            <p className="mt-1 text-sm text-slate-500">
+                              {purchase.supplierMobile || "No mobile added"}
+                            </p>
+                          </td>
 
-                        <td className="px-6 py-5 text-slate-700">
-                          {purchase.items.length} Item
-                          {purchase.items.length !== 1 ? "s" : ""}
-                        </td>
+                          <td className="px-6 py-5 text-slate-700">
+                            {formatDate(purchase.date)}
+                          </td>
 
-                        <td className="px-6 py-5 text-slate-700">
-                          {purchase.paymentMode}
-                        </td>
+                          <td className="px-6 py-5 text-slate-700">
+                            {purchase.itemCount} Item
+                            {purchase.itemCount !== 1 ? "s" : ""}
+                          </td>
 
-                        <td className="px-6 py-5 font-bold text-slate-900">
-                          {formatCurrency(purchase.grandTotal)}
-                        </td>
+                          <td className="px-6 py-5 text-slate-700">
+                            {purchase.paymentMode}
+                          </td>
 
-                        <td className="px-6 py-5">
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-bold ${
-                              purchase.paymentMode === "Credit"
-                                ? "bg-orange-100 text-orange-700"
-                                : "bg-green-100 text-green-700"
-                            }`}
-                          >
-                            {purchase.paymentMode === "Credit"
-                              ? "Pending"
-                              : "Paid"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))
+                          <td className="px-6 py-5 font-bold text-slate-900">
+                            {formatCurrency(purchase.grandTotal)}
+                          </td>
+
+                          <td className="px-6 py-5">
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-bold ${
+                                isCredit
+                                  ? "bg-orange-100 text-orange-700"
+                                  : "bg-green-100 text-green-700"
+                              }`}
+                            >
+                              {isCredit ? "Credit" : "Paid"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

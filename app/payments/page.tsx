@@ -3,27 +3,38 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
+import { createClient } from "@/lib/supabase/client";
 
 type PaymentType = "Customer Receipt" | "Supplier Payment";
 
-type Sale = {
-  id: string;
-  invoiceNumber: string;
-  date: string;
-  paymentMode: string;
-  customerId: string;
-  customerName: string;
-  grandTotal: number;
+type SaleRow = {
+  customer_id: string | null;
+  payment_mode: string;
+  grand_total: number | string | null;
 };
 
-type Purchase = {
+type PurchaseRow = {
+  supplier_id: string | null;
+  payment_mode: string;
+  grand_total: number | string | null;
+};
+
+type PaymentRow = {
   id: string;
-  billNumber: string;
-  date: string;
-  paymentMode: string;
-  supplierId: string;
-  supplierName: string;
-  grandTotal: number;
+  payment_type: PaymentType;
+  party_id: string;
+  payment_date: string;
+  amount: number | string | null;
+  payment_mode: string;
+  reference_number: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+type LedgerRow = {
+  id: string;
+  name: string;
+  ledger_type: string;
 };
 
 type Payment = {
@@ -47,17 +58,12 @@ type PartyBalance = {
   outstanding: number;
 };
 
-const SALES_KEY = "smarterp_sales";
-const PURCHASES_KEY = "smarterp_purchases";
-const PAYMENTS_KEY = "smarterp_payments";
-
-const SALES_EVENT = "smarterp-sales-updated";
-const PURCHASE_EVENT = "smarterp-purchases-updated";
-const PAYMENTS_EVENT = "smarterp-payments-updated";
+type ProfileRow = {
+  active_company_id: string | null;
+};
 
 function toNumber(value: unknown) {
   const numberValue = Number(value);
-
   return Number.isFinite(numberValue) ? numberValue : 0;
 }
 
@@ -140,9 +146,13 @@ function getBalances(
 }
 
 export default function PaymentsPage() {
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [sales, setSales] = useState<SaleRow[]>([]);
+  const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [ledgers, setLedgers] = useState<LedgerRow[]>([]);
+  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
 
   const [form, setForm] = useState({
@@ -160,66 +170,205 @@ export default function PaymentsPage() {
 
     window.setTimeout(() => {
       setMessage("");
-    }, 3500);
+    }, 4000);
   }
 
-  function loadData() {
+  async function loadData() {
+    setIsLoading(true);
+
     try {
-      const savedSales = window.localStorage.getItem(SALES_KEY);
-      const savedPurchases = window.localStorage.getItem(PURCHASES_KEY);
-      const savedPayments = window.localStorage.getItem(PAYMENTS_KEY);
+      const supabase = createClient();
 
-      const parsedSales = savedSales ? JSON.parse(savedSales) : [];
-      const parsedPurchases = savedPurchases
-        ? JSON.parse(savedPurchases)
-        : [];
-      const parsedPayments = savedPayments ? JSON.parse(savedPayments) : [];
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      setSales(Array.isArray(parsedSales) ? parsedSales : []);
-      setPurchases(Array.isArray(parsedPurchases) ? parsedPurchases : []);
-      setPayments(Array.isArray(parsedPayments) ? parsedPayments : []);
-    } catch {
+      if (userError || !user) {
+        setSales([]);
+        setPurchases([]);
+        setPayments([]);
+        setLedgers([]);
+        setActiveCompanyId(null);
+        showMessage("Please sign in before recording payments.");
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      const companyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      setActiveCompanyId(companyId);
+
+      if (!companyId) {
+        setSales([]);
+        setPurchases([]);
+        setPayments([]);
+        setLedgers([]);
+        showMessage("Select an active company from the Companies page first.");
+        return;
+      }
+
+      const [
+        salesResponse,
+        purchasesResponse,
+        paymentsResponse,
+        ledgersResponse,
+      ] = await Promise.all([
+        supabase
+          .from("sales")
+          .select("customer_id, payment_mode, grand_total")
+          .eq("company_id", companyId),
+        supabase
+          .from("purchases")
+          .select("supplier_id, payment_mode, grand_total")
+          .eq("company_id", companyId),
+        supabase
+          .from("payments")
+          .select(
+            "id, payment_type, party_id, payment_date, amount, payment_mode, reference_number, notes, created_at"
+          )
+          .eq("company_id", companyId)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("ledgers")
+          .select("id, name, ledger_type")
+          .eq("company_id", companyId),
+      ]);
+
+      if (salesResponse.error) {
+        throw salesResponse.error;
+      }
+
+      if (purchasesResponse.error) {
+        throw purchasesResponse.error;
+      }
+
+      if (paymentsResponse.error) {
+        throw paymentsResponse.error;
+      }
+
+      if (ledgersResponse.error) {
+        throw ledgersResponse.error;
+      }
+
+      const nextLedgers = (ledgersResponse.data || []) as LedgerRow[];
+      const ledgerNameById = new Map(
+        nextLedgers.map((ledger) => [ledger.id, ledger.name])
+      );
+
+      setSales((salesResponse.data || []) as SaleRow[]);
+      setPurchases((purchasesResponse.data || []) as PurchaseRow[]);
+      setLedgers(nextLedgers);
+      setPayments(
+        ((paymentsResponse.data || []) as PaymentRow[]).map((payment) => ({
+          id: payment.id,
+          type: payment.payment_type,
+          partyId: payment.party_id,
+          partyName:
+            ledgerNameById.get(payment.party_id) || "Unknown Party",
+          date: payment.payment_date,
+          amount: toNumber(payment.amount),
+          paymentMode: payment.payment_mode || "Cash",
+          referenceNumber: payment.reference_number || "",
+          notes: payment.notes || "",
+          createdAt: payment.created_at,
+        }))
+      );
+    } catch (error) {
       setSales([]);
       setPurchases([]);
       setPayments([]);
+      setLedgers([]);
+
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : "Payment data could not be loaded from the cloud database."
+      );
+    } finally {
+      setIsLoading(false);
     }
   }
 
   useEffect(() => {
     loadData();
 
-    window.addEventListener(SALES_EVENT, loadData);
-    window.addEventListener(PURCHASE_EVENT, loadData);
-    window.addEventListener(PAYMENTS_EVENT, loadData);
-    window.addEventListener("storage", loadData);
+    window.addEventListener(
+      "vertexerp-sales-updated",
+      loadData
+    );
+    window.addEventListener(
+      "vertexerp-purchases-updated",
+      loadData
+    );
+    window.addEventListener(
+      "vertexerp-payments-updated",
+      loadData
+    );
+    window.addEventListener(
+      "vertexerp-active-company-updated",
+      loadData
+    );
 
     return () => {
-      window.removeEventListener(SALES_EVENT, loadData);
-      window.removeEventListener(PURCHASE_EVENT, loadData);
-      window.removeEventListener(PAYMENTS_EVENT, loadData);
-      window.removeEventListener("storage", loadData);
+      window.removeEventListener(
+        "vertexerp-sales-updated",
+        loadData
+      );
+      window.removeEventListener(
+        "vertexerp-purchases-updated",
+        loadData
+      );
+      window.removeEventListener(
+        "vertexerp-payments-updated",
+        loadData
+      );
+      window.removeEventListener(
+        "vertexerp-active-company-updated",
+        loadData
+      );
     };
   }, []);
 
+  const ledgerNameById = useMemo(() => {
+    return new Map(ledgers.map((ledger) => [ledger.id, ledger.name]));
+  }, [ledgers]);
+
   const customerCreditEntries = useMemo(() => {
     return sales
-      .filter((sale) => isCreditPayment(sale.paymentMode))
+      .filter((sale) => isCreditPayment(sale.payment_mode))
+      .filter((sale) => Boolean(sale.customer_id))
       .map((sale) => ({
-        partyId: sale.customerId || sale.customerName || sale.id,
-        partyName: sale.customerName || "Unknown Customer",
-        amount: toNumber(sale.grandTotal),
+        partyId: sale.customer_id as string,
+        partyName:
+          ledgerNameById.get(sale.customer_id as string) ||
+          "Unknown Customer",
+        amount: toNumber(sale.grand_total),
       }));
-  }, [sales]);
+  }, [sales, ledgerNameById]);
 
   const supplierCreditEntries = useMemo(() => {
     return purchases
-      .filter((purchase) => isCreditPayment(purchase.paymentMode))
+      .filter((purchase) => isCreditPayment(purchase.payment_mode))
+      .filter((purchase) => Boolean(purchase.supplier_id))
       .map((purchase) => ({
-        partyId: purchase.supplierId || purchase.supplierName || purchase.id,
-        partyName: purchase.supplierName || "Unknown Supplier",
-        amount: toNumber(purchase.grandTotal),
+        partyId: purchase.supplier_id as string,
+        partyName:
+          ledgerNameById.get(purchase.supplier_id as string) ||
+          "Unknown Supplier",
+        amount: toNumber(purchase.grand_total),
       }));
-  }, [purchases]);
+  }, [purchases, ledgerNameById]);
 
   const customerBalances = useMemo(() => {
     return getBalances(
@@ -268,13 +417,23 @@ export default function PaymentsPage() {
     });
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const paymentAmount = toNumber(form.amount);
 
+    if (!activeCompanyId) {
+      showMessage("Select an active company before recording a payment.");
+      return;
+    }
+
     if (!selectedParty) {
       showMessage("Please select a customer or supplier.");
+      return;
+    }
+
+    if (!form.date) {
+      showMessage("Please select a payment date.");
       return;
     }
 
@@ -292,42 +451,51 @@ export default function PaymentsPage() {
       return;
     }
 
-    const newPayment: Payment = {
-      id: crypto.randomUUID(),
-      type: form.type,
-      partyId: selectedParty.id,
-      partyName: selectedParty.name,
-      date: form.date,
-      amount: paymentAmount,
-      paymentMode: form.paymentMode,
-      referenceNumber: form.referenceNumber.trim(),
-      notes: form.notes.trim(),
-      createdAt: new Date().toISOString(),
-    };
+    setIsSaving(true);
 
     try {
-      const updatedPayments = [newPayment, ...payments];
+      const supabase = createClient();
 
-      window.localStorage.setItem(
-        PAYMENTS_KEY,
-        JSON.stringify(updatedPayments)
+      const { error } = await supabase.rpc(
+        "create_payment_with_validation",
+        {
+          p_company_id: activeCompanyId,
+          p_payment_type: form.type,
+          p_party_id: selectedParty.id,
+          p_payment_date: form.date,
+          p_amount: paymentAmount,
+          p_payment_mode: form.paymentMode,
+          p_reference_number: form.referenceNumber.trim(),
+          p_notes: form.notes.trim(),
+        }
       );
 
-      setPayments(updatedPayments);
-
-      window.dispatchEvent(new Event(PAYMENTS_EVENT));
+      if (error) {
+        throw error;
+      }
 
       resetForm();
+      await loadData();
+
+      window.dispatchEvent(new Event("vertexerp-payments-updated"));
 
       showMessage(
-        `${form.type} of ${formatCurrency(paymentAmount)} saved successfully.`
+        `${form.type} of ${formatCurrency(
+          paymentAmount
+        )} saved successfully.`
       );
-    } catch {
-      showMessage("Payment could not be saved. Please try again.");
+    } catch (error) {
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : "Payment could not be saved."
+      );
+    } finally {
+      setIsSaving(false);
     }
   }
 
-  function handleDeletePayment(payment: Payment) {
+  async function handleDeletePayment(payment: Payment) {
     const confirmed = window.confirm(
       `Delete this ${payment.type.toLowerCase()} of ${formatCurrency(
         payment.amount
@@ -339,26 +507,32 @@ export default function PaymentsPage() {
     }
 
     try {
-      const updatedPayments = payments.filter(
-        (item) => item.id !== payment.id
-      );
+      const supabase = createClient();
 
-      window.localStorage.setItem(
-        PAYMENTS_KEY,
-        JSON.stringify(updatedPayments)
-      );
+      const { error } = await supabase.rpc("delete_payment_entry", {
+        p_payment_id: payment.id,
+      });
 
-      setPayments(updatedPayments);
+      if (error) {
+        throw error;
+      }
 
-      window.dispatchEvent(new Event(PAYMENTS_EVENT));
+      await loadData();
+      window.dispatchEvent(new Event("vertexerp-payments-updated"));
 
       showMessage(
         `Payment of ${formatCurrency(payment.amount)} deleted successfully.`
       );
-    } catch {
-      showMessage("Payment could not be deleted. Please try again.");
+    } catch (error) {
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : "Payment could not be deleted."
+      );
     }
   }
+
+  const isFormDisabled = isLoading || !activeCompanyId || isSaving;
 
   return (
     <div className="flex min-h-screen bg-slate-100">
@@ -388,7 +562,7 @@ export default function PaymentsPage() {
                 className="mt-3 text-3xl font-bold"
                 style={{ color: "#2563eb" }}
               >
-                {formatCurrency(totalReceivable)}
+                {isLoading ? "..." : formatCurrency(totalReceivable)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -405,7 +579,7 @@ export default function PaymentsPage() {
                 className="mt-3 text-3xl font-bold"
                 style={{ color: "#7e22ce" }}
               >
-                {formatCurrency(totalPayable)}
+                {isLoading ? "..." : formatCurrency(totalPayable)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -434,212 +608,220 @@ export default function PaymentsPage() {
               </div>
             )}
 
-            <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-              <div>
-                <label className="mb-2 block font-semibold text-slate-800">
-                  Transaction Type *
-                </label>
-
-                <select
-                  value={form.type}
-                  onChange={(event) => {
-                    const nextType = event.target.value as PaymentType;
-
-                    resetForm(nextType);
-                  }}
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                >
-                  <option value="Customer Receipt">
-                    Customer Receipt
-                  </option>
-
-                  <option value="Supplier Payment">
-                    Supplier Payment
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block font-semibold text-slate-800">
-                  {form.type === "Customer Receipt"
-                    ? "Customer *"
-                    : "Supplier *"}
-                </label>
-
-                <select
-                  value={form.partyId}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      partyId: event.target.value,
-                      amount: "",
-                    })
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                >
-                  <option value="">
-                    Select{" "}
-                    {form.type === "Customer Receipt"
-                      ? "customer"
-                      : "supplier"}
-                  </option>
-
-                  {partyOptions.map((party) => (
-                    <option key={party.id} value={party.id}>
-                      {party.name} — {formatCurrency(party.outstanding)}
-                    </option>
-                  ))}
-                </select>
-
-                {partyOptions.length === 0 && (
-                  <p className="mt-2 text-sm font-medium text-orange-600">
-                    No pending outstanding balance found.
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="mb-2 block font-semibold text-slate-800">
-                  Payment Date *
-                </label>
-
-                <input
-                  type="date"
-                  value={form.date}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      date: event.target.value,
-                    })
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block font-semibold text-slate-800">
-                  Payment Amount *
-                </label>
-
-                <input
-                  type="number"
-                  min="0"
-                  max={selectedParty?.outstanding || undefined}
-                  value={form.amount}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      amount: event.target.value,
-                    })
-                  }
-                  placeholder="Enter amount"
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block font-semibold text-slate-800">
-                  Payment Mode
-                </label>
-
-                <select
-                  value={form.paymentMode}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      paymentMode: event.target.value,
-                    })
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                >
-                  <option>Cash</option>
-                  <option>UPI</option>
-                  <option>Bank Transfer</option>
-                  <option>Card</option>
-                  <option>Cheque</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block font-semibold text-slate-800">
-                  Reference Number
-                </label>
-
-                <input
-                  type="text"
-                  value={form.referenceNumber}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      referenceNumber: event.target.value,
-                    })
-                  }
-                  placeholder="UPI / Cheque / Bank reference"
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                />
-              </div>
-            </div>
-
-            {selectedParty && (
-              <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-                <p className="text-sm font-bold text-emerald-800">
-                  Available Outstanding Balance
-                </p>
-
-                <div className="mt-2 flex items-center justify-between gap-4">
-                  <p className="text-lg font-bold text-slate-900">
-                    {selectedParty.name}
-                  </p>
-
-                  <p
-                    className="text-2xl font-bold"
-                    style={{ color: "#059669" }}
-                  >
-                    {formatCurrency(selectedParty.outstanding)}
-                  </p>
-                </div>
+            {!isLoading && !activeCompanyId && (
+              <div className="mt-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-700">
+                Select an active company from the <strong>Companies</strong>{" "}
+                page before recording a payment.
               </div>
             )}
 
-            <div className="mt-6">
-              <label className="mb-2 block font-semibold text-slate-800">
-                Notes
-              </label>
+            <fieldset disabled={isFormDisabled}>
+              <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+                <div>
+                  <label className="mb-2 block font-semibold text-slate-800">
+                    Transaction Type *
+                  </label>
 
-              <textarea
-                rows={4}
-                value={form.notes}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    notes: event.target.value,
-                  })
-                }
-                placeholder="Optional note for this payment..."
-                className="w-full resize-none rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-              />
-            </div>
+                  <select
+                    value={form.type}
+                    onChange={(event) => {
+                      resetForm(event.target.value as PaymentType);
+                    }}
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  >
+                    <option value="Customer Receipt">
+                      Customer Receipt
+                    </option>
 
-            <div className="mt-8 flex flex-wrap gap-4">
-              <button
-                type="submit"
-                className="rounded-xl px-7 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98]"
-                style={{
-                  backgroundColor: "#059669",
-                  color: "#ffffff",
-                }}
-              >
-                Save Payment
-              </button>
+                    <option value="Supplier Payment">
+                      Supplier Payment
+                    </option>
+                  </select>
+                </div>
 
-              <button
-                type="button"
-                onClick={() => resetForm()}
-                className="rounded-xl border border-slate-300 bg-white px-7 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
-              >
-                Reset
-              </button>
-            </div>
+                <div>
+                  <label className="mb-2 block font-semibold text-slate-800">
+                    {form.type === "Customer Receipt"
+                      ? "Customer *"
+                      : "Supplier *"}
+                  </label>
+
+                  <select
+                    value={form.partyId}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        partyId: event.target.value,
+                        amount: "",
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  >
+                    <option value="">
+                      Select{" "}
+                      {form.type === "Customer Receipt"
+                        ? "customer"
+                        : "supplier"}
+                    </option>
+
+                    {partyOptions.map((party) => (
+                      <option key={party.id} value={party.id}>
+                        {party.name} — {formatCurrency(party.outstanding)}
+                      </option>
+                    ))}
+                  </select>
+
+                  {!isLoading && partyOptions.length === 0 && (
+                    <p className="mt-2 text-sm font-medium text-orange-600">
+                      No pending outstanding balance found.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="mb-2 block font-semibold text-slate-800">
+                    Payment Date *
+                  </label>
+
+                  <input
+                    type="date"
+                    value={form.date}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        date: event.target.value,
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block font-semibold text-slate-800">
+                    Payment Amount *
+                  </label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    max={selectedParty?.outstanding || undefined}
+                    value={form.amount}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        amount: event.target.value,
+                      })
+                    }
+                    placeholder="Enter amount"
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block font-semibold text-slate-800">
+                    Payment Mode
+                  </label>
+
+                  <select
+                    value={form.paymentMode}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        paymentMode: event.target.value,
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  >
+                    <option>Cash</option>
+                    <option>UPI</option>
+                    <option>Bank Transfer</option>
+                    <option>Card</option>
+                    <option>Cheque</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block font-semibold text-slate-800">
+                    Reference Number
+                  </label>
+
+                  <input
+                    type="text"
+                    value={form.referenceNumber}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        referenceNumber: event.target.value,
+                      })
+                    }
+                    placeholder="UPI / Cheque / Bank reference"
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  />
+                </div>
+              </div>
+
+              {selectedParty && (
+                <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                  <p className="text-sm font-bold text-emerald-800">
+                    Available Outstanding Balance
+                  </p>
+
+                  <div className="mt-2 flex items-center justify-between gap-4">
+                    <p className="text-lg font-bold text-slate-900">
+                      {selectedParty.name}
+                    </p>
+
+                    <p
+                      className="text-2xl font-bold"
+                      style={{ color: "#059669" }}
+                    >
+                      {formatCurrency(selectedParty.outstanding)}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-6">
+                <label className="mb-2 block font-semibold text-slate-800">
+                  Notes
+                </label>
+
+                <textarea
+                  rows={4}
+                  value={form.notes}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      notes: event.target.value,
+                    })
+                  }
+                  placeholder="Optional note for this payment..."
+                  className="w-full resize-none rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                />
+              </div>
+
+              <div className="mt-8 flex flex-wrap gap-4">
+                <button
+                  type="submit"
+                  className="rounded-xl px-7 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98]"
+                  style={{
+                    backgroundColor: "#059669",
+                    color: "#ffffff",
+                  }}
+                >
+                  {isSaving ? "Saving Payment..." : "Save Payment"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => resetForm()}
+                  className="rounded-xl border border-slate-300 bg-white px-7 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
+                >
+                  Reset
+                </button>
+              </div>
+            </fieldset>
           </form>
 
           <section className="mt-10 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
@@ -694,7 +876,16 @@ export default function PaymentsPage() {
                 </thead>
 
                 <tbody>
-                  {payments.length === 0 ? (
+                  {isLoading ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-6 py-14 text-center text-slate-500"
+                      >
+                        Loading payment history from the cloud database...
+                      </td>
+                    </tr>
+                  ) : payments.length === 0 ? (
                     <tr>
                       <td
                         colSpan={7}

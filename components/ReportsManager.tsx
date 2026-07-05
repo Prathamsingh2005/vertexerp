@@ -1,23 +1,43 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
-type Product = {
-  quantity: number;
-  purchasePrice: number;
-  lowStockAlert: number;
+type PaymentType = "Customer Receipt" | "Supplier Payment";
+
+type ProductRow = {
+  id: string;
+  quantity: number | string | null;
+  purchase_price: number | string | null;
+  low_stock_alert: number | string | null;
 };
 
-type Sale = {
-  date: string;
-  paymentMode: string;
-  grandTotal: number;
+type SaleRow = {
+  id: string;
+  invoice_date: string;
+  payment_mode: string;
+  customer_id: string | null;
+  grand_total: number | string | null;
 };
 
-type Purchase = {
-  date: string;
-  paymentMode: string;
-  grandTotal: number;
+type PurchaseRow = {
+  id: string;
+  purchase_date: string;
+  payment_mode: string;
+  supplier_id: string | null;
+  grand_total: number | string | null;
+};
+
+type PaymentRow = {
+  id: string;
+  payment_type: PaymentType;
+  party_id: string;
+  payment_date: string;
+  amount: number | string | null;
+};
+
+type ProfileRow = {
+  active_company_id: string | null;
 };
 
 type ReportData = {
@@ -38,8 +58,15 @@ const initialReportData: ReportData = {
   lowStockCount: 0,
 };
 
+function toNumber(value: unknown) {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
+
 function formatCurrency(amount: number) {
-  return `₹${amount.toLocaleString("en-IN")}`;
+  return `₹${toNumber(amount).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function isDateInRange(
@@ -62,10 +89,56 @@ function isDateInRange(
   return true;
 }
 
+function isCreditPayment(paymentMode: string) {
+  return String(paymentMode || "").trim().toLowerCase() === "credit";
+}
+
+function calculateOutstanding(
+  entries: {
+    partyId: string | null;
+    amount: number;
+  }[],
+  payments: PaymentRow[],
+  paymentType: PaymentType
+) {
+  const balanceByParty = new Map<string, number>();
+
+  entries.forEach((entry) => {
+    if (!entry.partyId) {
+      return;
+    }
+
+    balanceByParty.set(
+      entry.partyId,
+      (balanceByParty.get(entry.partyId) || 0) + entry.amount
+    );
+  });
+
+  payments
+    .filter((payment) => payment.payment_type === paymentType)
+    .forEach((payment) => {
+      if (!balanceByParty.has(payment.party_id)) {
+        return;
+      }
+
+      balanceByParty.set(
+        payment.party_id,
+        (balanceByParty.get(payment.party_id) || 0) -
+          toNumber(payment.amount)
+      );
+    });
+
+  return Array.from(balanceByParty.values()).reduce(
+    (total, balance) => total + Math.max(0, balance),
+    0
+  );
+}
+
 export default function ReportsManager() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [products, setProducts] = useState<ProductRow[]>([]);
+  const [sales, setSales] = useState<SaleRow[]>([]);
+  const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
 
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -74,66 +147,150 @@ export default function ReportsManager() {
   const [appliedToDate, setAppliedToDate] = useState("");
 
   const [message, setMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
-  function loadSavedData() {
+  function showMessage(nextMessage: string) {
+    setMessage(nextMessage);
+
+    window.setTimeout(() => {
+      setMessage("");
+    }, 3000);
+  }
+
+  async function loadCloudData() {
+    setIsLoading(true);
+
     try {
-      const savedProducts = window.localStorage.getItem("VertexERP_products");
-      const savedSales = window.localStorage.getItem("VertexERP_sales");
-      const savedPurchases =
-        window.localStorage.getItem("VertexERP_purchases");
+      const supabase = createClient();
 
-      const parsedProducts = savedProducts
-        ? JSON.parse(savedProducts)
-        : [];
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      const parsedSales = savedSales ? JSON.parse(savedSales) : [];
+      if (userError || !user) {
+        setProducts([]);
+        setSales([]);
+        setPurchases([]);
+        setPayments([]);
+        showMessage("Please sign in to view report data.");
+        return;
+      }
 
-      const parsedPurchases = savedPurchases
-        ? JSON.parse(savedPurchases)
-        : [];
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
 
-      setProducts(Array.isArray(parsedProducts) ? parsedProducts : []);
-      setSales(Array.isArray(parsedSales) ? parsedSales : []);
-      setPurchases(
-        Array.isArray(parsedPurchases) ? parsedPurchases : []
-      );
-    } catch {
+      if (profileError) {
+        throw profileError;
+      }
+
+      const activeCompanyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      if (!activeCompanyId) {
+        setProducts([]);
+        setSales([]);
+        setPurchases([]);
+        setPayments([]);
+        showMessage("Select an active company from the Companies page first.");
+        return;
+      }
+
+      const [
+        productsResponse,
+        salesResponse,
+        purchasesResponse,
+        paymentsResponse,
+      ] = await Promise.all([
+        supabase
+          .from("products")
+          .select("id, quantity, purchase_price, low_stock_alert")
+          .eq("company_id", activeCompanyId),
+        supabase
+          .from("sales")
+          .select(
+            "id, invoice_date, payment_mode, customer_id, grand_total"
+          )
+          .eq("company_id", activeCompanyId),
+        supabase
+          .from("purchases")
+          .select(
+            "id, purchase_date, payment_mode, supplier_id, grand_total"
+          )
+          .eq("company_id", activeCompanyId),
+        supabase
+          .from("payments")
+          .select(
+            "id, payment_type, party_id, payment_date, amount"
+          )
+          .eq("company_id", activeCompanyId),
+      ]);
+
+      if (productsResponse.error) {
+        throw productsResponse.error;
+      }
+
+      if (salesResponse.error) {
+        throw salesResponse.error;
+      }
+
+      if (purchasesResponse.error) {
+        throw purchasesResponse.error;
+      }
+
+      if (paymentsResponse.error) {
+        throw paymentsResponse.error;
+      }
+
+      setProducts((productsResponse.data || []) as ProductRow[]);
+      setSales((salesResponse.data || []) as SaleRow[]);
+      setPurchases((purchasesResponse.data || []) as PurchaseRow[]);
+      setPayments((paymentsResponse.data || []) as PaymentRow[]);
+    } catch (error) {
       setProducts([]);
       setSales([]);
       setPurchases([]);
+      setPayments([]);
+
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : "Report data could not be loaded from the cloud database."
+      );
+    } finally {
+      setIsLoading(false);
     }
   }
 
   useEffect(() => {
-    loadSavedData();
+    loadCloudData();
 
-    window.addEventListener(
-      "VertexERP-sales-updated",
-      loadSavedData
-    );
+    const refreshEvents = [
+      "vertexerp-products-updated",
+      "vertexerp-sales-updated",
+      "vertexerp-purchases-updated",
+      "vertexerp-payments-updated",
+      "vertexerp-active-company-updated",
+    ];
 
-    window.addEventListener(
-      "VertexERP-purchases-updated",
-      loadSavedData
-    );
+    refreshEvents.forEach((eventName) => {
+      window.addEventListener(eventName, loadCloudData);
+    });
 
     return () => {
-      window.removeEventListener(
-        "VertexERP-sales-updated",
-        loadSavedData
-      );
-
-      window.removeEventListener(
-        "VertexERP-purchases-updated",
-        loadSavedData
-      );
+      refreshEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, loadCloudData);
+      });
     };
   }, []);
 
-  const reportData = useMemo(() => {
+  const reportData = useMemo<ReportData>(() => {
     const filteredSales = sales.filter((sale) =>
       isDateInRange(
-        sale.date,
+        sale.invoice_date,
         appliedFromDate,
         appliedToDate
       )
@@ -141,50 +298,67 @@ export default function ReportsManager() {
 
     const filteredPurchases = purchases.filter((purchase) =>
       isDateInRange(
-        purchase.date,
+        purchase.purchase_date,
+        appliedFromDate,
+        appliedToDate
+      )
+    );
+
+    const filteredPayments = payments.filter((payment) =>
+      isDateInRange(
+        payment.payment_date,
         appliedFromDate,
         appliedToDate
       )
     );
 
     const totalSales = filteredSales.reduce(
-      (total, sale) => total + Number(sale.grandTotal || 0),
+      (total, sale) => total + toNumber(sale.grand_total),
       0
     );
 
     const totalPurchase = filteredPurchases.reduce(
-      (total, purchase) =>
-        total + Number(purchase.grandTotal || 0),
+      (total, purchase) => total + toNumber(purchase.grand_total),
       0
     );
 
-    const customerReceivable = filteredSales
-      .filter((sale) => sale.paymentMode === "Credit")
-      .reduce(
-        (total, sale) => total + Number(sale.grandTotal || 0),
-        0
-      );
+    const customerCreditSales = filteredSales
+      .filter((sale) => isCreditPayment(sale.payment_mode))
+      .map((sale) => ({
+        partyId: sale.customer_id,
+        amount: toNumber(sale.grand_total),
+      }));
 
-    const supplierPayable = filteredPurchases
-      .filter((purchase) => purchase.paymentMode === "Credit")
-      .reduce(
-        (total, purchase) =>
-          total + Number(purchase.grandTotal || 0),
-        0
-      );
+    const supplierCreditPurchases = filteredPurchases
+      .filter((purchase) => isCreditPayment(purchase.payment_mode))
+      .map((purchase) => ({
+        partyId: purchase.supplier_id,
+        amount: toNumber(purchase.grand_total),
+      }));
+
+    const customerReceivable = calculateOutstanding(
+      customerCreditSales,
+      filteredPayments,
+      "Customer Receipt"
+    );
+
+    const supplierPayable = calculateOutstanding(
+      supplierCreditPurchases,
+      filteredPayments,
+      "Supplier Payment"
+    );
 
     const stockValue = products.reduce(
       (total, product) =>
         total +
-        Number(product.quantity || 0) *
-          Number(product.purchasePrice || 0),
+        toNumber(product.quantity) * toNumber(product.purchase_price),
       0
     );
 
     const lowStockCount = products.filter(
       (product) =>
-        Number(product.quantity || 0) <=
-        Number(product.lowStockAlert || 0)
+        toNumber(product.quantity) <=
+        toNumber(product.low_stock_alert)
     ).length;
 
     return {
@@ -199,23 +373,20 @@ export default function ReportsManager() {
     products,
     sales,
     purchases,
+    payments,
     appliedFromDate,
     appliedToDate,
   ]);
 
   function handleGenerateReport() {
     if (fromDate && toDate && fromDate > toDate) {
-      setMessage("From Date cannot be later than To Date.");
+      showMessage("From Date cannot be later than To Date.");
       return;
     }
 
     setAppliedFromDate(fromDate);
     setAppliedToDate(toDate);
-    setMessage("Report generated successfully.");
-
-    window.setTimeout(() => {
-      setMessage("");
-    }, 2500);
+    showMessage("Cloud report generated successfully.");
   }
 
   function resetFilter() {
@@ -223,11 +394,7 @@ export default function ReportsManager() {
     setToDate("");
     setAppliedFromDate("");
     setAppliedToDate("");
-    setMessage("Filters cleared. Showing all saved data.");
-
-    window.setTimeout(() => {
-      setMessage("");
-    }, 2500);
+    showMessage("Filters cleared. Showing all cloud data.");
   }
 
   function getPeriodText() {
@@ -243,8 +410,10 @@ export default function ReportsManager() {
       return `Until ${appliedToDate}`;
     }
 
-    return "All saved data";
+    return "All cloud data";
   }
+
+  const dataStatus = isLoading ? "Loading..." : getPeriodText();
 
   return (
     <>
@@ -253,7 +422,7 @@ export default function ReportsManager() {
           <p className="font-medium text-slate-600">Sales Revenue</p>
 
           <h2 className="mt-3 text-4xl font-bold text-blue-600">
-            {formatCurrency(reportData.totalSales)}
+            {isLoading ? "..." : formatCurrency(reportData.totalSales)}
           </h2>
 
           <p className="mt-2 text-sm text-slate-500">
@@ -265,7 +434,7 @@ export default function ReportsManager() {
           <p className="font-medium text-slate-600">Purchase Value</p>
 
           <h2 className="mt-3 text-4xl font-bold text-purple-600">
-            {formatCurrency(reportData.totalPurchase)}
+            {isLoading ? "..." : formatCurrency(reportData.totalPurchase)}
           </h2>
 
           <p className="mt-2 text-sm text-slate-500">
@@ -279,11 +448,13 @@ export default function ReportsManager() {
           </p>
 
           <h2 className="mt-3 text-4xl font-bold text-orange-500">
-            {formatCurrency(reportData.customerReceivable)}
+            {isLoading
+              ? "..."
+              : formatCurrency(reportData.customerReceivable)}
           </h2>
 
           <p className="mt-2 text-sm text-slate-500">
-            Credit invoice amount pending
+            Credit sales minus receipts in selected period
           </p>
         </div>
 
@@ -291,12 +462,15 @@ export default function ReportsManager() {
           <p className="font-medium text-slate-600">Stock Value</p>
 
           <h2 className="mt-3 text-4xl font-bold text-green-600">
-            {formatCurrency(reportData.stockValue)}
+            {isLoading ? "..." : formatCurrency(reportData.stockValue)}
           </h2>
 
           <p className="mt-2 text-sm text-slate-500">
-            {reportData.lowStockCount} low-stock product
-            {reportData.lowStockCount !== 1 ? "s" : ""}
+            {isLoading
+              ? "Loading inventory..."
+              : `${reportData.lowStockCount} low-stock product${
+                  reportData.lowStockCount !== 1 ? "s" : ""
+                }`}
           </p>
         </div>
       </div>
@@ -308,11 +482,11 @@ export default function ReportsManager() {
           </p>
 
           <p className="mt-2 text-3xl font-bold text-orange-600">
-            {formatCurrency(reportData.supplierPayable)}
+            {isLoading ? "..." : formatCurrency(reportData.supplierPayable)}
           </p>
 
           <p className="mt-2 text-sm text-orange-700">
-            Credit purchases pending for payment
+            Credit purchases minus payments in selected period
           </p>
         </div>
 
@@ -322,7 +496,7 @@ export default function ReportsManager() {
           </p>
 
           <p className="mt-2 text-3xl font-bold text-blue-600">
-            {reportData.lowStockCount}
+            {isLoading ? "..." : reportData.lowStockCount}
           </p>
 
           <p className="mt-2 text-sm text-blue-700">
@@ -339,12 +513,12 @@ export default function ReportsManager() {
             </h2>
 
             <p className="mt-1 text-slate-600">
-              Select a date range to generate a filtered report.
+              Select a date range to generate a filtered cloud report.
             </p>
           </div>
 
           <span className="w-fit rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
-            {getPeriodText()}
+            {dataStatus}
           </span>
         </div>
 
@@ -377,14 +551,15 @@ export default function ReportsManager() {
               type="date"
               value={toDate}
               onChange={(event) => setToDate(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
             />
           </div>
 
           <button
             type="button"
             onClick={handleGenerateReport}
-            className="rounded-xl bg-blue-600 px-7 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl"
+            disabled={isLoading}
+            className="rounded-xl bg-blue-600 px-7 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
           >
             Generate Report
           </button>
@@ -392,7 +567,8 @@ export default function ReportsManager() {
           <button
             type="button"
             onClick={resetFilter}
-            className="rounded-xl border border-slate-300 bg-white px-7 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
+            disabled={isLoading}
+            className="rounded-xl border border-slate-300 bg-white px-7 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Reset Filter
           </button>

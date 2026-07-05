@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -15,59 +15,68 @@ import {
   TriangleAlert,
   WalletCards,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
-type Product = {
+type ProductRow = {
   id: string;
   name: string;
-  quantity: number;
-  purchasePrice: number;
-  lowStockAlert: number;
+  quantity: number | string | null;
+  purchase_price: number | string | null;
+  low_stock_alert: number | string | null;
 };
 
-type SaleItem = {
-  productId: string;
-  quantity: number;
-  baseAmount?: number;
-  gstAmount?: number;
-  discount?: number;
-  amount?: number;
-};
-
-type Sale = {
+type LedgerRow = {
   id: string;
-  invoiceNumber: string;
-  date: string;
-  paymentMode: string;
-  customerName: string;
-  grandTotal: number;
-  subtotal?: number;
-  discountTotal?: number;
-  createdAt?: string;
-  items?: SaleItem[];
+  name: string;
 };
 
-type Purchase = {
-  id: string;
-  billNumber: string;
-  date: string;
-  paymentMode: string;
-  supplierName: string;
-  grandTotal: number;
-  createdAt?: string;
+type SaleItemRow = {
+  product_id: string | null;
+  quantity: number | string | null;
 };
 
-type Expense = {
+type SaleRow = {
   id: string;
-  date: string;
+  invoice_number: string;
+  invoice_date: string;
+  payment_mode: string;
+  customer_id: string | null;
+  subtotal: number | string | null;
+  discount_total: number | string | null;
+  grand_total: number | string | null;
+  created_at: string;
+  customer: LedgerRow | LedgerRow[] | null;
+  sale_items: SaleItemRow[] | null;
+};
+
+type PurchaseRow = {
+  id: string;
+  bill_number: string;
+  purchase_date: string;
+  payment_mode: string;
+  supplier_id: string | null;
+  grand_total: number | string | null;
+  created_at: string;
+  supplier: LedgerRow | LedgerRow[] | null;
+};
+
+type ExpenseRow = {
+  id: string;
+  expense_date: string;
   category: string;
-  amount: number;
-  paymentMode: string;
-  description: string;
-  createdAt?: string;
+  amount: number | string | null;
+  payment_mode: string;
+  description: string | null;
+  created_at: string;
+};
+
+type ProfileRow = {
+  active_company_id: string | null;
 };
 
 type Transaction = {
   id: string;
+  targetId: string;
   title: string;
   subtitle: string;
   amount: number;
@@ -87,15 +96,6 @@ type DashboardData = {
   recentTransactions: Transaction[];
 };
 
-const PRODUCTS_KEY = "VertexERP_products";
-const SALES_KEY = "VertexERP_sales";
-const PURCHASES_KEY = "VertexERP_purchases";
-const EXPENSES_KEY = "VertexERP_expenses";
-
-const SALES_EVENT = "VertexERP-sales-updated";
-const PURCHASES_EVENT = "VertexERP-purchases-updated";
-const EXPENSES_EVENT = "VertexERP-expenses-updated";
-
 const initialDashboardData: DashboardData = {
   totalProducts: 0,
   monthlyRevenue: 0,
@@ -107,6 +107,11 @@ const initialDashboardData: DashboardData = {
   lowStockCount: 0,
   recentTransactions: [],
 };
+
+function toNumber(value: unknown) {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
 
 function toValidDate(dateValue: string) {
   if (!dateValue) {
@@ -152,162 +157,260 @@ function formatDate(dateValue: string) {
 }
 
 function formatCurrency(amount: number) {
-  return `₹${Number(amount || 0).toLocaleString("en-IN", {
+  return `₹${toNumber(amount).toLocaleString("en-IN", {
     maximumFractionDigits: 2,
   })}`;
 }
 
-function getNetSales(sale: Sale) {
-  if (typeof sale.subtotal === "number") {
-    return Math.max(
-      0,
-      Number(sale.subtotal || 0) - Number(sale.discountTotal || 0)
-    );
-  }
-
-  if (!Array.isArray(sale.items) || sale.items.length === 0) {
-    return Number(sale.grandTotal || 0);
-  }
-
-  return sale.items.reduce((total, item) => {
-    const baseAmount =
-      typeof item.baseAmount === "number"
-        ? item.baseAmount
-        : Number(item.amount || 0) - Number(item.gstAmount || 0);
-
-    return total + Math.max(0, baseAmount - Number(item.discount || 0));
-  }, 0);
+function getJoinedLedger(
+  ledger: LedgerRow | LedgerRow[] | null
+): LedgerRow | null {
+  return Array.isArray(ledger) ? ledger[0] || null : ledger;
 }
 
 export default function DashboardOverview() {
   const [dashboardData, setDashboardData] =
     useState<DashboardData>(initialDashboardData);
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState("");
 
-  function loadDashboardData() {
+  function showMessage(nextMessage: string) {
+    setMessage(nextMessage);
+
+    window.setTimeout(() => {
+      setMessage("");
+    }, 4500);
+  }
+
+  async function loadDashboardData() {
+    setIsLoading(true);
+
     try {
-      const savedProducts = window.localStorage.getItem(PRODUCTS_KEY);
-      const savedSales = window.localStorage.getItem(SALES_KEY);
-      const savedPurchases = window.localStorage.getItem(PURCHASES_KEY);
-      const savedExpenses = window.localStorage.getItem(EXPENSES_KEY);
+      const supabase = createClient();
 
-      const parsedProducts = savedProducts ? JSON.parse(savedProducts) : [];
-      const parsedSales = savedSales ? JSON.parse(savedSales) : [];
-      const parsedPurchases = savedPurchases
-        ? JSON.parse(savedPurchases)
-        : [];
-      const parsedExpenses = savedExpenses ? JSON.parse(savedExpenses) : [];
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      const products: Product[] = Array.isArray(parsedProducts)
-        ? parsedProducts
-        : [];
+      if (userError || !user) {
+        setDashboardData(initialDashboardData);
+        showMessage("Please sign in to view dashboard data.");
+        return;
+      }
 
-      const sales: Sale[] = Array.isArray(parsedSales) ? parsedSales : [];
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
 
-      const purchases: Purchase[] = Array.isArray(parsedPurchases)
-        ? parsedPurchases
-        : [];
+      if (profileError) {
+        throw profileError;
+      }
 
-      const expenses: Expense[] = Array.isArray(parsedExpenses)
-        ? parsedExpenses
-        : [];
+      const activeCompanyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
 
-      const productCostMap = new Map<string, number>();
+      if (!activeCompanyId) {
+        setDashboardData(initialDashboardData);
+        showMessage("Select an active company from the Companies page first.");
+        return;
+      }
+
+      const [
+        productsResponse,
+        salesResponse,
+        purchasesResponse,
+        expensesResponse,
+      ] = await Promise.all([
+        supabase
+          .from("products")
+          .select("id, name, quantity, purchase_price, low_stock_alert")
+          .eq("company_id", activeCompanyId),
+        supabase
+          .from("sales")
+          .select(
+            `
+              id,
+              invoice_number,
+              invoice_date,
+              payment_mode,
+              customer_id,
+              subtotal,
+              discount_total,
+              grand_total,
+              created_at,
+              customer:ledgers!sales_customer_id_fkey(
+                id,
+                name
+              ),
+              sale_items(
+                product_id,
+                quantity
+              )
+            `
+          )
+          .eq("company_id", activeCompanyId),
+        supabase
+          .from("purchases")
+          .select(
+            `
+              id,
+              bill_number,
+              purchase_date,
+              payment_mode,
+              supplier_id,
+              grand_total,
+              created_at,
+              supplier:ledgers!purchases_supplier_id_fkey(
+                id,
+                name
+              )
+            `
+          )
+          .eq("company_id", activeCompanyId),
+        supabase
+          .from("expenses")
+          .select(
+            "id, expense_date, category, amount, payment_mode, description, created_at"
+          )
+          .eq("company_id", activeCompanyId),
+      ]);
+
+      if (productsResponse.error) {
+        throw productsResponse.error;
+      }
+
+      if (salesResponse.error) {
+        throw salesResponse.error;
+      }
+
+      if (purchasesResponse.error) {
+        throw purchasesResponse.error;
+      }
+
+      if (expensesResponse.error) {
+        throw expensesResponse.error;
+      }
+
+      const products = (productsResponse.data || []) as ProductRow[];
+      const sales = (salesResponse.data || []) as unknown as SaleRow[];
+      const purchases =
+        (purchasesResponse.data || []) as unknown as PurchaseRow[];
+      const expenses = (expensesResponse.data || []) as ExpenseRow[];
+
+      const productCostById = new Map<string, number>();
 
       products.forEach((product) => {
-        productCostMap.set(
-          product.id,
-          Number(product.purchasePrice || 0)
-        );
+        productCostById.set(product.id, toNumber(product.purchase_price));
       });
 
       const currentMonthSales = sales.filter((sale) =>
-        isCurrentMonth(sale.date)
+        isCurrentMonth(sale.invoice_date)
       );
 
       const currentMonthPurchases = purchases.filter((purchase) =>
-        isCurrentMonth(purchase.date)
+        isCurrentMonth(purchase.purchase_date)
       );
 
       const currentMonthExpenses = expenses.filter((expense) =>
-        isCurrentMonth(expense.date)
+        isCurrentMonth(expense.expense_date)
       );
 
       const monthlyRevenue = currentMonthSales.reduce(
-        (total, sale) => total + getNetSales(sale),
+        (total, sale) =>
+          total +
+          Math.max(
+            0,
+            toNumber(sale.subtotal) - toNumber(sale.discount_total)
+          ),
         0
       );
 
       const monthlyEstimatedCost = currentMonthSales.reduce(
-        (total, sale) => {
-          const saleCost = (sale.items || []).reduce(
-            (itemTotal, item) => {
-              const purchasePrice =
-                productCostMap.get(item.productId) || 0;
+        (salesTotal, sale) => {
+          const invoiceProductCost = (sale.sale_items || []).reduce(
+            (itemsTotal, item) => {
+              const unitPurchasePrice =
+                productCostById.get(item.product_id || "") || 0;
 
               return (
-                itemTotal +
-                Number(item.quantity || 0) * Number(purchasePrice || 0)
+                itemsTotal +
+                toNumber(item.quantity) * unitPurchasePrice
               );
             },
             0
           );
 
-          return total + saleCost;
+          return salesTotal + invoiceProductCost;
         },
         0
       );
 
       const monthlyPurchase = currentMonthPurchases.reduce(
-        (total, purchase) => total + Number(purchase.grandTotal || 0),
+        (total, purchase) => total + toNumber(purchase.grand_total),
         0
       );
 
       const monthlyExpenses = currentMonthExpenses.reduce(
-        (total, expense) => total + Number(expense.amount || 0),
+        (total, expense) => total + toNumber(expense.amount),
         0
       );
 
       const stockValue = products.reduce(
         (total, product) =>
           total +
-          Number(product.quantity || 0) *
-            Number(product.purchasePrice || 0),
+          toNumber(product.quantity) * toNumber(product.purchase_price),
         0
       );
 
       const lowStockCount = products.filter(
         (product) =>
-          Number(product.quantity || 0) <=
-          Number(product.lowStockAlert || 0)
+          toNumber(product.quantity) <=
+          toNumber(product.low_stock_alert)
       ).length;
 
-      const saleTransactions: Transaction[] = sales.map((sale) => ({
-        id: `sale-${sale.id}`,
-        title: sale.invoiceNumber || "Sales Invoice",
-        subtitle: `Sale to ${sale.customerName || "Customer"}`,
-        amount: Number(sale.grandTotal || 0),
-        type: "sale",
-        date: sale.createdAt || sale.date,
-      }));
+      const saleTransactions: Transaction[] = sales.map((sale) => {
+        const customer = getJoinedLedger(sale.customer);
+
+        return {
+          id: `sale-${sale.id}`,
+          targetId: sale.id,
+          title: sale.invoice_number || "Sales Invoice",
+          subtitle: `Sale to ${customer?.name || "Customer"}`,
+          amount: toNumber(sale.grand_total),
+          type: "sale",
+          date: sale.created_at || sale.invoice_date,
+        };
+      });
 
       const purchaseTransactions: Transaction[] = purchases.map(
-        (purchase) => ({
-          id: `purchase-${purchase.id}`,
-          title: purchase.billNumber || "Purchase Bill",
-          subtitle: `Purchase from ${purchase.supplierName || "Supplier"}`,
-          amount: Number(purchase.grandTotal || 0),
-          type: "purchase",
-          date: purchase.createdAt || purchase.date,
-        })
+        (purchase) => {
+          const supplier = getJoinedLedger(purchase.supplier);
+
+          return {
+            id: `purchase-${purchase.id}`,
+            targetId: purchase.id,
+            title: purchase.bill_number || "Purchase Bill",
+            subtitle: `Purchase from ${supplier?.name || "Supplier"}`,
+            amount: toNumber(purchase.grand_total),
+            type: "purchase",
+            date: purchase.created_at || purchase.purchase_date,
+          };
+        }
       );
 
       const expenseTransactions: Transaction[] = expenses.map((expense) => ({
         id: `expense-${expense.id}`,
+        targetId: expense.id,
         title: expense.category || "Business Expense",
-        subtitle: expense.description || `Paid by ${expense.paymentMode}`,
-        amount: Number(expense.amount || 0),
+        subtitle:
+          expense.description ||
+          `Paid by ${expense.payment_mode || "Cash"}`,
+        amount: toNumber(expense.amount),
         type: "expense",
-        date: expense.createdAt || expense.date,
+        date: expense.created_at || expense.expense_date,
       }));
 
       const recentTransactions = [
@@ -315,9 +418,9 @@ export default function DashboardOverview() {
         ...purchaseTransactions,
         ...expenseTransactions,
       ]
-        .sort((a, b) => {
-          const firstDate = toValidDate(a.date)?.getTime() || 0;
-          const secondDate = toValidDate(b.date)?.getTime() || 0;
+        .sort((first, second) => {
+          const firstDate = toValidDate(first.date)?.getTime() || 0;
+          const secondDate = toValidDate(second.date)?.getTime() || 0;
 
           return secondDate - firstDate;
         })
@@ -335,37 +438,38 @@ export default function DashboardOverview() {
         lowStockCount,
         recentTransactions,
       });
-    } catch {
+    } catch (error) {
       setDashboardData(initialDashboardData);
+
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : "Dashboard data could not be loaded from the cloud database."
+      );
+    } finally {
+      setIsLoading(false);
     }
   }
 
   useEffect(() => {
-    function handleStorageChange(event: StorageEvent) {
-      const relevantKeys = [
-        PRODUCTS_KEY,
-        SALES_KEY,
-        PURCHASES_KEY,
-        EXPENSES_KEY,
-      ];
-
-      if (event.key && relevantKeys.includes(event.key)) {
-        loadDashboardData();
-      }
-    }
-
     loadDashboardData();
 
-    window.addEventListener(SALES_EVENT, loadDashboardData);
-    window.addEventListener(PURCHASES_EVENT, loadDashboardData);
-    window.addEventListener(EXPENSES_EVENT, loadDashboardData);
-    window.addEventListener("storage", handleStorageChange);
+    const refreshEvents = [
+      "vertexerp-products-updated",
+      "vertexerp-sales-updated",
+      "vertexerp-purchases-updated",
+      "vertexerp-expenses-updated",
+      "vertexerp-active-company-updated",
+    ];
+
+    refreshEvents.forEach((eventName) => {
+      window.addEventListener(eventName, loadDashboardData);
+    });
 
     return () => {
-      window.removeEventListener(SALES_EVENT, loadDashboardData);
-      window.removeEventListener(PURCHASES_EVENT, loadDashboardData);
-      window.removeEventListener(EXPENSES_EVENT, loadDashboardData);
-      window.removeEventListener("storage", handleStorageChange);
+      refreshEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, loadDashboardData);
+      });
     };
   }, []);
 
@@ -376,8 +480,16 @@ export default function DashboardOverview() {
 
   const netProfitIsPositive = dashboardData.monthlyNetProfit >= 0;
 
+  const loadingValue = (value: string) => (isLoading ? "..." : value);
+
   return (
     <>
+      {message && (
+        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+          {message}
+        </div>
+      )}
+
       <section className="relative overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-white via-blue-50 to-indigo-100 p-6 shadow-xl shadow-blue-950/5 md:p-8">
         <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-blue-300/20 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 left-1/3 h-64 w-64 rounded-full bg-indigo-300/20 blur-3xl" />
@@ -451,7 +563,7 @@ export default function DashboardOverview() {
               </p>
 
               <p className="mt-1 text-2xl font-bold text-blue-700">
-                {formatCurrency(dashboardData.monthlyRevenue)}
+                {loadingValue(formatCurrency(dashboardData.monthlyRevenue))}
               </p>
             </div>
 
@@ -461,7 +573,7 @@ export default function DashboardOverview() {
               </p>
 
               <p className="mt-1 text-2xl font-bold text-orange-600">
-                {formatCurrency(dashboardData.monthlyExpenses)}
+                {loadingValue(formatCurrency(dashboardData.monthlyExpenses))}
               </p>
             </div>
 
@@ -471,13 +583,15 @@ export default function DashboardOverview() {
               </p>
 
               <p
-  className="mt-1 text-2xl font-bold"
-  style={{
-    color: netProfitIsPositive ? "#059669" : "#dc2626",
-  }}
->
-  {formatCurrency(dashboardData.monthlyNetProfit)}
-</p>
+                className="mt-1 text-2xl font-bold"
+                style={{
+                  color: netProfitIsPositive ? "#059669" : "#dc2626",
+                }}
+              >
+                {loadingValue(
+                  formatCurrency(dashboardData.monthlyNetProfit)
+                )}
+              </p>
             </div>
           </div>
         </div>
@@ -500,7 +614,7 @@ export default function DashboardOverview() {
           </p>
 
           <p className="mt-2 text-3xl font-bold text-slate-900">
-            {formatCurrency(dashboardData.monthlyRevenue)}
+            {loadingValue(formatCurrency(dashboardData.monthlyRevenue))}
           </p>
 
           <p className="mt-3 text-sm text-slate-500">
@@ -524,7 +638,7 @@ export default function DashboardOverview() {
           </p>
 
           <p className="mt-2 text-3xl font-bold text-slate-900">
-            {formatCurrency(dashboardData.monthlyExpenses)}
+            {loadingValue(formatCurrency(dashboardData.monthlyExpenses))}
           </p>
 
           <p className="mt-3 text-sm text-slate-500">
@@ -535,12 +649,12 @@ export default function DashboardOverview() {
         <div className="group rounded-3xl border border-emerald-100 bg-white p-6 shadow-lg shadow-emerald-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl">
           <div className="flex items-start justify-between">
             <div
-  className="rounded-2xl p-3"
-  style={{
-    backgroundColor: netProfitIsPositive ? "#ecfdf5" : "#fef2f2",
-    color: netProfitIsPositive ? "#059669" : "#dc2626",
-  }}
->
+              className="rounded-2xl p-3"
+              style={{
+                backgroundColor: netProfitIsPositive ? "#ecfdf5" : "#fef2f2",
+                color: netProfitIsPositive ? "#059669" : "#dc2626",
+              }}
+            >
               {netProfitIsPositive ? (
                 <ArrowUpRight className="h-6 w-6" />
               ) : (
@@ -549,14 +663,14 @@ export default function DashboardOverview() {
             </div>
 
             <span
-  className="rounded-full px-3 py-1 text-xs font-bold"
-  style={{
-    backgroundColor: netProfitIsPositive ? "#ecfdf5" : "#fef2f2",
-    color: netProfitIsPositive ? "#047857" : "#b91c1c",
-  }}
->
-  Estimated
-</span>
+              className="rounded-full px-3 py-1 text-xs font-bold"
+              style={{
+                backgroundColor: netProfitIsPositive ? "#ecfdf5" : "#fef2f2",
+                color: netProfitIsPositive ? "#047857" : "#b91c1c",
+              }}
+            >
+              Estimated
+            </span>
           </div>
 
           <p className="mt-6 text-sm font-semibold uppercase tracking-wider text-slate-500">
@@ -564,13 +678,13 @@ export default function DashboardOverview() {
           </p>
 
           <p
-  className="mt-2 text-3xl font-bold"
-  style={{
-    color: netProfitIsPositive ? "#059669" : "#dc2626",
-  }}
->
-  {formatCurrency(dashboardData.monthlyNetProfit)}
-</p>
+            className="mt-2 text-3xl font-bold"
+            style={{
+              color: netProfitIsPositive ? "#059669" : "#dc2626",
+            }}
+          >
+            {loadingValue(formatCurrency(dashboardData.monthlyNetProfit))}
+          </p>
 
           <p className="mt-3 text-sm text-slate-500">
             Revenue minus product cost and operating expenses.
@@ -593,7 +707,7 @@ export default function DashboardOverview() {
           </p>
 
           <p className="mt-2 text-3xl font-bold text-slate-900">
-            {formatCurrency(dashboardData.monthlyPurchase)}
+            {loadingValue(formatCurrency(dashboardData.monthlyPurchase))}
           </p>
 
           <p className="mt-3 text-sm text-slate-500">
@@ -603,25 +717,25 @@ export default function DashboardOverview() {
 
         <div className="group rounded-3xl border border-indigo-100 bg-white p-6 shadow-lg shadow-indigo-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl">
           <div className="flex items-start justify-between">
-           <div
-  className="rounded-2xl p-3"
-  style={{
-    backgroundColor: "#eef2ff",
-    color: "#4f46e5",
-  }}
->
-  <Package className="h-6 w-6" />
-</div>
+            <div
+              className="rounded-2xl p-3"
+              style={{
+                backgroundColor: "#eef2ff",
+                color: "#4f46e5",
+              }}
+            >
+              <Package className="h-6 w-6" />
+            </div>
 
             <span
-  className="rounded-full px-3 py-1 text-xs font-bold"
-  style={{
-    backgroundColor: "#eef2ff",
-    color: "#4338ca",
-  }}
->
-  Inventory
-</span>
+              className="rounded-full px-3 py-1 text-xs font-bold"
+              style={{
+                backgroundColor: "#eef2ff",
+                color: "#4338ca",
+              }}
+            >
+              Inventory
+            </span>
           </div>
 
           <p className="mt-6 text-sm font-semibold uppercase tracking-wider text-slate-500">
@@ -629,7 +743,7 @@ export default function DashboardOverview() {
           </p>
 
           <p className="mt-2 text-3xl font-bold text-slate-900">
-            {dashboardData.totalProducts}
+            {isLoading ? "..." : dashboardData.totalProducts}
           </p>
 
           <p className="mt-3 text-sm text-slate-500">
@@ -643,17 +757,17 @@ export default function DashboardOverview() {
               <TriangleAlert className="h-6 w-6" />
             </div>
 
-           <span
-  className="rounded-full px-3 py-1 text-xs font-bold"
-  style={{
-    backgroundColor:
-      dashboardData.lowStockCount > 0 ? "#fef2f2" : "#ecfdf5",
-    color:
-      dashboardData.lowStockCount > 0 ? "#b91c1c" : "#047857",
-  }}
->
-  {dashboardData.lowStockCount > 0 ? "Action Needed" : "Healthy"}
-</span>
+            <span
+              className="rounded-full px-3 py-1 text-xs font-bold"
+              style={{
+                backgroundColor:
+                  dashboardData.lowStockCount > 0 ? "#fef2f2" : "#ecfdf5",
+                color:
+                  dashboardData.lowStockCount > 0 ? "#b91c1c" : "#047857",
+              }}
+            >
+              {dashboardData.lowStockCount > 0 ? "Action Needed" : "Healthy"}
+            </span>
           </div>
 
           <p className="mt-6 text-sm font-semibold uppercase tracking-wider text-slate-500">
@@ -661,7 +775,7 @@ export default function DashboardOverview() {
           </p>
 
           <p className="mt-2 text-3xl font-bold text-slate-900">
-            {dashboardData.lowStockCount}
+            {isLoading ? "..." : dashboardData.lowStockCount}
           </p>
 
           <p className="mt-3 text-sm text-slate-500">
@@ -688,12 +802,18 @@ export default function DashboardOverview() {
             </div>
 
             <span className="w-fit rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
-              {dashboardData.recentTransactions.length} Recent
+              {isLoading ? "..." : dashboardData.recentTransactions.length} Recent
             </span>
           </div>
 
           <div className="p-5 md:p-6">
-            {dashboardData.recentTransactions.length === 0 ? (
+            {isLoading ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-14 text-center">
+                <p className="text-lg font-bold text-slate-800">
+                  Loading cloud transactions...
+                </p>
+              </div>
+            ) : dashboardData.recentTransactions.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-14 text-center">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-500 shadow-sm">
                   <Plus className="h-6 w-6" />
@@ -713,6 +833,28 @@ export default function DashboardOverview() {
                 {dashboardData.recentTransactions.map((transaction) => {
                   const isSale = transaction.type === "sale";
                   const isPurchase = transaction.type === "purchase";
+                  const linkHref = isSale
+                    ? `/sales/invoice/${transaction.targetId}`
+                    : isPurchase
+                      ? `/purchase/bill/${transaction.targetId}`
+                      : null;
+
+                  const transactionTitle = linkHref ? (
+                    <Link
+                      href={linkHref}
+                      className={`block truncate font-bold transition hover:underline ${
+                        isSale
+                          ? "text-blue-600 hover:text-blue-800"
+                          : "text-purple-600 hover:text-purple-800"
+                      }`}
+                    >
+                      {transaction.title}
+                    </Link>
+                  ) : (
+                    <p className="truncate font-bold text-slate-900">
+                      {transaction.title}
+                    </p>
+                  );
 
                   return (
                     <div
@@ -739,18 +881,7 @@ export default function DashboardOverview() {
                         </div>
 
                         <div className="min-w-0">
-                         {isSale ? (
-                         <Link
-                       href={`/sales/invoice/${transaction.id.replace("sale-", "")}`}
-                         className="block truncate font-bold text-blue-600 transition hover:text-blue-800 hover:underline"
-                          >
-                              {transaction.title}
-                            </Link>
-                            ) : (
-  <p className="truncate font-bold text-slate-900">
-    {transaction.title}
-  </p>
-                            )}
+                          {transactionTitle}
                           <p className="mt-1 truncate text-sm text-slate-600">
                             {transaction.subtitle}
                           </p>
@@ -759,18 +890,18 @@ export default function DashboardOverview() {
 
                       <div className="shrink-0 sm:text-right">
                         <p
-  className="font-bold"
-  style={{
-    color: isSale
-      ? "#16a34a"
-      : isPurchase
-        ? "#9333ea"
-        : "#ea580c",
-  }}
->
-  {isSale ? "+" : "-"}
-  {formatCurrency(transaction.amount)}
-</p>
+                          className="font-bold"
+                          style={{
+                            color: isSale
+                              ? "#16a34a"
+                              : isPurchase
+                                ? "#9333ea"
+                                : "#ea580c",
+                          }}
+                        >
+                          {isSale ? "+" : "-"}
+                          {formatCurrency(transaction.amount)}
+                        </p>
 
                         <p className="mt-1 text-sm text-slate-500">
                           {formatDate(transaction.date)}
@@ -788,11 +919,11 @@ export default function DashboardOverview() {
           <div className="flex items-center justify-between">
             <div>
               <p
-  className="text-sm font-semibold uppercase tracking-[0.18em]"
-  style={{ color: "#4f46e5" }}
->
-  Business Health
-</p>
+                className="text-sm font-semibold uppercase tracking-[0.18em]"
+                style={{ color: "#4f46e5" }}
+              >
+                Business Health
+              </p>
 
               <h2 className="mt-2 text-2xl font-bold text-slate-900">
                 Monthly Summary
@@ -800,14 +931,14 @@ export default function DashboardOverview() {
             </div>
 
             <div
-  className="rounded-2xl p-3"
-  style={{
-    backgroundColor: "#eef2ff",
-    color: "#4f46e5",
-  }}
->
-  <Box className="h-5 w-5" />
-</div>
+              className="rounded-2xl p-3"
+              style={{
+                backgroundColor: "#eef2ff",
+                color: "#4f46e5",
+              }}
+            >
+              <Box className="h-5 w-5" />
+            </div>
           </div>
 
           <div className="mt-7 space-y-4">
@@ -817,7 +948,7 @@ export default function DashboardOverview() {
               </span>
 
               <span className="font-bold text-blue-700">
-                {formatCurrency(dashboardData.monthlyRevenue)}
+                {loadingValue(formatCurrency(dashboardData.monthlyRevenue))}
               </span>
             </div>
 
@@ -827,7 +958,9 @@ export default function DashboardOverview() {
               </span>
 
               <span className="font-bold text-purple-700">
-                {formatCurrency(dashboardData.monthlyEstimatedCost)}
+                {loadingValue(
+                  formatCurrency(dashboardData.monthlyEstimatedCost)
+                )}
               </span>
             </div>
 
@@ -837,7 +970,7 @@ export default function DashboardOverview() {
               </span>
 
               <span className="font-bold text-orange-600">
-                {formatCurrency(dashboardData.monthlyExpenses)}
+                {loadingValue(formatCurrency(dashboardData.monthlyExpenses))}
               </span>
             </div>
 
@@ -847,13 +980,15 @@ export default function DashboardOverview() {
               </p>
 
               <p
-  className="mt-2 text-3xl font-bold"
-  style={{
-    color: netProfitIsPositive ? "#6ee7b7" : "#fca5a5",
-  }}
->
-  {formatCurrency(dashboardData.monthlyNetProfit)}
-</p>
+                className="mt-2 text-3xl font-bold"
+                style={{
+                  color: netProfitIsPositive ? "#6ee7b7" : "#fca5a5",
+                }}
+              >
+                {loadingValue(
+                  formatCurrency(dashboardData.monthlyNetProfit)
+                )}
+              </p>
 
               <p className="mt-2 text-xs leading-5 text-slate-400">
                 Based on current product purchase prices and saved expenses.
@@ -862,34 +997,31 @@ export default function DashboardOverview() {
           </div>
 
           <div
-  className="mt-6 rounded-2xl border p-5"
-  style={{
-    backgroundColor: "#eff6ff",
-    borderColor: "#bfdbfe",
-  }}
->
-  <p
-    className="font-semibold"
-    style={{ color: "#1e3a8a" }}
-  >
-    Inventory Value
-  </p>
+            className="mt-6 rounded-2xl border p-5"
+            style={{
+              backgroundColor: "#eff6ff",
+              borderColor: "#bfdbfe",
+            }}
+          >
+            <p className="font-semibold" style={{ color: "#1e3a8a" }}>
+              Inventory Value
+            </p>
 
-  <p
-    className="mt-2 text-3xl font-bold"
-    style={{ color: "#2563eb" }}
-  >
-    {formatCurrency(dashboardData.stockValue)}
-  </p>
+            <p
+              className="mt-2 text-3xl font-bold"
+              style={{ color: "#2563eb" }}
+            >
+              {loadingValue(formatCurrency(dashboardData.stockValue))}
+            </p>
 
-  <p
-    className="mt-2 text-sm leading-6"
-    style={{ color: "#1d4ed8" }}
-  >
-    Current stock value based on available quantity and purchase
-    prices.
-  </p>
-</div>
+            <p
+              className="mt-2 text-sm leading-6"
+              style={{ color: "#1d4ed8" }}
+            >
+              Current stock value based on available quantity and purchase
+              prices.
+            </p>
+          </div>
 
           <Link
             href="/reports/profit"

@@ -4,6 +4,25 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
+import { createClient } from "@/lib/supabase/client";
+
+type ProductRow = {
+  id: string;
+  name: string;
+  sku: string | null;
+  category: string | null;
+  unit: string | null;
+  purchase_price: number | string | null;
+  selling_price: number | string | null;
+  quantity: number | string | null;
+  low_stock_alert: number | string | null;
+  gst_rate: number | string | null;
+  description: string | null;
+};
+
+type ProfileRow = {
+  active_company_id: string | null;
+};
 
 type Product = {
   id: string;
@@ -19,15 +38,20 @@ type Product = {
   description: string;
 };
 
-const PRODUCTS_KEY = "VertexERP_products";
+function toNumber(value: unknown) {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
 
 function formatCurrency(amount: number) {
-  return `₹${Number(amount || 0).toLocaleString("en-IN")}`;
+  return `₹${toNumber(amount).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function getStockStatus(product: Product) {
-  const quantity = Number(product.quantity || 0);
-  const alertLevel = Number(product.lowStockAlert || 0);
+  const quantity = toNumber(product.quantity);
+  const alertLevel = toNumber(product.lowStockAlert);
 
   if (quantity === 0) {
     return {
@@ -49,23 +73,116 @@ function getStockStatus(product: Product) {
   };
 }
 
+function mapProduct(row: ProductRow): Product {
+  return {
+    id: row.id,
+    name: row.name || "Unnamed Product",
+    sku: row.sku || "—",
+    category: row.category || "Uncategorized",
+    unit: row.unit || "Unit",
+    purchasePrice: toNumber(row.purchase_price),
+    sellingPrice: toNumber(row.selling_price),
+    quantity: toNumber(row.quantity),
+    lowStockAlert: toNumber(row.low_stock_alert),
+    gst: toNumber(row.gst_rate),
+    description: row.description || "",
+  };
+}
+
 export default function StockReportPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState("");
+
+  function showMessage(nextMessage: string) {
+    setMessage(nextMessage);
+
+    window.setTimeout(() => {
+      setMessage("");
+    }, 4500);
+  }
+
+  async function loadProducts() {
+    setIsLoading(true);
+
+    try {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setProducts([]);
+        showMessage("Please sign in to view the stock report.");
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      const activeCompanyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      if (!activeCompanyId) {
+        setProducts([]);
+        showMessage("Select an active company from the Companies page first.");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("products")
+        .select(
+          "id, name, sku, category, unit, purchase_price, selling_price, quantity, low_stock_alert, gst_rate, description"
+        )
+        .eq("company_id", activeCompanyId)
+        .order("name", { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      setProducts(((data || []) as ProductRow[]).map(mapProduct));
+    } catch (error) {
+      setProducts([]);
+
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : "Stock report data could not be loaded from the cloud database."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   useEffect(() => {
-    try {
-      const savedProducts = window.localStorage.getItem(PRODUCTS_KEY);
+    loadProducts();
 
-      const parsedProducts = savedProducts
-        ? JSON.parse(savedProducts)
-        : [];
+    const refreshEvents = [
+      "vertexerp-products-updated",
+      "vertexerp-active-company-updated",
+    ];
 
-      setProducts(Array.isArray(parsedProducts) ? parsedProducts : []);
-    } catch {
-      setProducts([]);
-    }
+    refreshEvents.forEach((eventName) => {
+      window.addEventListener(eventName, loadProducts);
+    });
+
+    return () => {
+      refreshEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, loadProducts);
+      });
+    };
   }, []);
 
   const filteredProducts = useMemo(() => {
@@ -88,22 +205,19 @@ export default function StockReportPage() {
   }, [products, searchTerm, statusFilter]);
 
   const stockValue = products.reduce(
-    (total, product) =>
-      total +
-      Number(product.quantity || 0) *
-        Number(product.purchasePrice || 0),
+    (total, product) => total + product.quantity * product.purchasePrice,
     0
   );
 
   const lowStockCount = products.filter((product) => {
-    const quantity = Number(product.quantity || 0);
-    const alertLevel = Number(product.lowStockAlert || 0);
+    const quantity = toNumber(product.quantity);
+    const alertLevel = toNumber(product.lowStockAlert);
 
     return quantity > 0 && quantity <= alertLevel;
   }).length;
 
   const outOfStockCount = products.filter(
-    (product) => Number(product.quantity || 0) === 0
+    (product) => toNumber(product.quantity) === 0
   ).length;
 
   function resetFilters() {
@@ -115,10 +229,10 @@ export default function StockReportPage() {
     <div className="flex min-h-screen bg-slate-100">
       <Sidebar />
 
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-8">
+        <main className="p-6 md:p-8">
           <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h1 className="text-4xl font-bold text-slate-900">
@@ -138,16 +252,22 @@ export default function StockReportPage() {
             </Link>
           </div>
 
+          {message && (
+            <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+              {message}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
               <p className="font-medium text-slate-600">Total Products</p>
 
               <h2 className="mt-3 text-4xl font-bold text-blue-600">
-                {products.length}
+                {isLoading ? "..." : products.length}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Products in inventory
+                Products in active company inventory
               </p>
             </div>
 
@@ -155,11 +275,11 @@ export default function StockReportPage() {
               <p className="font-medium text-slate-600">Stock Value</p>
 
               <h2 className="mt-3 text-4xl font-bold text-green-600">
-                {formatCurrency(stockValue)}
+                {isLoading ? "..." : formatCurrency(stockValue)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Based on purchase prices
+                Based on current purchase prices
               </p>
             </div>
 
@@ -167,7 +287,7 @@ export default function StockReportPage() {
               <p className="font-medium text-slate-600">Low Stock Items</p>
 
               <h2 className="mt-3 text-4xl font-bold text-orange-500">
-                {lowStockCount}
+                {isLoading ? "..." : lowStockCount}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -179,7 +299,7 @@ export default function StockReportPage() {
               <p className="font-medium text-slate-600">Out of Stock</p>
 
               <h2 className="mt-3 text-4xl font-bold text-red-600">
-                {outOfStockCount}
+                {isLoading ? "..." : outOfStockCount}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -227,13 +347,16 @@ export default function StockReportPage() {
                 </h2>
 
                 <p className="mt-1 text-slate-600">
-                  {filteredProducts.length} product
-                  {filteredProducts.length !== 1 ? "s" : ""} found
+                  {isLoading
+                    ? "Loading cloud inventory..."
+                    : `${filteredProducts.length} product${
+                        filteredProducts.length !== 1 ? "s" : ""
+                      } found`}
                 </p>
               </div>
 
               <div className="rounded-full bg-green-50 px-4 py-2 text-sm font-semibold text-green-700">
-                Stock Value: {formatCurrency(stockValue)}
+                Stock Value: {isLoading ? "..." : formatCurrency(stockValue)}
               </div>
             </div>
 
@@ -276,7 +399,16 @@ export default function StockReportPage() {
                 </thead>
 
                 <tbody>
-                  {filteredProducts.length === 0 ? (
+                  {isLoading ? (
+                    <tr>
+                      <td
+                        colSpan={8}
+                        className="px-6 py-12 text-center text-slate-500"
+                      >
+                        Loading inventory from the cloud database...
+                      </td>
+                    </tr>
+                  ) : filteredProducts.length === 0 ? (
                     <tr>
                       <td
                         colSpan={8}
@@ -295,8 +427,7 @@ export default function StockReportPage() {
                     filteredProducts.map((product) => {
                       const status = getStockStatus(product);
                       const productStockValue =
-                        Number(product.quantity || 0) *
-                        Number(product.purchasePrice || 0);
+                        product.quantity * product.purchasePrice;
 
                       return (
                         <tr

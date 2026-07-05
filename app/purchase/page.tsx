@@ -5,29 +5,24 @@ import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import PurchaseForm from "@/components/PurchaseForm";
 import PurchaseTable from "@/components/PurchaseTable";
+import { createClient } from "@/lib/supabase/client";
 
 type Purchase = {
-  id: string;
-  billNumber: string;
-  date: string;
-  paymentMode: string;
-  supplierId: string;
-  supplierName: string;
-  grandTotal: number;
+  purchase_date: string;
+  payment_mode: string;
+  supplier_id: string | null;
+  grand_total: number | string | null;
 };
 
 type Payment = {
-  id: string;
-  type: "Customer Receipt" | "Supplier Payment";
-  partyId: string;
-  amount: number;
+  payment_type: string;
+  party_id: string;
+  amount: number | string | null;
 };
 
-const PURCHASES_KEY = "VertexERP_purchases";
-const PAYMENTS_KEY = "VertexERP_payments";
-
-const PURCHASE_EVENT = "VertexERP-purchases-updated";
-const PAYMENTS_EVENT = "VertexERP-payments-updated";
+type ProfileRow = {
+  active_company_id: string | null;
+};
 
 function toNumber(value: unknown) {
   const parsedValue = Number(value);
@@ -40,32 +35,15 @@ function formatCurrency(amount: number) {
 }
 
 function getToday() {
-  const today = new Date();
-
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const day = String(today.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+  return new Date().toISOString().slice(0, 10);
 }
 
 function isCurrentMonth(dateValue: string) {
-  if (!dateValue) {
-    return false;
-  }
-
-  const normalizedDate = dateValue.includes("T")
-    ? dateValue
-    : `${dateValue}T00:00:00`;
-
-  const date = new Date(normalizedDate);
+  const date = new Date(`${dateValue}T00:00:00`);
   const today = new Date();
 
-  if (Number.isNaN(date.getTime())) {
-    return false;
-  }
-
   return (
+    !Number.isNaN(date.getTime()) &&
     date.getMonth() === today.getMonth() &&
     date.getFullYear() === today.getFullYear()
   );
@@ -75,113 +53,160 @@ function isCreditPayment(paymentMode: string) {
   return String(paymentMode || "").trim().toLowerCase() === "credit";
 }
 
-function readSavedArray<T>(storageKey: string): T[] {
-  try {
-    const savedData = window.localStorage.getItem(storageKey);
-
-    if (!savedData) {
-      return [];
-    }
-
-    const parsedData = JSON.parse(savedData);
-
-    return Array.isArray(parsedData) ? (parsedData as T[]) : [];
-  } catch {
-    return [];
-  }
-}
-
 export default function PurchasePage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  function loadPurchaseData() {
-    const savedPurchases = readSavedArray<Purchase>(PURCHASES_KEY);
-    const savedPayments = readSavedArray<Payment>(PAYMENTS_KEY);
+  async function loadPurchaseData() {
+    setIsLoading(true);
 
-    setPurchases(savedPurchases);
-    setPayments(savedPayments);
+    try {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setPurchases([]);
+        setPayments([]);
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      const activeCompanyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      if (!activeCompanyId) {
+        setPurchases([]);
+        setPayments([]);
+        return;
+      }
+
+      const [purchasesResponse, paymentsResponse] = await Promise.all([
+        supabase
+          .from("purchases")
+          .select("purchase_date, payment_mode, supplier_id, grand_total")
+          .eq("company_id", activeCompanyId),
+        supabase
+          .from("payments")
+          .select("payment_type, party_id, amount")
+          .eq("company_id", activeCompanyId),
+      ]);
+
+      if (purchasesResponse.error) {
+        throw purchasesResponse.error;
+      }
+
+      if (paymentsResponse.error) {
+        throw paymentsResponse.error;
+      }
+
+      setPurchases(purchasesResponse.data || []);
+      setPayments(paymentsResponse.data || []);
+    } catch {
+      setPurchases([]);
+      setPayments([]);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   useEffect(() => {
-    function handleStorageChange(event: StorageEvent) {
-      const relevantKeys = [PURCHASES_KEY, PAYMENTS_KEY];
-
-      if (!event.key || relevantKeys.includes(event.key)) {
-        loadPurchaseData();
-      }
-    }
-
     loadPurchaseData();
 
-    window.addEventListener(PURCHASE_EVENT, loadPurchaseData);
-    window.addEventListener(PAYMENTS_EVENT, loadPurchaseData);
-    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener(
+      "vertexerp-purchases-updated",
+      loadPurchaseData
+    );
+    window.addEventListener(
+      "vertexerp-payments-updated",
+      loadPurchaseData
+    );
+    window.addEventListener(
+      "vertexerp-active-company-updated",
+      loadPurchaseData
+    );
 
     return () => {
-      window.removeEventListener(PURCHASE_EVENT, loadPurchaseData);
-      window.removeEventListener(PAYMENTS_EVENT, loadPurchaseData);
-      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener(
+        "vertexerp-purchases-updated",
+        loadPurchaseData
+      );
+      window.removeEventListener(
+        "vertexerp-payments-updated",
+        loadPurchaseData
+      );
+      window.removeEventListener(
+        "vertexerp-active-company-updated",
+        loadPurchaseData
+      );
     };
   }, []);
 
   const purchaseStats = useMemo(() => {
-    const today = getToday();
-
     const todayPurchase = purchases
-      .filter((purchase) => purchase.date === today)
+      .filter((purchase) => purchase.purchase_date === getToday())
       .reduce(
-        (total, purchase) => total + toNumber(purchase.grandTotal),
+        (total, purchase) => total + toNumber(purchase.grand_total),
         0
       );
 
-    const currentMonthPurchases = purchases.filter((purchase) =>
-      isCurrentMonth(purchase.date)
-    );
-
-    const monthlyPurchase = currentMonthPurchases.reduce(
-      (total, purchase) => total + toNumber(purchase.grandTotal),
-      0
-    );
+    const monthlyPurchase = purchases
+      .filter((purchase) => isCurrentMonth(purchase.purchase_date))
+      .reduce(
+        (total, purchase) => total + toNumber(purchase.grand_total),
+        0
+      );
 
     const creditAmountBySupplier = new Map<string, number>();
 
     purchases
-      .filter((purchase) => isCreditPayment(purchase.paymentMode))
+      .filter((purchase) => isCreditPayment(purchase.payment_mode))
       .forEach((purchase) => {
-        const supplierId = String(
-          purchase.supplierId || purchase.supplierName || purchase.id
-        );
+        const supplierId = purchase.supplier_id;
 
-        const currentAmount =
-          creditAmountBySupplier.get(supplierId) || 0;
+        if (!supplierId) {
+          return;
+        }
 
         creditAmountBySupplier.set(
           supplierId,
-          currentAmount + toNumber(purchase.grandTotal)
+          (creditAmountBySupplier.get(supplierId) || 0) +
+            toNumber(purchase.grand_total)
         );
       });
 
     const paidAmountBySupplier = new Map<string, number>();
 
     payments
-      .filter((payment) => payment.type === "Supplier Payment")
+      .filter((payment) => payment.payment_type === "Supplier Payment")
       .forEach((payment) => {
-        const currentAmount =
-          paidAmountBySupplier.get(payment.partyId) || 0;
-
         paidAmountBySupplier.set(
-          payment.partyId,
-          currentAmount + toNumber(payment.amount)
+          payment.party_id,
+          (paidAmountBySupplier.get(payment.party_id) || 0) +
+            toNumber(payment.amount)
         );
       });
 
     const supplierPayable = Array.from(
       creditAmountBySupplier.entries()
     ).reduce((total, [supplierId, creditAmount]) => {
-      const paidAmount = paidAmountBySupplier.get(supplierId) || 0;
-
-      return total + Math.max(0, creditAmount - paidAmount);
+      return (
+        total +
+        Math.max(0, creditAmount - (paidAmountBySupplier.get(supplierId) || 0))
+      );
     }, 0);
 
     return {
@@ -243,7 +268,9 @@ export default function PurchasePage() {
                 className="mt-3 text-4xl font-bold"
                 style={{ color: "#2563eb" }}
               >
-                {formatCurrency(purchaseStats.todayPurchase)}
+                {isLoading
+                  ? "..."
+                  : formatCurrency(purchaseStats.todayPurchase)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -260,7 +287,7 @@ export default function PurchasePage() {
                 className="mt-3 text-4xl font-bold"
                 style={{ color: "#059669" }}
               >
-                {purchaseStats.totalBills}
+                {isLoading ? "..." : purchaseStats.totalBills}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -277,7 +304,9 @@ export default function PurchasePage() {
                 className="mt-3 text-4xl font-bold"
                 style={{ color: "#ea580c" }}
               >
-                {formatCurrency(purchaseStats.supplierPayable)}
+                {isLoading
+                  ? "..."
+                  : formatCurrency(purchaseStats.supplierPayable)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -294,7 +323,9 @@ export default function PurchasePage() {
                 className="mt-3 text-4xl font-bold"
                 style={{ color: "#7e22ce" }}
               >
-                {formatCurrency(purchaseStats.monthlyPurchase)}
+                {isLoading
+                  ? "..."
+                  : formatCurrency(purchaseStats.monthlyPurchase)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -320,7 +351,7 @@ export default function PurchasePage() {
               </div>
 
               <span className="w-fit rounded-full bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700">
-                Bills: {purchaseStats.totalBills}
+                Bills: {isLoading ? "..." : purchaseStats.totalBills}
               </span>
             </div>
           </section>

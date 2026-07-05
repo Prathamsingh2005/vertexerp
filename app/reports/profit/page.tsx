@@ -4,22 +4,55 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
+import { createClient } from "@/lib/supabase/client";
 
-type Product = {
+type ProductRow = {
   id: string;
   name: string;
-  purchasePrice: number;
+  purchase_price: number | string | null;
+};
+
+type LedgerRow = {
+  id: string;
+  name: string;
+};
+
+type SaleItemRow = {
+  product_id: string | null;
+  product_name: string;
+  quantity: number | string | null;
+};
+
+type SaleRow = {
+  id: string;
+  invoice_number: string;
+  invoice_date: string;
+  customer_id: string | null;
+  subtotal: number | string | null;
+  gst_total: number | string | null;
+  discount_total: number | string | null;
+  grand_total: number | string | null;
+  customer: LedgerRow | LedgerRow[] | null;
+  sale_items: SaleItemRow[] | null;
+};
+
+type ExpenseRow = {
+  id: string;
+  expense_date: string;
+  category: string;
+  amount: number | string | null;
+  payment_mode: string;
+  description: string | null;
+};
+
+type ProfileRow = {
+  active_company_id: string | null;
 };
 
 type SaleItem = {
   productId: string;
   productName: string;
   quantity: number;
-  rate?: number;
-  discount?: number;
-  baseAmount?: number;
-  gstAmount?: number;
-  amount?: number;
 };
 
 type Sale = {
@@ -27,10 +60,9 @@ type Sale = {
   invoiceNumber: string;
   date: string;
   customerName: string;
-  paymentMode: string;
-  subtotal?: number;
-  gstTotal?: number;
-  discountTotal?: number;
+  subtotal: number;
+  gstTotal: number;
+  discountTotal: number;
   grandTotal: number;
   items: SaleItem[];
 };
@@ -54,15 +86,13 @@ type ProfitRow = {
   grossProfit: number;
 };
 
-const PRODUCTS_KEY = "VertexERP_products";
-const SALES_KEY = "VertexERP_sales";
-const EXPENSES_KEY = "VertexERP_expenses";
-
-const SALES_EVENT = "VertexERP-sales-updated";
-const EXPENSES_EVENT = "VertexERP-expenses-updated";
+function toNumber(value: unknown) {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
 
 function formatCurrency(amount: number) {
-  return `₹${Number(amount || 0).toLocaleString("en-IN", {
+  return `₹${toNumber(amount).toLocaleString("en-IN", {
     maximumFractionDigits: 2,
   })}`;
 }
@@ -85,77 +115,190 @@ function formatDate(dateValue: string) {
   });
 }
 
-function getNetSales(sale: Sale) {
-  if (typeof sale.subtotal === "number") {
-    return Math.max(
-      0,
-      Number(sale.subtotal || 0) - Number(sale.discountTotal || 0)
-    );
-  }
-
-  return sale.items.reduce((total, item) => {
-    const baseAmount =
-      typeof item.baseAmount === "number"
-        ? item.baseAmount
-        : Number(item.amount || 0) - Number(item.gstAmount || 0);
-
-    return total + Math.max(0, baseAmount - Number(item.discount || 0));
-  }, 0);
+function getJoinedLedger(
+  ledger: LedgerRow | LedgerRow[] | null
+): LedgerRow | null {
+  return Array.isArray(ledger) ? ledger[0] || null : ledger;
 }
 
-function getGstAmount(sale: Sale) {
-  if (typeof sale.gstTotal === "number") {
-    return Number(sale.gstTotal || 0);
-  }
+function mapSale(row: SaleRow): Sale {
+  const customer = getJoinedLedger(row.customer);
 
-  return sale.items.reduce(
-    (total, item) => total + Number(item.gstAmount || 0),
-    0
-  );
+  return {
+    id: row.id,
+    invoiceNumber: row.invoice_number || "Sales Invoice",
+    date: row.invoice_date || "",
+    customerName: customer?.name || "Unknown Customer",
+    subtotal: toNumber(row.subtotal),
+    gstTotal: toNumber(row.gst_total),
+    discountTotal: toNumber(row.discount_total),
+    grandTotal: toNumber(row.grand_total),
+    items: (row.sale_items || []).map((item) => ({
+      productId: item.product_id || "",
+      productName: item.product_name || "Product",
+      quantity: toNumber(item.quantity),
+    })),
+  };
+}
+
+function mapExpense(row: ExpenseRow): Expense {
+  return {
+    id: row.id,
+    date: row.expense_date || "",
+    category: row.category || "Other",
+    amount: toNumber(row.amount),
+    paymentMode: row.payment_mode || "Cash",
+    description: row.description || "",
+  };
 }
 
 export default function ProfitReportPage() {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<ProductRow[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    function loadReportData() {
-      try {
-        const savedProducts = window.localStorage.getItem(PRODUCTS_KEY);
-        const savedSales = window.localStorage.getItem(SALES_KEY);
-        const savedExpenses = window.localStorage.getItem(EXPENSES_KEY);
+  function showMessage(nextMessage: string) {
+    setMessage(nextMessage);
 
-        const parsedProducts = savedProducts
-          ? JSON.parse(savedProducts)
-          : [];
+    window.setTimeout(() => {
+      setMessage("");
+    }, 4500);
+  }
 
-        const parsedSales = savedSales ? JSON.parse(savedSales) : [];
+  async function loadReportData() {
+    setIsLoading(true);
 
-        const parsedExpenses = savedExpenses
-          ? JSON.parse(savedExpenses)
-          : [];
+    try {
+      const supabase = createClient();
 
-        setProducts(Array.isArray(parsedProducts) ? parsedProducts : []);
-        setSales(Array.isArray(parsedSales) ? parsedSales : []);
-        setExpenses(Array.isArray(parsedExpenses) ? parsedExpenses : []);
-      } catch {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
         setProducts([]);
         setSales([]);
         setExpenses([]);
+        showMessage("Please sign in to view the profit and loss report.");
+        return;
       }
-    }
 
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      const activeCompanyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      if (!activeCompanyId) {
+        setProducts([]);
+        setSales([]);
+        setExpenses([]);
+        showMessage("Select an active company from the Companies page first.");
+        return;
+      }
+
+      const [productsResponse, salesResponse, expensesResponse] =
+        await Promise.all([
+          supabase
+            .from("products")
+            .select("id, name, purchase_price")
+            .eq("company_id", activeCompanyId),
+          supabase
+            .from("sales")
+            .select(
+              `
+                id,
+                invoice_number,
+                invoice_date,
+                customer_id,
+                subtotal,
+                gst_total,
+                discount_total,
+                grand_total,
+                customer:ledgers!sales_customer_id_fkey(
+                  id,
+                  name
+                ),
+                sale_items(
+                  product_id,
+                  product_name,
+                  quantity
+                )
+              `
+            )
+            .eq("company_id", activeCompanyId),
+          supabase
+            .from("expenses")
+            .select(
+              "id, expense_date, category, amount, payment_mode, description"
+            )
+            .eq("company_id", activeCompanyId),
+        ]);
+
+      if (productsResponse.error) {
+        throw productsResponse.error;
+      }
+
+      if (salesResponse.error) {
+        throw salesResponse.error;
+      }
+
+      if (expensesResponse.error) {
+        throw expensesResponse.error;
+      }
+
+      setProducts((productsResponse.data || []) as ProductRow[]);
+      setSales(
+        ((salesResponse.data || []) as unknown as SaleRow[]).map(mapSale)
+      );
+      setExpenses(
+        ((expensesResponse.data || []) as ExpenseRow[]).map(mapExpense)
+      );
+    } catch (error) {
+      setProducts([]);
+      setSales([]);
+      setExpenses([]);
+
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : "Profit and loss data could not be loaded from the cloud database."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
     loadReportData();
 
-    window.addEventListener(SALES_EVENT, loadReportData);
-    window.addEventListener(EXPENSES_EVENT, loadReportData);
+    const refreshEvents = [
+      "vertexerp-products-updated",
+      "vertexerp-sales-updated",
+      "vertexerp-expenses-updated",
+      "vertexerp-active-company-updated",
+    ];
+
+    refreshEvents.forEach((eventName) => {
+      window.addEventListener(eventName, loadReportData);
+    });
 
     return () => {
-      window.removeEventListener(SALES_EVENT, loadReportData);
-      window.removeEventListener(EXPENSES_EVENT, loadReportData);
+      refreshEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, loadReportData);
+      });
     };
   }, []);
 
@@ -181,17 +324,17 @@ export default function ProfitReportPage() {
     const productCostMap = new Map<string, number>();
 
     products.forEach((product) => {
-      productCostMap.set(product.id, Number(product.purchasePrice || 0));
+      productCostMap.set(product.id, toNumber(product.purchase_price));
     });
 
     return filteredSales
       .map((sale) => {
-        const netSales = getNetSales(sale);
+        const netSales = Math.max(0, sale.subtotal - sale.discountTotal);
 
         const estimatedCost = sale.items.reduce((total, item) => {
           const purchasePrice = productCostMap.get(item.productId) || 0;
 
-          return total + Number(item.quantity || 0) * purchasePrice;
+          return total + item.quantity * purchasePrice;
         }, 0);
 
         return {
@@ -204,7 +347,7 @@ export default function ProfitReportPage() {
           grossProfit: netSales - estimatedCost,
         };
       })
-      .sort((a, b) => b.date.localeCompare(a.date));
+      .sort((first, second) => second.date.localeCompare(first.date));
   }, [filteredSales, products]);
 
   const totalRevenue = profitRows.reduce(
@@ -220,7 +363,7 @@ export default function ProfitReportPage() {
   const grossProfit = totalRevenue - totalEstimatedCost;
 
   const totalOperatingExpenses = filteredExpenses.reduce(
-    (total, expense) => total + Number(expense.amount || 0),
+    (total, expense) => total + expense.amount,
     0
   );
 
@@ -233,7 +376,7 @@ export default function ProfitReportPage() {
     totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
   const totalGst = filteredSales.reduce(
-    (total, sale) => total + getGstAmount(sale),
+    (total, sale) => total + sale.gstTotal,
     0
   );
 
@@ -246,14 +389,14 @@ export default function ProfitReportPage() {
     <div className="flex min-h-screen bg-slate-100">
       <Sidebar />
 
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-8">
+        <main className="p-6 md:p-8">
           <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h1 className="text-4xl font-bold text-slate-900">
-                💰 Profit & Loss
+                💰 Profit &amp; Loss
               </h1>
 
               <p className="mt-2 text-lg text-slate-600">
@@ -269,12 +412,18 @@ export default function ProfitReportPage() {
             </Link>
           </div>
 
+          {message && (
+            <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+              {message}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
             <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
               <p className="font-medium text-slate-600">Sales Revenue</p>
 
               <h2 className="mt-3 text-4xl font-bold text-blue-600">
-                {formatCurrency(totalRevenue)}
+                {isLoading ? "..." : formatCurrency(totalRevenue)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -288,7 +437,7 @@ export default function ProfitReportPage() {
               </p>
 
               <h2 className="mt-3 text-4xl font-bold text-purple-600">
-                {formatCurrency(totalEstimatedCost)}
+                {isLoading ? "..." : formatCurrency(totalEstimatedCost)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -306,7 +455,7 @@ export default function ProfitReportPage() {
                   grossProfit >= 0 ? "text-green-600" : "text-red-600"
                 }`}
               >
-                {formatCurrency(grossProfit)}
+                {isLoading ? "..." : formatCurrency(grossProfit)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -320,12 +469,15 @@ export default function ProfitReportPage() {
               </p>
 
               <h2 className="mt-3 text-4xl font-bold text-orange-500">
-                {formatCurrency(totalOperatingExpenses)}
+                {isLoading ? "..." : formatCurrency(totalOperatingExpenses)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                {filteredExpenses.length} expense
-                {filteredExpenses.length !== 1 ? "s" : ""} included
+                {isLoading
+                  ? "Loading expenses..."
+                  : `${filteredExpenses.length} expense${
+                      filteredExpenses.length !== 1 ? "s" : ""
+                    } included`}
               </p>
             </div>
 
@@ -339,7 +491,7 @@ export default function ProfitReportPage() {
                   netProfit >= 0 ? "text-green-600" : "text-red-600"
                 }`}
               >
-                {formatCurrency(netProfit)}
+                {isLoading ? "..." : formatCurrency(netProfit)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -359,7 +511,7 @@ export default function ProfitReportPage() {
                     : "text-red-600"
                 }`}
               >
-                {netProfitMargin.toFixed(2)}%
+                {isLoading ? "..." : `${netProfitMargin.toFixed(2)}%`}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
@@ -375,7 +527,7 @@ export default function ProfitReportPage() {
               </p>
 
               <p className="mt-2 text-3xl font-bold text-blue-600">
-                {formatCurrency(totalGst)}
+                {isLoading ? "..." : formatCurrency(totalGst)}
               </p>
 
               <p className="mt-2 text-sm text-blue-700">
@@ -389,7 +541,7 @@ export default function ProfitReportPage() {
               </p>
 
               <p className="mt-2 text-3xl font-bold text-green-600">
-                {grossMargin.toFixed(2)}%
+                {isLoading ? "..." : `${grossMargin.toFixed(2)}%`}
               </p>
 
               <p className="mt-2 text-sm text-green-700">
@@ -403,8 +555,8 @@ export default function ProfitReportPage() {
               </p>
 
               <p className="mt-2 text-sm leading-6 text-orange-700">
-                Net profit includes saved expenses. Product cost is still
-                estimated using the current purchase price of each product.
+                Net profit includes saved expenses. Product cost is estimated
+                from each product&apos;s current purchase price.
               </p>
             </div>
           </div>
@@ -426,10 +578,13 @@ export default function ProfitReportPage() {
               />
 
               <div className="rounded-xl border border-green-100 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">
-                {profitRows.length} Invoice
-                {profitRows.length !== 1 ? "s" : ""} •{" "}
-                {filteredExpenses.length} Expense
-                {filteredExpenses.length !== 1 ? "s" : ""}
+                {isLoading
+                  ? "Loading report..."
+                  : `${profitRows.length} Invoice${
+                      profitRows.length !== 1 ? "s" : ""
+                    } • ${filteredExpenses.length} Expense${
+                      filteredExpenses.length !== 1 ? "s" : ""
+                    }`}
               </div>
 
               <button
@@ -461,7 +616,7 @@ export default function ProfitReportPage() {
                     : "bg-red-50 text-red-700"
                 }`}
               >
-                Net Profit: {formatCurrency(netProfit)}
+                Net Profit: {isLoading ? "..." : formatCurrency(netProfit)}
               </div>
             </div>
 
@@ -500,7 +655,16 @@ export default function ProfitReportPage() {
                 </thead>
 
                 <tbody>
-                  {profitRows.length === 0 ? (
+                  {isLoading ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-6 py-12 text-center text-slate-500"
+                      >
+                        Loading report data from the cloud database...
+                      </td>
+                    </tr>
+                  ) : profitRows.length === 0 ? (
                     <tr>
                       <td
                         colSpan={7}
@@ -528,9 +692,12 @@ export default function ProfitReportPage() {
                           className="border-b border-slate-100 transition hover:bg-green-50"
                         >
                           <td className="px-6 py-5">
-                            <p className="font-bold text-blue-600">
+                            <Link
+                              href={`/sales/invoice/${row.id}`}
+                              className="font-bold text-blue-600 transition hover:text-blue-800 hover:underline"
+                            >
                               {row.invoiceNumber}
-                            </p>
+                            </Link>
                           </td>
 
                           <td className="px-6 py-5 font-semibold text-slate-900">

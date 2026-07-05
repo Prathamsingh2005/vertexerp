@@ -5,34 +5,28 @@ import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SalesInvoiceForm from "@/components/SalesInvoiceForm";
 import SalesInvoiceTable from "@/components/SalesInvoiceTable";
+import { createClient } from "@/lib/supabase/client";
 
 type Sale = {
-  id: string;
-  invoiceNumber: string;
-  date: string;
-  paymentMode: string;
-  customerId: string;
-  customerName: string;
-  grandTotal: number;
+  invoice_date: string;
+  payment_mode: string;
+  customer_id: string | null;
+  grand_total: number | string | null;
 };
 
 type Payment = {
-  id: string;
-  type: "Customer Receipt" | "Supplier Payment";
-  partyId: string;
-  amount: number;
+  payment_type: string;
+  party_id: string;
+  amount: number | string | null;
 };
 
-const SALES_KEY = "VertexERP_sales";
-const PAYMENTS_KEY = "VertexERP_payments";
-
-const SALES_EVENT = "VertexERP-sales-updated";
-const PAYMENTS_EVENT = "VertexERP-payments-updated";
+type ProfileRow = {
+  active_company_id: string | null;
+};
 
 function toNumber(value: unknown) {
-  const parsedValue = Number(value);
-
-  return Number.isFinite(parsedValue) ? parsedValue : 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function formatCurrency(amount: number) {
@@ -40,151 +34,150 @@ function formatCurrency(amount: number) {
 }
 
 function getToday() {
-  const today = new Date();
-
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const day = String(today.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+  return new Date().toISOString().slice(0, 10);
 }
 
 function isCurrentMonth(dateValue: string) {
-  if (!dateValue) {
-    return false;
-  }
-
-  const normalizedDate = dateValue.includes("T")
-    ? dateValue
-    : `${dateValue}T00:00:00`;
-
-  const date = new Date(normalizedDate);
+  const date = new Date(`${dateValue}T00:00:00`);
   const today = new Date();
 
-  if (Number.isNaN(date.getTime())) {
-    return false;
-  }
-
   return (
+    !Number.isNaN(date.getTime()) &&
     date.getMonth() === today.getMonth() &&
     date.getFullYear() === today.getFullYear()
   );
 }
 
-function isCreditPayment(paymentMode: string) {
-  return String(paymentMode || "").trim().toLowerCase() === "credit";
-}
-
-function readSavedArray<T>(storageKey: string): T[] {
-  try {
-    const savedData = window.localStorage.getItem(storageKey);
-
-    if (!savedData) {
-      return [];
-    }
-
-    const parsedData = JSON.parse(savedData);
-
-    return Array.isArray(parsedData) ? (parsedData as T[]) : [];
-  } catch {
-    return [];
-  }
-}
-
 export default function SalesPage() {
   const [sales, setSales] = useState<Sale[]>([]);
-const [payments, setPayments] = useState<Payment[]>([]);
-const [salesRefreshKey, setSalesRefreshKey] = useState(0);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  function loadSalesData() {
-    const savedSales = readSavedArray<Sale>(SALES_KEY);
-    const savedPayments = readSavedArray<Payment>(PAYMENTS_KEY);
+  async function loadSalesData() {
+    setIsLoading(true);
 
-    setSales(savedSales);
-setPayments(savedPayments);
-setSalesRefreshKey((currentKey) => currentKey + 1);
+    try {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setSales([]);
+        setPayments([]);
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("active_company_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) throw profileError;
+
+      const activeCompanyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
+
+      if (!activeCompanyId) {
+        setSales([]);
+        setPayments([]);
+        return;
+      }
+
+      const [salesResponse, paymentsResponse] = await Promise.all([
+        supabase
+          .from("sales")
+          .select("invoice_date, payment_mode, customer_id, grand_total")
+          .eq("company_id", activeCompanyId),
+        supabase
+          .from("payments")
+          .select("payment_type, party_id, amount")
+          .eq("company_id", activeCompanyId),
+      ]);
+
+      if (salesResponse.error) throw salesResponse.error;
+      if (paymentsResponse.error) throw paymentsResponse.error;
+
+      setSales(salesResponse.data || []);
+      setPayments(paymentsResponse.data || []);
+    } catch {
+      setSales([]);
+      setPayments([]);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   useEffect(() => {
-    function handleStorageChange(event: StorageEvent) {
-      const relevantKeys = [SALES_KEY, PAYMENTS_KEY];
-
-      if (!event.key || relevantKeys.includes(event.key)) {
-        loadSalesData();
-      }
-    }
-
     loadSalesData();
 
-    window.addEventListener(SALES_EVENT, loadSalesData);
-    window.addEventListener(PAYMENTS_EVENT, loadSalesData);
-    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("vertexerp-sales-updated", loadSalesData);
+    window.addEventListener("vertexerp-payments-updated", loadSalesData);
+    window.addEventListener(
+      "vertexerp-active-company-updated",
+      loadSalesData
+    );
 
     return () => {
-      window.removeEventListener(SALES_EVENT, loadSalesData);
-      window.removeEventListener(PAYMENTS_EVENT, loadSalesData);
-      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("vertexerp-sales-updated", loadSalesData);
+      window.removeEventListener(
+        "vertexerp-payments-updated",
+        loadSalesData
+      );
+      window.removeEventListener(
+        "vertexerp-active-company-updated",
+        loadSalesData
+      );
     };
   }, []);
 
   const salesStats = useMemo(() => {
-    const today = getToday();
-
     const todaySales = sales
-      .filter((sale) => sale.date === today)
-      .reduce(
-        (total, sale) => total + toNumber(sale.grandTotal),
-        0
-      );
+      .filter((sale) => sale.invoice_date === getToday())
+      .reduce((total, sale) => total + toNumber(sale.grand_total), 0);
 
-    const currentMonthSales = sales.filter((sale) =>
-      isCurrentMonth(sale.date)
-    );
+    const monthlySales = sales
+      .filter((sale) => isCurrentMonth(sale.invoice_date))
+      .reduce((total, sale) => total + toNumber(sale.grand_total), 0);
 
-    const monthlySales = currentMonthSales.reduce(
-      (total, sale) => total + toNumber(sale.grandTotal),
-      0
-    );
-
-    const creditAmountByCustomer = new Map<string, number>();
+    const creditByCustomer = new Map<string, number>();
 
     sales
-      .filter((sale) => isCreditPayment(sale.paymentMode))
+      .filter((sale) => sale.payment_mode.trim().toLowerCase() === "credit")
       .forEach((sale) => {
-        const customerId = String(
-          sale.customerId || sale.customerName || sale.id
-        );
+        if (!sale.customer_id) return;
 
-        const currentAmount = creditAmountByCustomer.get(customerId) || 0;
-
-        creditAmountByCustomer.set(
-          customerId,
-          currentAmount + toNumber(sale.grandTotal)
+        creditByCustomer.set(
+          sale.customer_id,
+          (creditByCustomer.get(sale.customer_id) || 0) +
+            toNumber(sale.grand_total)
         );
       });
 
-    const receivedAmountByCustomer = new Map<string, number>();
+    const receivedByCustomer = new Map<string, number>();
 
     payments
-      .filter((payment) => payment.type === "Customer Receipt")
+      .filter((payment) => payment.payment_type === "Customer Receipt")
       .forEach((payment) => {
-        const currentAmount =
-          receivedAmountByCustomer.get(payment.partyId) || 0;
-
-        receivedAmountByCustomer.set(
-          payment.partyId,
-          currentAmount + toNumber(payment.amount)
+        receivedByCustomer.set(
+          payment.party_id,
+          (receivedByCustomer.get(payment.party_id) || 0) +
+            toNumber(payment.amount)
         );
       });
 
-    const pendingPayments = Array.from(
-      creditAmountByCustomer.entries()
-    ).reduce((total, [customerId, creditAmount]) => {
-      const receivedAmount =
-        receivedAmountByCustomer.get(customerId) || 0;
-
-      return total + Math.max(0, creditAmount - receivedAmount);
-    }, 0);
+    const pendingPayments = Array.from(creditByCustomer.entries()).reduce(
+      (total, [customerId, creditAmount]) =>
+        total +
+        Math.max(
+          0,
+          creditAmount - (receivedByCustomer.get(customerId) || 0)
+        ),
+      0
+    );
 
     return {
       todaySales,
@@ -195,12 +188,10 @@ setSalesRefreshKey((currentKey) => currentKey + 1);
   }, [sales, payments]);
 
   function scrollToInvoiceForm() {
-    document
-      .getElementById("create-sales-invoice")
-      ?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
+    document.getElementById("create-sales-invoice")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   }
 
   return (
@@ -216,7 +207,6 @@ setSalesRefreshKey((currentKey) => currentKey + 1);
               <h1 className="text-4xl font-bold text-slate-900">
                 🛒 Sales & Billing
               </h1>
-
               <p className="mt-2 text-lg text-slate-600">
                 Create invoices, manage sales and track customer payments.
               </p>
@@ -226,10 +216,7 @@ setSalesRefreshKey((currentKey) => currentKey + 1);
               type="button"
               onClick={scrollToInvoiceForm}
               className="rounded-xl px-6 py-3 font-semibold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98]"
-              style={{
-                backgroundColor: "#2563eb",
-                color: "#ffffff",
-              }}
+              style={{ backgroundColor: "#2563eb", color: "#ffffff" }}
             >
               + Create Invoice
             </button>
@@ -237,71 +224,35 @@ setSalesRefreshKey((currentKey) => currentKey + 1);
 
           <section className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-3xl border border-blue-100 bg-white p-6 shadow-lg">
-              <p className="font-medium text-slate-600">
-                Today&apos;s Sales
-              </p>
-
-              <h2
-                className="mt-3 text-4xl font-bold"
-                style={{ color: "#2563eb" }}
-              >
-                {formatCurrency(salesStats.todaySales)}
+              <p className="font-medium text-slate-600">Today&apos;s Sales</p>
+              <h2 className="mt-3 text-4xl font-bold" style={{ color: "#2563eb" }}>
+                {isLoading ? "..." : formatCurrency(salesStats.todaySales)}
               </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                Total sales recorded today
-              </p>
+              <p className="mt-2 text-sm text-slate-500">Total sales recorded today</p>
             </div>
 
             <div className="rounded-3xl border border-emerald-100 bg-white p-6 shadow-lg">
-              <p className="font-medium text-slate-600">
-                Total Invoices
-              </p>
-
-              <h2
-                className="mt-3 text-4xl font-bold"
-                style={{ color: "#059669" }}
-              >
-                {salesStats.totalInvoices}
+              <p className="font-medium text-slate-600">Total Invoices</p>
+              <h2 className="mt-3 text-4xl font-bold" style={{ color: "#059669" }}>
+                {isLoading ? "..." : salesStats.totalInvoices}
               </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                All saved sales invoices
-              </p>
+              <p className="mt-2 text-sm text-slate-500">All saved sales invoices</p>
             </div>
 
             <div className="rounded-3xl border border-orange-100 bg-white p-6 shadow-lg">
-              <p className="font-medium text-slate-600">
-                Pending Payments
-              </p>
-
-              <h2
-                className="mt-3 text-4xl font-bold"
-                style={{ color: "#ea580c" }}
-              >
-                {formatCurrency(salesStats.pendingPayments)}
+              <p className="font-medium text-slate-600">Pending Payments</p>
+              <h2 className="mt-3 text-4xl font-bold" style={{ color: "#ea580c" }}>
+                {isLoading ? "..." : formatCurrency(salesStats.pendingPayments)}
               </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                Credit amount still to receive
-              </p>
+              <p className="mt-2 text-sm text-slate-500">Credit amount still to receive</p>
             </div>
 
             <div className="rounded-3xl border border-purple-100 bg-white p-6 shadow-lg">
-              <p className="font-medium text-slate-600">
-                This Month&apos;s Sales
-              </p>
-
-              <h2
-                className="mt-3 text-4xl font-bold"
-                style={{ color: "#7e22ce" }}
-              >
-                {formatCurrency(salesStats.monthlySales)}
+              <p className="font-medium text-slate-600">This Month&apos;s Sales</p>
+              <h2 className="mt-3 text-4xl font-bold" style={{ color: "#7e22ce" }}>
+                {isLoading ? "..." : formatCurrency(salesStats.monthlySales)}
               </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                Total invoice value for current month
-              </p>
+              <p className="mt-2 text-sm text-slate-500">Total invoice value for current month</p>
             </div>
           </section>
 
@@ -309,20 +260,14 @@ setSalesRefreshKey((currentKey) => currentKey + 1);
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <span className="text-xl">📄</span>
-
                 <div>
-                  <p className="font-bold text-slate-900">
-                    Sales Invoice Register
-                  </p>
-
-                  <p className="text-sm text-slate-600">
-                    Saved invoices appear in the table below.
-                  </p>
+                  <p className="font-bold text-slate-900">Sales Invoice Register</p>
+                  <p className="text-sm text-slate-600">Saved invoices appear in the table below.</p>
                 </div>
               </div>
 
               <span className="w-fit rounded-full bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700">
-                Invoices: {salesStats.totalInvoices}
+                Invoices: {isLoading ? "..." : salesStats.totalInvoices}
               </span>
             </div>
           </section>
@@ -331,7 +276,7 @@ setSalesRefreshKey((currentKey) => currentKey + 1);
             <SalesInvoiceForm />
           </div>
 
-          <SalesInvoiceTable refreshKey={salesRefreshKey} />
+          <SalesInvoiceTable />
         </main>
       </div>
     </div>

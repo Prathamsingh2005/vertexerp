@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
+import { createClient } from "@/lib/supabase/client";
 
 type PurchaseItem = {
   productId: string;
@@ -35,52 +36,225 @@ type Purchase = {
   createdAt: string;
 };
 
-const PURCHASES_KEY = "VertexERP_purchases";
+type ProfileRow = {
+  active_company_id: string | null;
+};
+
+type SupplierRow = {
+  id: string;
+  name: string;
+  mobile: string | null;
+  gst_number: string | null;
+};
+
+type PurchaseRow = {
+  id: string;
+  bill_number: string;
+  purchase_date: string;
+  payment_mode: string;
+  subtotal: number | string | null;
+  gst_total: number | string | null;
+  discount_total: number | string | null;
+  grand_total: number | string | null;
+  created_at: string;
+  supplier_id: string | null;
+  supplier: SupplierRow | SupplierRow[] | null;
+  purchase_items:
+    | {
+        product_id: string | null;
+        product_name: string;
+        quantity: number | string | null;
+        rate: number | string | null;
+        gst_rate: number | string | null;
+        discount: number | string | null;
+        base_amount: number | string | null;
+        gst_amount: number | string | null;
+        amount: number | string | null;
+      }[]
+    | null;
+};
 
 function formatCurrency(amount: number) {
-  return `₹${Number(amount || 0).toLocaleString("en-IN")}`;
+  return `₹${Number(amount || 0).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function getSupplier(
+  supplier: PurchaseRow["supplier"]
+): SupplierRow | null {
+  return Array.isArray(supplier) ? supplier[0] || null : supplier;
+}
+
+function mapPurchaseRow(row: PurchaseRow): Purchase {
+  const supplier = getSupplier(row.supplier);
+
+  return {
+    id: row.id,
+    billNumber: row.bill_number || "",
+    date: row.purchase_date || "",
+    paymentMode: row.payment_mode || "Cash",
+    supplierId: row.supplier_id || supplier?.id || "",
+    supplierName: supplier?.name || "Unknown Supplier",
+    supplierMobile: supplier?.mobile || "",
+    supplierGst: supplier?.gst_number || "",
+    items: (row.purchase_items || []).map((item) => ({
+      productId: item.product_id || "",
+      productName: item.product_name || "Product",
+      quantity: Number(item.quantity || 0),
+      rate: Number(item.rate || 0),
+      gst: Number(item.gst_rate || 0),
+      discount: Number(item.discount || 0),
+      baseAmount: Number(item.base_amount || 0),
+      gstAmount: Number(item.gst_amount || 0),
+      amount: Number(item.amount || 0),
+    })),
+    subtotal: Number(row.subtotal || 0),
+    gstTotal: Number(row.gst_total || 0),
+    discountTotal: Number(row.discount_total || 0),
+    grandTotal: Number(row.grand_total || 0),
+    createdAt: row.created_at || "",
+  };
 }
 
 export default function PurchaseBillPreviewPage() {
   const params = useParams();
-
-  const billId = typeof params.id === "string" ? params.id : "";
+  const billId =
+    typeof params.id === "string"
+      ? params.id
+      : Array.isArray(params.id)
+        ? params.id[0]
+        : "";
 
   const [bill, setBill] = useState<Purchase | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    try {
-      const savedPurchases = window.localStorage.getItem(PURCHASES_KEY);
+    async function loadPurchaseBill() {
+      setIsLoading(true);
+      setErrorMessage("");
 
-      const purchases: Purchase[] = savedPurchases
-        ? JSON.parse(savedPurchases)
-        : [];
+      try {
+        if (!billId) {
+          setBill(null);
+          setErrorMessage("Purchase bill ID is missing.");
+          return;
+        }
 
-      const selectedBill = purchases.find(
-        (purchase) => purchase.id === billId
-      );
+        const supabase = createClient();
 
-      setBill(selectedBill || null);
-    } catch {
-      setBill(null);
-    } finally {
-      setIsLoaded(true);
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          setBill(null);
+          setErrorMessage("Please sign in to view this purchase bill.");
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("active_company_id")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (profileError) {
+          throw profileError;
+        }
+
+        const activeCompanyId =
+          (profile as ProfileRow | null)?.active_company_id || null;
+
+        if (!activeCompanyId) {
+          setBill(null);
+          setErrorMessage(
+            "Select an active company from the Companies page first."
+          );
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("purchases")
+          .select(
+            `
+              id,
+              bill_number,
+              purchase_date,
+              payment_mode,
+              subtotal,
+              gst_total,
+              discount_total,
+              grand_total,
+              created_at,
+              supplier_id,
+              supplier:ledgers!purchases_supplier_id_fkey(
+                id,
+                name,
+                mobile,
+                gst_number
+              ),
+              purchase_items(
+                product_id,
+                product_name,
+                quantity,
+                rate,
+                gst_rate,
+                discount,
+                base_amount,
+                gst_amount,
+                amount
+              )
+            `
+          )
+          .eq("id", billId)
+          .eq("company_id", activeCompanyId)
+          .maybeSingle();
+
+        if (error) {
+          throw error;
+        }
+
+        if (!data) {
+          setBill(null);
+          setErrorMessage(
+            "This purchase bill is unavailable for the currently active company."
+          );
+          return;
+        }
+
+        setBill(mapPurchaseRow(data as unknown as PurchaseRow));
+      } catch (error) {
+        setBill(null);
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "Purchase bill could not be loaded."
+        );
+      } finally {
+        setIsLoading(false);
+      }
     }
+
+    loadPurchaseBill();
   }, [billId]);
 
-  if (!isLoaded) {
+  if (isLoading) {
     return (
       <div className="flex min-h-screen bg-slate-100">
         <Sidebar />
 
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <Navbar />
 
-          <main className="p-8">
-            <p className="text-lg font-semibold text-slate-700">
-              Loading purchase bill...
-            </p>
+          <main className="p-6 md:p-8">
+            <div className="rounded-3xl border border-slate-100 bg-white p-10 text-center shadow-xl">
+              <p className="text-lg font-semibold text-slate-700">
+                Loading purchase bill from the cloud database...
+              </p>
+            </div>
           </main>
         </div>
       </div>
@@ -92,17 +266,18 @@ export default function PurchaseBillPreviewPage() {
       <div className="flex min-h-screen bg-slate-100">
         <Sidebar />
 
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <Navbar />
 
-          <main className="p-8">
+          <main className="p-6 md:p-8">
             <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-lg">
               <h1 className="text-3xl font-bold text-slate-900">
                 Purchase Bill Not Found
               </h1>
 
               <p className="mt-3 text-slate-600">
-                This purchase bill may have been deleted or is unavailable.
+                {errorMessage ||
+                  "This purchase bill may have been deleted or is unavailable."}
               </p>
 
               <Link
@@ -118,10 +293,9 @@ export default function PurchaseBillPreviewPage() {
     );
   }
 
-  const items = Array.isArray(bill.items) ? bill.items : [];
-
+  const items = bill.items;
   const isCreditPayment =
-    bill.paymentMode?.toLowerCase() === "credit";
+    bill.paymentMode.trim().toLowerCase() === "credit";
 
   return (
     <>
@@ -135,6 +309,8 @@ export default function PurchaseBillPreviewPage() {
           html,
           body {
             background: white !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
 
           .purchase-sidebar-print,
@@ -143,15 +319,13 @@ export default function PurchaseBillPreviewPage() {
             display: none !important;
           }
 
-          .purchase-page-print {
+          .purchase-page-print,
+          .purchase-content-print,
+          .purchase-main-print {
             display: block !important;
             min-height: auto !important;
-            background: white !important;
-          }
-
-          .purchase-content-print {
-            display: block !important;
             width: 100% !important;
+            background: white !important;
           }
 
           .purchase-main-print {
@@ -174,12 +348,12 @@ export default function PurchaseBillPreviewPage() {
 
           .purchase-table-print {
             min-width: 0 !important;
-            font-size: 11px !important;
+            font-size: 10px !important;
           }
 
           .purchase-table-print th,
           .purchase-table-print td {
-            padding: 8px !important;
+            padding: 7px !important;
           }
         }
       `}</style>
@@ -204,16 +378,14 @@ export default function PurchaseBillPreviewPage() {
               </Link>
 
               <button
-                    type="button"
-                           onClick={() => window.print()}
-                            className="inline-flex items-center gap-2 rounded-xl px-6 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] hover:opacity-90 active:scale-[0.98]"
-                           style={{
-                             backgroundColor: "#7e22ce",
-                           }}
->
-  <span className="text-lg">🖨️</span>
-  Print Bill
-</button>
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-2 rounded-xl px-6 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] hover:opacity-90 active:scale-[0.98]"
+                style={{ backgroundColor: "#7e22ce" }}
+              >
+                <span className="text-lg">🖨️</span>
+                Print Bill
+              </button>
             </div>
 
             <section className="purchase-card-print mx-auto max-w-6xl rounded-3xl border border-slate-200 bg-white p-6 shadow-xl md:p-8">
@@ -359,7 +531,7 @@ export default function PurchaseBillPreviewPage() {
                           </td>
 
                           <td className="px-5 py-4 text-slate-700">
-                            {item.discount}%
+                            {formatCurrency(item.discount)}
                           </td>
 
                           <td className="px-5 py-4 text-right font-bold text-slate-900">
