@@ -10,6 +10,7 @@ import {
   Building2,
   CircleDollarSign,
   Cloud,
+  History,
   LayoutDashboard,
   ReceiptText,
   ShoppingCart,
@@ -21,6 +22,7 @@ type NavigationItem = {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
+  section?: string;
 };
 
 const navigationItems: NavigationItem[] = [
@@ -28,12 +30,23 @@ const navigationItems: NavigationItem[] = [
   { href: "/company", label: "Companies", icon: Building2 },
   { href: "/ledger", label: "Ledgers", icon: BookOpenText },
   { href: "/inventory", label: "Inventory", icon: Boxes },
-  { href: "/sales", label: "Sales", icon: ShoppingCart },
+  {
+    href: "/sales",
+    label: "Sales",
+    icon: ShoppingCart,
+    section: "Transactions",
+  },
   { href: "/purchase", label: "Purchase", icon: ReceiptText },
   { href: "/expenses", label: "Expenses", icon: WalletCards },
   { href: "/outstanding", label: "Outstanding", icon: CircleDollarSign },
   { href: "/payments", label: "Payments", icon: CircleDollarSign },
   { href: "/reports", label: "Reports", icon: BarChart3 },
+  {
+    href: "/audit-history",
+    label: "Audit History",
+    icon: History,
+    section: "Management",
+  },
 ];
 
 function isActiveRoute(pathname: string, href: string) {
@@ -73,16 +86,15 @@ type NavLinksProps = {
 function NavLinks({ pathname, onNavigate }: NavLinksProps) {
   return (
     <ul className="space-y-1.5">
-      {navigationItems.map((item, index) => {
+      {navigationItems.map((item) => {
         const Icon = item.icon;
         const isActive = isActiveRoute(pathname, item.href);
-        const isFirstTransaction = index === 4;
 
         return (
           <li key={item.href}>
-            {isFirstTransaction && (
+            {item.section && (
               <p className="mb-2 mt-5 px-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                Transactions
+                {item.section}
               </p>
             )}
 

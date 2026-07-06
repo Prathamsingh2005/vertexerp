@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import ConfirmDeleteModal from "@/components/ConfirmDeleteModal";
 
 type Expense = {
   id: string;
@@ -66,6 +67,9 @@ function mapExpense(row: ExpenseRow): Expense {
 export default function ExpenseTable() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeletingExpense, setIsDeletingExpense] = useState(false);
+  const [expensePendingDeletion, setExpensePendingDeletion] =
+    useState<Expense | null>(null);
   const [message, setMessage] = useState("");
 
   function showMessage(nextMessage: string) {
@@ -158,24 +162,21 @@ export default function ExpenseTable() {
     };
   }, []);
 
-  async function deleteExpense(expense: Expense) {
-    const shouldDelete = window.confirm(
-      `Delete ${formatCurrency(expense.amount)} expense from ${formatDate(
-        expense.date
-      )}?`
-    );
+  async function confirmDeleteExpense() {
+    const expense = expensePendingDeletion;
 
-    if (!shouldDelete) {
+    if (!expense || isDeletingExpense) {
       return;
     }
+
+    setIsDeletingExpense(true);
 
     try {
       const supabase = createClient();
 
-      const { error } = await supabase
-        .from("expenses")
-        .delete()
-        .eq("id", expense.id);
+      const { error } = await supabase.rpc("delete_expense_entry", {
+        p_expense_id: expense.id,
+      });
 
       if (error) {
         throw error;
@@ -185,6 +186,8 @@ export default function ExpenseTable() {
         currentExpenses.filter((item) => item.id !== expense.id)
       );
 
+      setExpensePendingDeletion(null);
+
       window.dispatchEvent(new Event("vertexerp-expenses-updated"));
       showMessage("Expense deleted successfully.");
     } catch (error) {
@@ -193,6 +196,8 @@ export default function ExpenseTable() {
           ? error.message
           : "Unable to delete the expense. Please try again."
       );
+    } finally {
+      setIsDeletingExpense(false);
     }
   }
 
@@ -206,7 +211,8 @@ export default function ExpenseTable() {
   );
 
   return (
-    <section className="mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm sm:mt-8">
+    <>
+      <section className="mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm sm:mt-8">
       <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 md:px-8 md:py-6">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-600">
@@ -309,7 +315,7 @@ export default function ExpenseTable() {
 
                 <button
                   type="button"
-                  onClick={() => deleteExpense(expense)}
+                  onClick={() => setExpensePendingDeletion(expense)}
                   className="mt-4 w-full rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
                 >
                   Delete Expense
@@ -379,7 +385,7 @@ export default function ExpenseTable() {
                     <td className="px-6 py-5 text-right">
                       <button
                         type="button"
-                        onClick={() => deleteExpense(expense)}
+                        onClick={() => setExpensePendingDeletion(expense)}
                         className="font-semibold text-red-500 transition hover:text-red-700"
                       >
                         Delete
@@ -392,6 +398,29 @@ export default function ExpenseTable() {
           </div>
         </>
       )}
-    </section>
+      </section>
+
+      <ConfirmDeleteModal
+        isOpen={Boolean(expensePendingDeletion)}
+        title="Delete expense?"
+        description={
+          expensePendingDeletion
+            ? `This will remove the ${formatCurrency(
+                expensePendingDeletion.amount
+              )} ${expensePendingDeletion.category} expense dated ${formatDate(
+                expensePendingDeletion.date
+              )}.`
+            : ""
+        }
+        confirmLabel="Delete Expense"
+        isDeleting={isDeletingExpense}
+        onCancel={() => {
+          if (!isDeletingExpense) {
+            setExpensePendingDeletion(null);
+          }
+        }}
+        onConfirm={confirmDeleteExpense}
+      />
+    </>
   );
 }

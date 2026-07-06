@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import { createClient } from "@/lib/supabase/client";
+import ConfirmDeleteModal from "@/components/ConfirmDeleteModal";
 
 type PaymentType = "Customer Receipt" | "Supplier Payment";
 
@@ -153,6 +154,9 @@ export default function PaymentsPage() {
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeletingPayment, setIsDeletingPayment] = useState(false);
+  const [paymentPendingDeletion, setPaymentPendingDeletion] =
+    useState<Payment | null>(null);
   const [message, setMessage] = useState("");
 
   const [form, setForm] = useState({
@@ -495,16 +499,14 @@ export default function PaymentsPage() {
     }
   }
 
-  async function handleDeletePayment(payment: Payment) {
-    const confirmed = window.confirm(
-      `Delete this ${payment.type.toLowerCase()} of ${formatCurrency(
-        payment.amount
-      )} for ${payment.partyName}?`
-    );
+  async function confirmDeletePayment() {
+    const payment = paymentPendingDeletion;
 
-    if (!confirmed) {
+    if (!payment || isDeletingPayment) {
       return;
     }
+
+    setIsDeletingPayment(true);
 
     try {
       const supabase = createClient();
@@ -520,6 +522,8 @@ export default function PaymentsPage() {
       await loadData();
       window.dispatchEvent(new Event("vertexerp-payments-updated"));
 
+      setPaymentPendingDeletion(null);
+
       showMessage(
         `Payment of ${formatCurrency(payment.amount)} deleted successfully.`
       );
@@ -529,6 +533,8 @@ export default function PaymentsPage() {
           ? error.message
           : "Payment could not be deleted."
       );
+    } finally {
+      setIsDeletingPayment(false);
     }
   }
 
@@ -941,7 +947,7 @@ export default function PaymentsPage() {
 
                         <button
                           type="button"
-                          onClick={() => handleDeletePayment(payment)}
+                          onClick={() => setPaymentPendingDeletion(payment)}
                           className="mt-4 w-full rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700"
                         >
                           Delete Payment
@@ -1073,7 +1079,7 @@ export default function PaymentsPage() {
                           <td className="px-6 py-5 text-right">
                             <button
                               type="button"
-                              onClick={() => handleDeletePayment(payment)}
+                              onClick={() => setPaymentPendingDeletion(payment)}
                               className="rounded-lg px-4 py-2 text-sm font-bold text-white transition hover:scale-[1.03] active:scale-[0.97]"
                               style={{
                                 backgroundColor: "#dc2626",
@@ -1093,6 +1099,26 @@ export default function PaymentsPage() {
           </section>
         </main>
       </div>
+
+      <ConfirmDeleteModal
+        isOpen={Boolean(paymentPendingDeletion)}
+        title="Delete payment entry?"
+        description={
+          paymentPendingDeletion
+            ? `This will remove the ${paymentPendingDeletion.type.toLowerCase()} of ${formatCurrency(
+                paymentPendingDeletion.amount
+              )} for ${paymentPendingDeletion.partyName}.`
+            : ""
+        }
+        confirmLabel="Delete Payment"
+        isDeleting={isDeletingPayment}
+        onCancel={() => {
+          if (!isDeletingPayment) {
+            setPaymentPendingDeletion(null);
+          }
+        }}
+        onConfirm={confirmDeletePayment}
+      />
     </div>
   );
 }
