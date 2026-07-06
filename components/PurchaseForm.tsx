@@ -426,15 +426,15 @@ export default function PurchaseForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="mt-8 rounded-3xl border border-slate-100 bg-white p-8 shadow-xl"
+      className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:mt-8 sm:p-6 lg:p-8"
     >
-      <div className="mb-8 flex flex-col gap-4 border-b border-slate-200 pb-6 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-6 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">
+          <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
             Create Purchase Bill
           </h2>
 
-          <p className="mt-1 text-slate-600">
+          <p className="mt-1 text-sm text-slate-600 sm:text-base">
             Save supplier purchase bills and automatically increase product stock.
           </p>
         </div>
@@ -445,34 +445,34 @@ export default function PurchaseForm() {
       </div>
 
       {message && (
-        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:text-base">
           {message}
         </div>
       )}
 
       {!isLoading && !activeCompanyId && (
-        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-700">
+        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700 sm:text-base">
           Select an active company from the <strong>Companies</strong> page
           before creating a purchase bill.
         </div>
       )}
 
       {!isLoading && activeCompanyId && suppliers.length === 0 && (
-        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-700">
+        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700 sm:text-base">
           No supplier ledger found. Create a ledger with the{" "}
           <strong>Supplier</strong> group from the Ledger page first.
         </div>
       )}
 
       {!isLoading && activeCompanyId && products.length === 0 && (
-        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-700">
+        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700 sm:text-base">
           No products found. Add products from the <strong>Inventory</strong>{" "}
           page first.
         </div>
       )}
 
       <fieldset disabled={isFormDisabled}>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
           <div>
             <label className="mb-2 block font-semibold text-slate-800">
               Purchase Bill Number
@@ -575,7 +575,7 @@ export default function PurchaseForm() {
           </div>
         </div>
 
-        <div className="mt-10">
+        <div className="mt-8 sm:mt-10">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-xl font-bold text-slate-900">
@@ -590,40 +590,168 @@ export default function PurchaseForm() {
             <button
               type="button"
               onClick={addItem}
-              className="w-fit rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 font-semibold text-blue-700 transition hover:bg-blue-100"
+              className="w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 font-semibold text-blue-700 transition hover:bg-blue-100 sm:w-fit"
             >
               + Add Item
             </button>
           </div>
 
-          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+          {/* Phone layout: each purchase item is a readable card. */}
+          <div className="space-y-4 md:hidden">
+            {items.map((item, index) => (
+              <div
+                key={index}
+                className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+              >
+                <div className="mb-4 flex items-center justify-between">
+                  <p className="font-bold text-slate-900">
+                    Item {index + 1}
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => removeItem(index)}
+                    className="text-sm font-semibold text-red-500 transition hover:text-red-700"
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">
+                    Product
+                  </label>
+
+                  <select
+                    value={item.productId}
+                    onChange={(event) =>
+                      updateItem(index, "productId", event.target.value)
+                    }
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-800 outline-none focus:border-blue-500"
+                  >
+                    <option value="">Select product</option>
+
+                    {products.map((product) => (
+                      <option key={product.id} value={product.id}>
+                        {product.name}
+                        {product.sku ? ` (${product.sku})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      Quantity
+                    </label>
+
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.quantity}
+                      onChange={(event) =>
+                        updateItem(index, "quantity", event.target.value)
+                      }
+                      placeholder="0"
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-900 outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      Purchase Rate
+                    </label>
+
+                    <input
+                      type="number"
+                      min="0"
+                      value={item.rate}
+                      onChange={(event) =>
+                        updateItem(index, "rate", event.target.value)
+                      }
+                      placeholder="₹ 0"
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-900 outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      GST
+                    </label>
+
+                    <select
+                      value={item.gst}
+                      onChange={(event) =>
+                        updateItem(index, "gst", event.target.value)
+                      }
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-800 outline-none focus:border-blue-500"
+                    >
+                      <option value="0">0%</option>
+                      <option value="5">5%</option>
+                      <option value="12">12%</option>
+                      <option value="18">18%</option>
+                      <option value="28">28%</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      Discount
+                    </label>
+
+                    <input
+                      type="number"
+                      min="0"
+                      value={item.discount}
+                      onChange={(event) =>
+                        updateItem(index, "discount", event.target.value)
+                      }
+                      placeholder="₹ 0"
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-900 outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-center justify-between rounded-xl bg-white px-4 py-3">
+                  <span className="text-sm font-semibold text-slate-600">
+                    Amount
+                  </span>
+
+                  <span className="font-bold text-slate-900">
+                    ₹
+                    {calculatedItems[index].amount.toLocaleString("en-IN", {
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop/tablet layout: horizontal table remains efficient for rapid entry. */}
+          <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 md:block">
             <table className="w-full min-w-[1000px]">
               <thead className="bg-slate-50">
                 <tr className="text-left">
                   <th className="px-5 py-4 text-sm font-bold text-slate-700">
                     Product
                   </th>
-
                   <th className="px-5 py-4 text-sm font-bold text-slate-700">
                     Quantity
                   </th>
-
                   <th className="px-5 py-4 text-sm font-bold text-slate-700">
                     Purchase Rate
                   </th>
-
                   <th className="px-5 py-4 text-sm font-bold text-slate-700">
                     GST
                   </th>
-
                   <th className="px-5 py-4 text-sm font-bold text-slate-700">
                     Discount
                   </th>
-
                   <th className="px-5 py-4 text-sm font-bold text-slate-700">
                     Amount
                   </th>
-
                   <th className="px-5 py-4 text-sm font-bold text-slate-700">
                     Action
                   </th>
@@ -730,7 +858,7 @@ export default function PurchaseForm() {
           </div>
         </div>
 
-        <div className="mt-8 ml-auto max-w-md rounded-2xl bg-slate-50 p-6">
+        <div className="mt-6 max-w-none rounded-2xl bg-slate-50 p-5 sm:mt-8 sm:p-6 md:ml-auto md:max-w-md">
           <div className="flex items-center justify-between border-b border-slate-200 pb-3 text-slate-700">
             <span>Subtotal</span>
             <span className="font-semibold">
@@ -760,10 +888,10 @@ export default function PurchaseForm() {
           </div>
         </div>
 
-        <div className="mt-8 flex flex-wrap gap-4">
+        <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:gap-4">
           <button
             type="submit"
-            className="rounded-xl bg-blue-600 px-7 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl"
+            className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl sm:w-auto sm:px-7"
           >
             {isSaving ? "Saving Purchase..." : "Save Purchase & Update Stock"}
           </button>
@@ -771,7 +899,7 @@ export default function PurchaseForm() {
           <button
             type="button"
             onClick={resetForm}
-            className="rounded-xl border border-slate-300 bg-white px-7 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
+            className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto sm:px-7"
           >
             Reset
           </button>

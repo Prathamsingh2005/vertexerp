@@ -485,23 +485,23 @@ export default function DashboardOverview() {
   return (
     <>
       {message && (
-        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+        <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
           {message}
         </div>
       )}
 
-      <section className="relative overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-white via-blue-50 to-indigo-100 p-6 shadow-xl shadow-blue-950/5 md:p-8">
+      <section className="relative overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-white via-blue-50 to-indigo-100 p-4 shadow-xl shadow-blue-950/5 sm:p-6 md:p-8">
         <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-blue-300/20 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 left-1/3 h-64 w-64 rounded-full bg-indigo-300/20 blur-3xl" />
 
-        <div className="relative flex flex-col gap-7">
-          <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+        <div className="relative flex flex-col gap-5 sm:gap-7">
+          <div className="flex flex-col gap-5 sm:gap-6 xl:flex-row xl:items-end xl:justify-between">
             <div className="max-w-2xl">
               <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-700">
                 Business Pulse
               </p>
 
-              <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
+              <h2 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl md:text-4xl">
                 Your {currentMonthLabel} performance at a glance.
               </h2>
 
@@ -511,10 +511,10 @@ export default function DashboardOverview() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Link
                 href="/sales"
-                className="min-w-[155px] flex-1 rounded-2xl border border-blue-200 bg-white/90 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
+                className="min-w-0 rounded-2xl border border-blue-200 bg-white/90 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
               >
                 <div className="flex items-center gap-2 text-slate-900">
                   <ShoppingCart className="h-4 w-4 text-blue-600" />
@@ -528,7 +528,7 @@ export default function DashboardOverview() {
 
               <Link
                 href="/expenses"
-                className="min-w-[155px] flex-1 rounded-2xl border border-orange-200 bg-white/90 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-md"
+                className="min-w-0 rounded-2xl border border-orange-200 bg-white/90 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-md"
               >
                 <div className="flex items-center gap-2 text-slate-900">
                   <WalletCards className="h-4 w-4 text-orange-600" />
@@ -542,7 +542,7 @@ export default function DashboardOverview() {
 
               <Link
                 href="/reports/profit"
-                className="min-w-[155px] flex-1 rounded-2xl border border-emerald-200 bg-white/90 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md"
+                className="min-w-0 rounded-2xl border border-emerald-200 bg-white/90 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md"
               >
                 <div className="flex items-center gap-2 text-slate-900">
                   <TrendingUp className="h-4 w-4 text-emerald-600" />
@@ -556,7 +556,7 @@ export default function DashboardOverview() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 border-t border-slate-200 pt-6 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 border-t border-slate-200 pt-5 sm:grid-cols-3 sm:pt-6">
             <div className="rounded-2xl border border-white bg-white/70 px-4 py-4 shadow-sm">
               <p className="text-sm font-medium text-slate-500">
                 Monthly Revenue
@@ -597,8 +597,8 @@ export default function DashboardOverview() {
         </div>
       </section>
 
-      <section className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-        <div className="group rounded-3xl border border-blue-100 bg-white p-6 shadow-lg shadow-blue-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl">
+      <section className="mt-6 grid grid-cols-1 gap-4 sm:mt-8 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3">
+        <div className="group rounded-3xl border border-blue-100 bg-white p-4 shadow-lg shadow-blue-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
           <div className="flex items-start justify-between">
             <div className="rounded-2xl bg-blue-50 p-3 text-blue-600">
               <TrendingUp className="h-6 w-6" />
@@ -609,7 +609,7 @@ export default function DashboardOverview() {
             </span>
           </div>
 
-          <p className="mt-6 text-sm font-semibold uppercase tracking-wider text-slate-500">
+          <p className="mt-4 text-sm font-semibold uppercase tracking-wider text-slate-500 sm:mt-6">
             Sales Revenue
           </p>
 
@@ -622,7 +622,7 @@ export default function DashboardOverview() {
           </p>
         </div>
 
-        <div className="group rounded-3xl border border-orange-100 bg-white p-6 shadow-lg shadow-orange-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl">
+        <div className="group rounded-3xl border border-orange-100 bg-white p-4 shadow-lg shadow-orange-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
           <div className="flex items-start justify-between">
             <div className="rounded-2xl bg-orange-50 p-3 text-orange-600">
               <WalletCards className="h-6 w-6" />
@@ -633,7 +633,7 @@ export default function DashboardOverview() {
             </span>
           </div>
 
-          <p className="mt-6 text-sm font-semibold uppercase tracking-wider text-slate-500">
+          <p className="mt-4 text-sm font-semibold uppercase tracking-wider text-slate-500 sm:mt-6">
             Operating Expenses
           </p>
 
@@ -646,7 +646,7 @@ export default function DashboardOverview() {
           </p>
         </div>
 
-        <div className="group rounded-3xl border border-emerald-100 bg-white p-6 shadow-lg shadow-emerald-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl">
+        <div className="group rounded-3xl border border-emerald-100 bg-white p-4 shadow-lg shadow-emerald-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
           <div className="flex items-start justify-between">
             <div
               className="rounded-2xl p-3"
@@ -673,7 +673,7 @@ export default function DashboardOverview() {
             </span>
           </div>
 
-          <p className="mt-6 text-sm font-semibold uppercase tracking-wider text-slate-500">
+          <p className="mt-4 text-sm font-semibold uppercase tracking-wider text-slate-500 sm:mt-6">
             Net Profit
           </p>
 
@@ -691,7 +691,7 @@ export default function DashboardOverview() {
           </p>
         </div>
 
-        <div className="group rounded-3xl border border-purple-100 bg-white p-6 shadow-lg shadow-purple-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl">
+        <div className="group rounded-3xl border border-purple-100 bg-white p-4 shadow-lg shadow-purple-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
           <div className="flex items-start justify-between">
             <div className="rounded-2xl bg-purple-50 p-3 text-purple-600">
               <ReceiptText className="h-6 w-6" />
@@ -702,7 +702,7 @@ export default function DashboardOverview() {
             </span>
           </div>
 
-          <p className="mt-6 text-sm font-semibold uppercase tracking-wider text-slate-500">
+          <p className="mt-4 text-sm font-semibold uppercase tracking-wider text-slate-500 sm:mt-6">
             Purchase Bills
           </p>
 
@@ -715,7 +715,7 @@ export default function DashboardOverview() {
           </p>
         </div>
 
-        <div className="group rounded-3xl border border-indigo-100 bg-white p-6 shadow-lg shadow-indigo-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl">
+        <div className="group rounded-3xl border border-indigo-100 bg-white p-4 shadow-lg shadow-indigo-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
           <div className="flex items-start justify-between">
             <div
               className="rounded-2xl p-3"
@@ -738,7 +738,7 @@ export default function DashboardOverview() {
             </span>
           </div>
 
-          <p className="mt-6 text-sm font-semibold uppercase tracking-wider text-slate-500">
+          <p className="mt-4 text-sm font-semibold uppercase tracking-wider text-slate-500 sm:mt-6">
             Total Products
           </p>
 
@@ -751,7 +751,7 @@ export default function DashboardOverview() {
           </p>
         </div>
 
-        <div className="group rounded-3xl border border-red-100 bg-white p-6 shadow-lg shadow-red-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl">
+        <div className="group rounded-3xl border border-red-100 bg-white p-4 shadow-lg shadow-red-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
           <div className="flex items-start justify-between">
             <div className="rounded-2xl bg-red-50 p-3 text-red-600">
               <TriangleAlert className="h-6 w-6" />
@@ -770,7 +770,7 @@ export default function DashboardOverview() {
             </span>
           </div>
 
-          <p className="mt-6 text-sm font-semibold uppercase tracking-wider text-slate-500">
+          <p className="mt-4 text-sm font-semibold uppercase tracking-wider text-slate-500 sm:mt-6">
             Low Stock Alert
           </p>
 
@@ -784,9 +784,9 @@ export default function DashboardOverview() {
         </div>
       </section>
 
-      <section className="mt-8 grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <section className="mt-6 grid grid-cols-1 gap-5 sm:mt-8 sm:gap-6 xl:grid-cols-3">
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-950/5 xl:col-span-2">
-          <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-6 md:flex-row md:items-center md:justify-between md:px-8">
+          <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 md:px-8 md:py-6">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
                 Live Activity
@@ -806,7 +806,7 @@ export default function DashboardOverview() {
             </span>
           </div>
 
-          <div className="p-5 md:p-6">
+          <div className="p-4 sm:p-5 md:p-6">
             {isLoading ? (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-14 text-center">
                 <p className="text-lg font-bold text-slate-800">
@@ -915,7 +915,7 @@ export default function DashboardOverview() {
           </div>
         </div>
 
-        <aside className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-950/5">
+        <aside className="rounded-3xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-950/5 sm:p-6">
           <div className="flex items-center justify-between">
             <div>
               <p
@@ -941,7 +941,7 @@ export default function DashboardOverview() {
             </div>
           </div>
 
-          <div className="mt-7 space-y-4">
+          <div className="mt-5 space-y-4 sm:mt-7">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <span className="text-sm font-medium text-slate-600">
                 Sales Revenue
@@ -997,7 +997,7 @@ export default function DashboardOverview() {
           </div>
 
           <div
-            className="mt-6 rounded-2xl border p-5"
+            className="mt-5 rounded-2xl border p-4 sm:mt-6 sm:p-5"
             style={{
               backgroundColor: "#eff6ff",
               borderColor: "#bfdbfe",
@@ -1025,7 +1025,7 @@ export default function DashboardOverview() {
 
           <Link
             href="/reports/profit"
-            className="mt-6 flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-5 py-3 font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+            className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 px-5 py-3 font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 sm:mt-6"
           >
             Open Profit &amp; Loss Report
             <ArrowUpRight className="h-4 w-4" />

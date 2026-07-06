@@ -73,10 +73,7 @@ export default function LedgerPage() {
   useEffect(() => {
     loadLedgerStats();
 
-    window.addEventListener(
-      "vertexerp-ledgers-updated",
-      loadLedgerStats
-    );
+    window.addEventListener("vertexerp-ledgers-updated", loadLedgerStats);
     window.addEventListener(
       "vertexerp-active-company-updated",
       loadLedgerStats
@@ -123,14 +120,14 @@ export default function LedgerPage() {
       <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-6 md:p-8">
-          <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <main className="p-4 sm:p-6 lg:p-8">
+          <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-slate-900">
+              <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
                 📒 Ledger Management
               </h1>
 
-              <p className="mt-2 text-lg text-slate-600">
+              <p className="mt-2 max-w-3xl text-base text-slate-600 sm:text-lg">
                 Create and manage customers, suppliers and bank accounts.
               </p>
             </div>
@@ -138,24 +135,17 @@ export default function LedgerPage() {
             <button
               type="button"
               onClick={scrollToLedgerForm}
-              className="rounded-xl px-6 py-3 font-semibold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98]"
-              style={{
-                backgroundColor: "#2563eb",
-                color: "#ffffff",
-              }}
+              className="w-full rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl active:scale-[0.98] sm:w-fit"
             >
               + Add Ledger
             </button>
           </div>
 
-          <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-3xl border border-blue-100 bg-white p-6 shadow-lg">
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
+            <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Total Ledgers</p>
 
-              <h2
-                className="mt-3 text-4xl font-bold"
-                style={{ color: "#2563eb" }}
-              >
+              <h2 className="mt-3 text-3xl font-bold text-blue-600 sm:text-4xl">
                 {isLoading ? "..." : ledgerStats.totalLedgers}
               </h2>
 
@@ -164,13 +154,10 @@ export default function LedgerPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-emerald-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Customers</p>
 
-              <h2
-                className="mt-3 text-4xl font-bold"
-                style={{ color: "#059669" }}
-              >
+              <h2 className="mt-3 text-3xl font-bold text-emerald-600 sm:text-4xl">
                 {isLoading ? "..." : ledgerStats.customers}
               </h2>
 
@@ -179,13 +166,10 @@ export default function LedgerPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-orange-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-orange-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Suppliers</p>
 
-              <h2
-                className="mt-3 text-4xl font-bold"
-                style={{ color: "#ea580c" }}
-              >
+              <h2 className="mt-3 text-3xl font-bold text-orange-600 sm:text-4xl">
                 {isLoading ? "..." : ledgerStats.suppliers}
               </h2>
 
@@ -194,13 +178,10 @@ export default function LedgerPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-purple-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-purple-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Bank Accounts</p>
 
-              <h2
-                className="mt-3 text-4xl font-bold"
-                style={{ color: "#7e22ce" }}
-              >
+              <h2 className="mt-3 text-3xl font-bold text-purple-700 sm:text-4xl">
                 {isLoading ? "..." : ledgerStats.bankAccounts}
               </h2>
 
@@ -210,7 +191,7 @@ export default function LedgerPage() {
             </div>
           </section>
 
-          <section className="mt-8 rounded-3xl border border-slate-100 bg-white p-5 shadow-lg">
+          <section className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:mt-8 sm:p-5">
             <div className="relative">
               <span className="absolute left-5 top-3.5 text-lg text-slate-400">
                 🔍
@@ -221,7 +202,7 @@ export default function LedgerPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search by ledger name, group, mobile, email or GST..."
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 py-3 pl-14 pr-5 text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 py-3 pl-14 pr-5 text-slate-900 placeholder:text-sm placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 sm:placeholder:text-base"
               />
             </div>
           </section>

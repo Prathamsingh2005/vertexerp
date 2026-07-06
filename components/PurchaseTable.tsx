@@ -119,6 +119,10 @@ function mapPurchaseRow(row: PurchaseRow): Purchase {
   };
 }
 
+function formatCurrency(value: number) {
+  return `₹${Number(value || 0).toLocaleString("en-IN")}`;
+}
+
 export default function PurchaseTable() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -285,160 +289,229 @@ export default function PurchaseTable() {
   }
 
   return (
-    <div className="mt-10 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
-      <div className="flex flex-col gap-4 border-b border-slate-200 px-8 py-6 sm:flex-row sm:items-center sm:justify-between">
+    <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8 lg:mt-10">
+      <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">
+          <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
             Recent Purchase Bills
           </h2>
 
-          <p className="mt-1 text-slate-600">
+          <p className="mt-1 text-sm text-slate-600 sm:text-base">
             View saved supplier purchases and stock-entry history.
           </p>
         </div>
 
-        <div className="rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+        <div className="w-fit rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
           Total Bills: {purchases.length}
         </div>
       </div>
 
       {message && (
-        <div className="mx-6 mt-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+        <div className="mx-4 mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mx-6 sm:mt-6 sm:text-base">
           {message}
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1000px]">
-          <thead className="bg-slate-50">
-            <tr className="border-b border-slate-200 text-left">
-              <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                Bill No.
-              </th>
+      {isLoading ? (
+        <div className="px-4 py-12 text-center text-slate-500 sm:px-6">
+          Loading purchase bills from the cloud database...
+        </div>
+      ) : purchases.length === 0 ? (
+        <div className="px-4 py-12 text-center text-slate-500 sm:px-6">
+          <p className="text-lg font-semibold text-slate-700">
+            No purchase bills saved yet
+          </p>
 
-              <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                Supplier
-              </th>
-
-              <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                Date
-              </th>
-
-              <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                Payment Mode
-              </th>
-
-              <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                Amount
-              </th>
-
-              <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                Status
-              </th>
-
-              <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                Action
-              </th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {isLoading ? (
-              <tr>
-                <td
-                  colSpan={7}
-                  className="px-6 py-12 text-center text-slate-500"
-                >
-                  Loading purchase bills from the cloud database...
-                </td>
-              </tr>
-            ) : purchases.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={7}
-                  className="px-6 py-12 text-center text-slate-500"
-                >
-                  <p className="text-lg font-semibold text-slate-700">
-                    No purchase bills saved yet
-                  </p>
-
-                  <p className="mt-2">
-                    Save a purchase bill using the form above.
-                  </p>
-                </td>
-              </tr>
-            ) : (
-              purchases.map((purchase) => (
-                <tr
-                  key={purchase.id}
-                  className="border-b border-slate-100 transition hover:bg-blue-50"
-                >
-                  <td className="px-6 py-5">
+          <p className="mt-2">Save a purchase bill using the form above.</p>
+        </div>
+      ) : (
+        <>
+          {/* Phone layout: billing cards are easier to review than a wide table. */}
+          <div className="space-y-4 p-4 md:hidden">
+            {purchases.map((purchase) => (
+              <article
+                key={purchase.id}
+                className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
                     <Link
                       href={`/purchase/bill/${purchase.id}`}
-                      className="font-bold text-blue-600 transition hover:text-blue-800 hover:underline"
+                      className="block truncate text-lg font-bold text-blue-600 transition hover:text-blue-800 hover:underline"
                     >
                       {purchase.billNumber}
                     </Link>
 
-                    <p className="mt-1 text-xs text-slate-500">
-                      {purchase.items.length} Item
-                      {purchase.items.length !== 1 ? "s" : ""}
-                    </p>
-                  </td>
-
-                  <td className="px-6 py-5">
-                    <p className="font-bold text-slate-900">
-                      {purchase.supplierName}
-                    </p>
-
                     <p className="mt-1 text-sm text-slate-500">
-                      {purchase.supplierMobile || "No mobile added"}
+                      {purchase.items.length} Item
+                      {purchase.items.length !== 1 ? "s" : ""} ·{" "}
+                      {purchase.date || "No date"}
                     </p>
-                  </td>
+                  </div>
 
-                  <td className="px-6 py-5 text-slate-700">
-                    {purchase.date}
-                  </td>
+                  <span className="shrink-0 rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">
+                    Saved
+                  </span>
+                </div>
 
-                  <td className="px-6 py-5 text-slate-700">
-                    {purchase.paymentMode}
-                  </td>
+                <div className="mt-4 rounded-xl bg-white p-3">
+                  <p className="font-bold text-slate-900">
+                    {purchase.supplierName}
+                  </p>
 
-                  <td className="px-6 py-5 font-bold text-slate-900">
-                    ₹{Number(purchase.grandTotal).toLocaleString("en-IN")}
-                  </td>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {purchase.supplierMobile || "No mobile added"}
+                  </p>
+                </div>
 
-                  <td className="px-6 py-5">
-                    <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">
-                      Saved
-                    </span>
-                  </td>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-white p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Payment Mode
+                    </p>
+                    <p className="mt-1 font-semibold text-slate-800">
+                      {purchase.paymentMode}
+                    </p>
+                  </div>
 
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-4">
+                  <div className="rounded-xl bg-white p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Amount
+                    </p>
+                    <p className="mt-1 font-bold text-slate-900">
+                      {formatCurrency(purchase.grandTotal)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <Link
+                    href={`/purchase/bill/${purchase.id}`}
+                    className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-center text-sm font-bold text-blue-700 transition hover:bg-blue-100"
+                  >
+                    View Bill
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => deletePurchase(purchase)}
+                    className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          {/* Desktop/tablet layout: table stays available for faster comparison. */}
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[1000px]">
+              <thead className="bg-slate-50">
+                <tr className="border-b border-slate-200 text-left">
+                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                    Bill No.
+                  </th>
+
+                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                    Supplier
+                  </th>
+
+                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                    Date
+                  </th>
+
+                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                    Payment Mode
+                  </th>
+
+                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                    Amount
+                  </th>
+
+                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                    Status
+                  </th>
+
+                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                    Action
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {purchases.map((purchase) => (
+                  <tr
+                    key={purchase.id}
+                    className="border-b border-slate-100 transition hover:bg-blue-50"
+                  >
+                    <td className="px-6 py-5">
                       <Link
                         href={`/purchase/bill/${purchase.id}`}
-                        className="font-semibold text-blue-600 transition hover:text-blue-800"
+                        className="font-bold text-blue-600 transition hover:text-blue-800 hover:underline"
                       >
-                        View
+                        {purchase.billNumber}
                       </Link>
 
-                      <button
-                        type="button"
-                        onClick={() => deletePurchase(purchase)}
-                        className="font-semibold text-red-500 transition hover:text-red-700"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {purchase.items.length} Item
+                        {purchase.items.length !== 1 ? "s" : ""}
+                      </p>
+                    </td>
+
+                    <td className="px-6 py-5">
+                      <p className="font-bold text-slate-900">
+                        {purchase.supplierName}
+                      </p>
+
+                      <p className="mt-1 text-sm text-slate-500">
+                        {purchase.supplierMobile || "No mobile added"}
+                      </p>
+                    </td>
+
+                    <td className="px-6 py-5 text-slate-700">
+                      {purchase.date}
+                    </td>
+
+                    <td className="px-6 py-5 text-slate-700">
+                      {purchase.paymentMode}
+                    </td>
+
+                    <td className="px-6 py-5 font-bold text-slate-900">
+                      {formatCurrency(purchase.grandTotal)}
+                    </td>
+
+                    <td className="px-6 py-5">
+                      <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">
+                        Saved
+                      </span>
+                    </td>
+
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-4">
+                        <Link
+                          href={`/purchase/bill/${purchase.id}`}
+                          className="font-semibold text-blue-600 transition hover:text-blue-800"
+                        >
+                          View
+                        </Link>
+
+                        <button
+                          type="button"
+                          onClick={() => deletePurchase(purchase)}
+                          className="font-semibold text-red-500 transition hover:text-red-700"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
   );
 }

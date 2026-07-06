@@ -305,15 +305,15 @@ export default function CompanyManager({
 
   return (
     <>
-      <section className="mt-8 rounded-3xl border border-blue-100 bg-blue-50 p-5">
+      <section className="mt-6 rounded-3xl border border-blue-100 bg-blue-50 p-4 sm:mt-8 sm:p-5">
         <p className="text-sm font-bold text-blue-800">Active Company</p>
-        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xl font-bold text-slate-900">
+        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="break-words text-lg font-bold text-slate-900 sm:text-xl">
             {isLoading
               ? "Loading active company..."
               : activeCompany?.name || "No active company selected"}
           </p>
-          <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-bold text-blue-700 shadow-sm">
+          <span className="w-fit rounded-full bg-white px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
             {activeCompany ? "Ready for transactions" : "Select a company below"}
           </span>
         </div>
@@ -322,12 +322,12 @@ export default function CompanyManager({
       <form
         id="company-form"
         onSubmit={saveCompany}
-        className="mt-8 rounded-3xl border border-slate-100 bg-white p-8 shadow-xl"
+        className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:mt-8 sm:p-6 lg:p-8"
       >
-        <div className="mb-8 flex flex-col gap-4 border-b border-slate-200 pb-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-6 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Add New Company</h2>
-            <p className="mt-1 text-slate-600">
+            <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">Add New Company</h2>
+            <p className="mt-1 text-sm text-slate-600 sm:text-base">
               Save company details securely to your VertexERP account.
             </p>
           </div>
@@ -337,12 +337,12 @@ export default function CompanyManager({
         </div>
 
         {message && (
-          <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+          <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
             {message}
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
           <Field
             label="Company Name *"
             value={form.name}
@@ -383,7 +383,7 @@ export default function CompanyManager({
           />
         </div>
 
-        <div className="mt-6">
+        <div className="mt-5 sm:mt-6">
           <label className="mb-2 block font-semibold text-slate-800">Company Address</label>
           <textarea
             rows={4}
@@ -394,11 +394,11 @@ export default function CompanyManager({
           />
         </div>
 
-        <div className="mt-8 flex flex-wrap gap-4">
+        <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:gap-4">
           <button
             type="submit"
             disabled={isSaving || isLoading}
-            className="rounded-xl bg-blue-600 px-7 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-7"
           >
             {isSaving ? "Saving..." : "Save Company"}
           </button>
@@ -408,25 +408,151 @@ export default function CompanyManager({
               setForm(EMPTY_FORM);
               setMessage("");
             }}
-            className="rounded-xl border border-slate-300 bg-white px-7 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
+            className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto sm:px-7"
           >
             Reset
           </button>
         </div>
       </form>
 
-      <section className="mt-10 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
-        <div className="flex flex-col gap-4 border-b border-slate-200 px-8 py-6 sm:flex-row sm:items-center sm:justify-between">
+      <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8 lg:mt-10">
+        <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Company List</h2>
-            <p className="mt-1 text-slate-600">Companies saved in your VertexERP cloud account.</p>
+            <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">Company List</h2>
+            <p className="mt-1 text-sm text-slate-600 sm:text-base">Companies saved in your VertexERP cloud account.</p>
           </div>
           <div className="rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
             Total Companies: {companies.length} / 5
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="p-4 md:hidden">
+          {isLoading ? (
+            <p className="py-10 text-center text-sm text-slate-500">
+              Loading companies from the cloud...
+            </p>
+          ) : filteredCompanies.length === 0 ? (
+            <div className="py-10 text-center text-slate-500">
+              <p className="font-semibold text-slate-700">
+                {companies.length === 0
+                  ? "No companies added yet"
+                  : "No matching company found"}
+              </p>
+
+              <p className="mt-2 text-sm">
+                {companies.length === 0
+                  ? "Add your first company using the form above."
+                  : "Try a different search term."}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredCompanies.map((company) => {
+                const isActive = company.id === activeCompanyId;
+
+                return (
+                  <article
+                    key={company.id}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-lg font-bold text-slate-900">
+                          {company.name}
+                        </p>
+
+                        <p className="mt-1 truncate text-sm text-slate-500">
+                          {company.email || "No email added"}
+                        </p>
+                      </div>
+
+                      <span
+                        className={
+                          isActive
+                            ? "shrink-0 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700"
+                            : "shrink-0 rounded-full bg-slate-200 px-3 py-1 text-xs font-bold text-slate-700"
+                        }
+                      >
+                        {isActive ? "Active" : "Available"}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <div className="rounded-xl bg-white p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          GST Number
+                        </p>
+                        <p className="mt-1 break-words font-semibold text-slate-800">
+                          {company.gstNumber || "—"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl bg-white p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          City
+                        </p>
+                        <p className="mt-1 break-words font-semibold text-slate-800">
+                          {company.city || "—"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl bg-white p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Phone
+                        </p>
+                        <p className="mt-1 break-words font-semibold text-slate-800">
+                          {company.phone || "—"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl bg-white p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          PAN Number
+                        </p>
+                        <p className="mt-1 break-words font-semibold text-slate-800">
+                          {company.panNumber || "—"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {company.address && (
+                      <div className="mt-3 rounded-xl bg-white p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Address
+                        </p>
+
+                        <p className="mt-1 text-sm leading-6 text-slate-700">
+                          {company.address}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        disabled={isUpdatingActive || isActive}
+                        onClick={() => handleSetActive(company)}
+                        className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-bold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                      >
+                        {isActive ? "Selected" : "Set Active"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => deleteCompany(company)}
+                        className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[1150px]">
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-200 text-left">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Bell, LogOut, Menu, Moon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { usePathname } from "next/navigation";
 
@@ -60,8 +61,30 @@ function getUserName(
   return email ? email.split("@")[0] : "Account";
 }
 
+function useDesktopBreakpoint() {
+  const [isDesktop, setIsDesktop] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(min-width: 1024px)");
+
+    function updateBreakpoint() {
+      setIsDesktop(mediaQuery.matches);
+    }
+
+    updateBreakpoint();
+    mediaQuery.addEventListener("change", updateBreakpoint);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updateBreakpoint);
+    };
+  }, []);
+
+  return isDesktop;
+}
+
 export default function Navbar() {
   const pathname = usePathname();
+  const isDesktop = useDesktopBreakpoint();
 
   const [userName, setUserName] = useState("Account");
   const [userEmail, setUserEmail] = useState("");
@@ -87,7 +110,6 @@ export default function Navbar() {
       }
 
       const email = user.email || "";
-
       setUserEmail(email);
       setUserName(getUserName(user.user_metadata, email));
       setIsLoadingUser(false);
@@ -104,7 +126,6 @@ export default function Navbar() {
       }
 
       const email = session.user.email || "";
-
       setUserEmail(email);
       setUserName(getUserName(session.user.user_metadata, email));
       setIsLoadingUser(false);
@@ -125,6 +146,10 @@ export default function Navbar() {
     () => userName.charAt(0).toUpperCase() || "V",
     [userName]
   );
+
+  function openMobileNavigation() {
+    window.dispatchEvent(new Event("vertexerp-open-navigation"));
+  }
 
   async function handleLogout() {
     setIsSigningOut(true);
@@ -147,46 +172,59 @@ export default function Navbar() {
   }
 
   return (
-    <header className="flex min-h-20 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 shadow-sm md:px-8">
-      <div className="min-w-0">
-        <h2 className="truncate text-2xl font-bold text-slate-900">
-          {currentPage.title}
-        </h2>
+    <header className="sticky top-0 z-30 flex min-h-20 items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:px-6 lg:static lg:px-8">
+      <div className="flex min-w-0 items-center gap-3">
+        {isDesktop === false && (
+          <button
+            type="button"
+            onClick={openMobileNavigation}
+            aria-label="Open navigation"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white shadow-lg shadow-slate-900/20 transition hover:bg-slate-800 active:scale-95"
+          >
+            <Menu className="h-5 w-5" strokeWidth={2.5} />
+          </button>
+        )}
 
-        <p className="mt-1 truncate text-sm text-slate-600">
-          {currentPage.subtitle}
-        </p>
+        <div className="min-w-0">
+          <h2 className="truncate text-xl font-bold text-slate-900 sm:text-2xl">
+            {currentPage.title}
+          </h2>
+
+          <p className="mt-0.5 truncate text-xs text-slate-600 sm:mt-1 sm:text-sm">
+            {currentPage.subtitle}
+          </p>
+        </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-3 md:gap-5">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3 lg:gap-5">
         <input
           type="text"
           placeholder="Search..."
-          className="hidden w-72 rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 lg:block"
+          className="hidden w-72 rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 xl:block"
         />
 
         <button
           type="button"
           aria-label="Notifications"
-          className="hidden text-2xl transition hover:scale-110 sm:block"
+          className="hidden rounded-xl p-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 sm:block"
         >
-          🔔
+          <Bell className="h-5 w-5" />
         </button>
 
         <button
           type="button"
           aria-label="Theme"
-          className="hidden text-2xl transition hover:scale-110 sm:block"
+          className="hidden rounded-xl p-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 sm:block"
         >
-          🌙
+          <Moon className="h-5 w-5" />
         </button>
 
-        <div className="flex items-center gap-3 border-l border-slate-200 pl-3 md:pl-5">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-600 font-bold text-white">
+        <div className="flex items-center gap-2 border-l border-slate-200 pl-2 sm:gap-3 sm:pl-3 lg:pl-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 font-bold text-white sm:h-11 sm:w-11">
             {avatarText}
           </div>
 
-          <div className="hidden min-w-0 sm:block">
+          <div className="hidden min-w-0 lg:block">
             <p className="max-w-44 truncate font-bold text-slate-900">
               {isLoadingUser ? "Loading..." : userName}
             </p>
@@ -200,9 +238,13 @@ export default function Navbar() {
             type="button"
             onClick={handleLogout}
             disabled={isSigningOut}
-            className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label="Logout"
+            className="flex h-10 items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 sm:h-auto sm:px-3 sm:py-2"
           >
-            {isSigningOut ? "Signing out..." : "Logout"}
+            <LogOut className="h-4 w-4" />
+            <span className="hidden sm:inline">
+              {isSigningOut ? "Signing out..." : "Logout"}
+            </span>
           </button>
         </div>
       </div>

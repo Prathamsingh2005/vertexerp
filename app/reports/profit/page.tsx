@@ -392,37 +392,37 @@ export default function ProfitReportPage() {
       <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-6 md:p-8">
-          <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-slate-900">
+              <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
                 💰 Profit &amp; Loss
               </h1>
 
-              <p className="mt-2 text-lg text-slate-600">
+              <p className="mt-2 text-base text-slate-600 sm:text-lg">
                 Analyze sales revenue, product cost, expenses and net profit.
               </p>
             </div>
 
             <Link
               href="/reports"
-              className="w-fit rounded-xl border border-slate-300 bg-white px-6 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
+              className="w-full rounded-xl border border-slate-300 bg-white px-6 py-3 text-center font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-fit"
             >
               ← Back to Reports
             </Link>
           </div>
 
           {message && (
-            <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+            <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
               {message}
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Sales Revenue</p>
 
-              <h2 className="mt-3 text-4xl font-bold text-blue-600">
+              <h2 className="mt-3 break-words text-3xl font-bold text-blue-600 sm:text-4xl">
                 {isLoading ? "..." : formatCurrency(totalRevenue)}
               </h2>
 
@@ -431,12 +431,12 @@ export default function ProfitReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Estimated Product Cost
               </p>
 
-              <h2 className="mt-3 text-4xl font-bold text-purple-600">
+              <h2 className="mt-3 break-words text-3xl font-bold text-purple-600 sm:text-4xl">
                 {isLoading ? "..." : formatCurrency(totalEstimatedCost)}
               </h2>
 
@@ -445,13 +445,13 @@ export default function ProfitReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Gross Profit Estimate
               </p>
 
               <h2
-                className={`mt-3 text-4xl font-bold ${
+                className={`mt-3 break-words text-3xl font-bold sm:text-4xl ${
                   grossProfit >= 0 ? "text-green-600" : "text-red-600"
                 }`}
               >
@@ -463,12 +463,12 @@ export default function ProfitReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Operating Expenses
               </p>
 
-              <h2 className="mt-3 text-4xl font-bold text-orange-500">
+              <h2 className="mt-3 break-words text-3xl font-bold text-orange-500 sm:text-4xl">
                 {isLoading ? "..." : formatCurrency(totalOperatingExpenses)}
               </h2>
 
@@ -481,13 +481,13 @@ export default function ProfitReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Net Profit Estimate
               </p>
 
               <h2
-                className={`mt-3 text-4xl font-bold ${
+                className={`mt-3 break-words text-3xl font-bold sm:text-4xl ${
                   netProfit >= 0 ? "text-green-600" : "text-red-600"
                 }`}
               >
@@ -499,13 +499,13 @@ export default function ProfitReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Net Profit Margin
               </p>
 
               <h2
-                className={`mt-3 text-4xl font-bold ${
+                className={`mt-3 break-words text-3xl font-bold sm:text-4xl ${
                   netProfitMargin >= 0
                     ? "text-emerald-600"
                     : "text-red-600"
@@ -520,8 +520,8 @@ export default function ProfitReportPage() {
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-3">
-            <div className="rounded-3xl border border-blue-100 bg-blue-50 p-6">
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:mt-6 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
+            <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 sm:p-6">
               <p className="font-semibold text-blue-800">
                 GST Collected on Sales
               </p>
@@ -535,7 +535,7 @@ export default function ProfitReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-green-100 bg-green-50 p-6">
+            <div className="rounded-3xl border border-green-100 bg-green-50 p-5 sm:p-6">
               <p className="font-semibold text-green-800">
                 Gross Profit Margin
               </p>
@@ -549,7 +549,7 @@ export default function ProfitReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-orange-100 bg-orange-50 p-6">
+            <div className="rounded-3xl border border-orange-100 bg-orange-50 p-5 sm:p-6">
               <p className="font-semibold text-orange-800">
                 Calculation Note
               </p>
@@ -561,8 +561,8 @@ export default function ProfitReportPage() {
             </div>
           </div>
 
-          <div className="mt-8 rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+          <div className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:mt-8 sm:p-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <input
                 type="date"
                 value={fromDate}
@@ -590,21 +590,21 @@ export default function ProfitReportPage() {
               <button
                 type="button"
                 onClick={resetFilters}
-                className="rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
+                className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto"
               >
                 Reset Filters
               </button>
             </div>
           </div>
 
-          <div className="mt-8 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
-            <div className="flex flex-col gap-3 border-b border-slate-200 px-8 py-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8">
+            <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">
+                <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
                   Invoice-wise Profit Estimate
                 </h2>
 
-                <p className="mt-1 text-slate-600">
+                <p className="mt-1 text-sm text-slate-600 sm:text-base">
                   Sales revenue and estimated cost for each saved invoice.
                 </p>
               </div>
@@ -620,7 +620,120 @@ export default function ProfitReportPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="p-4 md:hidden">
+              {isLoading ? (
+                <p className="py-10 text-center text-sm text-slate-500">
+                  Loading report data from the cloud database...
+                </p>
+              ) : profitRows.length === 0 ? (
+                <div className="py-10 text-center text-slate-500">
+                  <p className="text-lg font-semibold text-slate-700">
+                    No sales invoices found
+                  </p>
+
+                  <p className="mt-2 text-sm">
+                    Change the date range or create a sales invoice.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {profitRows.map((row) => {
+                    const margin =
+                      row.netSales > 0
+                        ? (row.grossProfit / row.netSales) * 100
+                        : 0;
+
+                    return (
+                      <article
+                        key={row.id}
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <Link
+                              href={`/sales/invoice/${row.id}`}
+                              className="block truncate text-lg font-bold text-blue-600 transition hover:text-blue-800 hover:underline"
+                            >
+                              {row.invoiceNumber}
+                            </Link>
+
+                            <p className="mt-1 truncate text-sm text-slate-600">
+                              {row.customerName}
+                            </p>
+
+                            <p className="mt-1 text-xs text-slate-500">
+                              {formatDate(row.date)}
+                            </p>
+                          </div>
+
+                          <span
+                            className={
+                              margin >= 0
+                                ? "shrink-0 rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700"
+                                : "shrink-0 rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-700"
+                            }
+                          >
+                            {margin.toFixed(2)}%
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          <div className="rounded-xl bg-white p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Sales Revenue
+                            </p>
+
+                            <p className="mt-1 break-words font-bold text-blue-700">
+                              {formatCurrency(row.netSales)}
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl bg-white p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Estimated Cost
+                            </p>
+
+                            <p className="mt-1 break-words font-bold text-purple-700">
+                              {formatCurrency(row.estimatedCost)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div
+                          className={
+                            row.grossProfit >= 0
+                              ? "mt-3 flex items-center justify-between rounded-xl bg-green-50 p-3"
+                              : "mt-3 flex items-center justify-between rounded-xl bg-red-50 p-3"
+                          }
+                        >
+                          <span
+                            className={
+                              row.grossProfit >= 0
+                                ? "text-sm font-semibold text-green-700"
+                                : "text-sm font-semibold text-red-700"
+                            }
+                          >
+                            Gross Profit
+                          </span>
+
+                          <span
+                            className={
+                              row.grossProfit >= 0
+                                ? "text-lg font-bold text-green-700"
+                                : "text-lg font-bold text-red-700"
+                            }
+                          >
+                            {formatCurrency(row.grossProfit)}
+                          </span>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[1000px]">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left">

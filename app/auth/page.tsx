@@ -119,7 +119,7 @@ export default function AuthPage() {
       });
 
       if (error) {
-        showMessage("Incorrect email or password.", true);
+        showMessage(error.message, true);
         return;
       }
 
@@ -132,27 +132,27 @@ export default function AuthPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10">
-      <section className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-2xl">
-        <div className="mb-8 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-2xl font-bold text-white shadow-lg">
+    <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-6 sm:px-6 sm:py-10">
+      <section className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-8">
+        <div className="mb-6 text-center sm:mb-8">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-xl font-bold text-white shadow-lg sm:h-14 sm:w-14 sm:text-2xl">
             V
           </div>
 
-          <h1 className="mt-5 text-3xl font-bold text-slate-900">
+          <h1 className="mt-4 text-2xl font-bold text-slate-900 sm:mt-5 sm:text-3xl">
             VertexERP
           </h1>
 
-          <p className="mt-2 text-slate-600">
+          <p className="mt-2 text-sm text-slate-600 sm:text-base">
             Run your business with confidence.
           </p>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+        <div className="mb-5 grid grid-cols-2 rounded-xl bg-slate-100 p-1 sm:mb-6">
           <button
             type="button"
             onClick={() => switchMode("login")}
-            className={`rounded-lg px-4 py-2.5 text-sm font-bold transition ${
+            className={`rounded-lg px-2 py-2.5 text-sm font-bold transition sm:px-4 ${
               mode === "login"
                 ? "bg-white text-blue-700 shadow-sm"
                 : "text-slate-500"
@@ -164,7 +164,7 @@ export default function AuthPage() {
           <button
             type="button"
             onClick={() => switchMode("signup")}
-            className={`rounded-lg px-4 py-2.5 text-sm font-bold transition ${
+            className={`rounded-lg px-2 py-2.5 text-sm font-bold transition sm:px-4 ${
               mode === "signup"
                 ? "bg-white text-blue-700 shadow-sm"
                 : "text-slate-500"
@@ -174,7 +174,7 @@ export default function AuthPage() {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
           {mode === "signup" && (
             <div>
               <label className="mb-2 block text-sm font-bold text-slate-800">
@@ -187,7 +187,7 @@ export default function AuthPage() {
                 onChange={(event) => setFullName(event.target.value)}
                 placeholder="Enter your full name"
                 autoComplete="name"
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
               />
             </div>
           )}
@@ -203,7 +203,8 @@ export default function AuthPage() {
               onChange={(event) => setEmail(event.target.value)}
               placeholder="name@example.com"
               autoComplete="email"
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+              inputMode="email"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
             />
           </div>
 
@@ -220,7 +221,7 @@ export default function AuthPage() {
               autoComplete={
                 mode === "login" ? "current-password" : "new-password"
               }
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
             />
           </div>
 
@@ -236,13 +237,14 @@ export default function AuthPage() {
                 onChange={(event) => setConfirmPassword(event.target.value)}
                 placeholder="Re-enter your password"
                 autoComplete="new-password"
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
               />
             </div>
           )}
 
           {message && (
             <div
+              aria-live="polite"
               className={`rounded-xl border px-4 py-3 text-sm font-medium ${
                 isError
                   ? "border-red-200 bg-red-50 text-red-700"

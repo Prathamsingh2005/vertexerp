@@ -73,15 +73,15 @@ export default function ProductForm({ onAddProduct }: ProductFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="mt-8 rounded-3xl border border-slate-100 bg-white p-8 shadow-xl"
+      className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:mt-8 sm:p-6 lg:p-8"
     >
-      <div className="mb-8 flex flex-col gap-3 border-b border-slate-200 pb-6 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-center sm:justify-between lg:mb-8">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">
+          <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
             Add New Product
           </h2>
 
-          <p className="mt-1 text-slate-600">
+          <p className="mt-1 text-sm text-slate-600 sm:text-base">
             Enter product and stock details below.
           </p>
         </div>
@@ -92,12 +92,12 @@ export default function ProductForm({ onAddProduct }: ProductFormProps) {
       </div>
 
       {message && (
-        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+        <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
           {message}
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
         <div>
           <label className="mb-2 block font-semibold text-slate-800">
             Product Name *
@@ -262,7 +262,7 @@ export default function ProductForm({ onAddProduct }: ProductFormProps) {
         </div>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-5 sm:mt-6">
         <label className="mb-2 block font-semibold text-slate-800">
           Product Description
         </label>
@@ -278,10 +278,10 @@ export default function ProductForm({ onAddProduct }: ProductFormProps) {
         />
       </div>
 
-      <div className="mt-8 flex flex-wrap gap-4">
+      <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:gap-4">
         <button
           type="submit"
-          className="rounded-xl bg-blue-600 px-7 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl"
+          className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl sm:w-auto sm:px-7"
         >
           Save Product
         </button>
@@ -289,7 +289,7 @@ export default function ProductForm({ onAddProduct }: ProductFormProps) {
         <button
           type="button"
           onClick={resetForm}
-          className="rounded-xl border border-slate-300 bg-white px-7 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
+          className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto sm:px-7"
         >
           Reset
         </button>

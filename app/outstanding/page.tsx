@@ -497,21 +497,21 @@ export default function OutstandingPage() {
       <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-6 md:p-8">
-          <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-slate-900">
+              <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
                 💰 Outstanding Management
               </h1>
 
-              <p className="mt-2 text-lg text-slate-600">
+              <p className="mt-2 text-base text-slate-600 sm:text-lg">
                 Track pending customer payments and supplier dues.
               </p>
             </div>
 
             <Link
               href="/payments"
-              className="inline-flex w-fit items-center rounded-xl px-6 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98]"
+              className="inline-flex w-full items-center justify-center rounded-xl px-6 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98] sm:w-fit"
               style={{
                 backgroundColor: "#059669",
                 color: "#ffffff",
@@ -522,13 +522,13 @@ export default function OutstandingPage() {
           </div>
 
           {message && (
-            <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+            <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
               {message}
             </div>
           )}
 
           <section
-            className="mb-8 rounded-3xl border p-5 shadow-sm"
+            className="mb-6 rounded-3xl border p-4 shadow-sm sm:mb-8 sm:p-5"
             style={{
               backgroundColor: "#fff7ed",
               borderColor: "#fed7aa",
@@ -548,14 +548,14 @@ export default function OutstandingPage() {
             </p>
           </section>
 
-          <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-3xl border border-blue-100 bg-white p-6 shadow-lg">
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
+            <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Customer Receivable
               </p>
 
               <h2
-                className="mt-3 text-3xl font-bold"
+                className="mt-3 break-words text-3xl font-bold sm:text-4xl"
                 style={{ color: "#2563eb" }}
               >
                 {isLoading ? "..." : formatCurrency(totalReceivable)}
@@ -566,13 +566,13 @@ export default function OutstandingPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-purple-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-purple-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Supplier Payable
               </p>
 
               <h2
-                className="mt-3 text-3xl font-bold"
+                className="mt-3 break-words text-3xl font-bold sm:text-4xl"
                 style={{ color: "#7e22ce" }}
               >
                 {isLoading ? "..." : formatCurrency(totalPayable)}
@@ -583,13 +583,13 @@ export default function OutstandingPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-orange-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-orange-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Pending Customers
               </p>
 
               <h2
-                className="mt-3 text-3xl font-bold"
+                className="mt-3 break-words text-3xl font-bold sm:text-4xl"
                 style={{ color: "#ea580c" }}
               >
                 {isLoading ? "..." : customerOutstanding.length}
@@ -600,13 +600,13 @@ export default function OutstandingPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-emerald-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Net Outstanding
               </p>
 
               <h2
-                className="mt-3 text-3xl font-bold"
+                className="mt-3 break-words text-3xl font-bold sm:text-4xl"
                 style={{
                   color: netOutstanding >= 0 ? "#059669" : "#dc2626",
                 }}
@@ -624,8 +624,8 @@ export default function OutstandingPage() {
             </div>
           </section>
 
-          <section className="mt-10 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
-            <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-6 md:flex-row md:items-center md:justify-between">
+          <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8 lg:mt-10">
+            <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900">
                   Customer Receivables
@@ -641,7 +641,79 @@ export default function OutstandingPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="p-4 md:hidden">
+              {isLoading ? (
+                <p className="py-10 text-center text-sm text-slate-500">
+                  Loading receivable data from the cloud database...
+                </p>
+              ) : customerOutstanding.length === 0 ? (
+                <div className="py-10 text-center text-slate-500">
+                  <p className="text-lg font-semibold text-slate-700">
+                    No customer receivables found
+                  </p>
+                  <p className="mt-2 text-sm">
+                    All customer credit balances are cleared, or there are no
+                    Credit sales invoices yet.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {customerOutstanding.map((customer) => (
+                    <article
+                      key={customer.id}
+                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-lg font-bold text-slate-900">
+                            {customer.name}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            Customer Ledger
+                          </p>
+                        </div>
+
+                        <span className="shrink-0 rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700">
+                          {customer.billCount} Invoice
+                          {customer.billCount !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Latest Invoice
+                          </p>
+                          <p className="mt-1 font-semibold text-slate-800">
+                            {formatDate(customer.latestDate)}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Received
+                          </p>
+                          <p className="mt-1 font-bold text-emerald-700">
+                            {formatCurrency(customer.paidAmount)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 rounded-xl bg-blue-50 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+                          Receivable Amount
+                        </p>
+                        <p className="mt-1 text-xl font-bold text-blue-700">
+                          {formatCurrency(customer.outstanding)}
+                        </p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[1050px]">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left">
@@ -741,8 +813,8 @@ export default function OutstandingPage() {
             </div>
           </section>
 
-          <section className="mt-10 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
-            <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-6 md:flex-row md:items-center md:justify-between">
+          <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8 lg:mt-10">
+            <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900">
                   Supplier Payables
@@ -758,7 +830,79 @@ export default function OutstandingPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="p-4 md:hidden">
+              {isLoading ? (
+                <p className="py-10 text-center text-sm text-slate-500">
+                  Loading payable data from the cloud database...
+                </p>
+              ) : supplierOutstanding.length === 0 ? (
+                <div className="py-10 text-center text-slate-500">
+                  <p className="text-lg font-semibold text-slate-700">
+                    No supplier payables found
+                  </p>
+                  <p className="mt-2 text-sm">
+                    All supplier credit balances are cleared, or there are no
+                    Credit purchase bills yet.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {supplierOutstanding.map((supplier) => (
+                    <article
+                      key={supplier.id}
+                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-lg font-bold text-slate-900">
+                            {supplier.name}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            Supplier Ledger
+                          </p>
+                        </div>
+
+                        <span className="shrink-0 rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700">
+                          {supplier.billCount} Bill
+                          {supplier.billCount !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Latest Bill
+                          </p>
+                          <p className="mt-1 font-semibold text-slate-800">
+                            {formatDate(supplier.latestDate)}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Paid
+                          </p>
+                          <p className="mt-1 font-bold text-emerald-700">
+                            {formatCurrency(supplier.paidAmount)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 rounded-xl bg-purple-50 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-purple-700">
+                          Payable Amount
+                        </p>
+                        <p className="mt-1 text-xl font-bold text-purple-700">
+                          {formatCurrency(supplier.outstanding)}
+                        </p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[1050px]">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left">
@@ -858,9 +1002,9 @@ export default function OutstandingPage() {
             </div>
           </section>
 
-          <section className="mt-10 grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <section className="mt-6 grid grid-cols-1 gap-4 sm:mt-8 sm:gap-6 xl:mt-10 xl:grid-cols-2">
             <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
-              <div className="border-b border-slate-200 px-6 py-5">
+              <div className="border-b border-slate-200 px-4 py-5 sm:px-6">
                 <h2 className="text-xl font-bold text-slate-900">
                   Recent Credit Sales
                 </h2>
@@ -870,7 +1014,7 @@ export default function OutstandingPage() {
                 {creditSales.slice(0, 5).map((sale) => (
                   <div
                     key={sale.id}
-                    className="flex items-center justify-between gap-4 px-6 py-4"
+                    className="flex items-center justify-between gap-3 px-4 py-4 sm:gap-4 sm:px-6"
                   >
                     <div className="min-w-0">
                       <Link
@@ -903,7 +1047,7 @@ export default function OutstandingPage() {
             </div>
 
             <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
-              <div className="border-b border-slate-200 px-6 py-5">
+              <div className="border-b border-slate-200 px-4 py-5 sm:px-6">
                 <h2 className="text-xl font-bold text-slate-900">
                   Recent Credit Purchases
                 </h2>
@@ -913,7 +1057,7 @@ export default function OutstandingPage() {
                 {creditPurchases.slice(0, 5).map((purchase) => (
                   <div
                     key={purchase.id}
-                    className="flex items-center justify-between gap-4 px-6 py-4"
+                    className="flex items-center justify-between gap-3 px-4 py-4 sm:gap-4 sm:px-6"
                   >
                     <div className="min-w-0">
                       <Link

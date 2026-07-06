@@ -232,37 +232,37 @@ export default function StockReportPage() {
       <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-6 md:p-8">
-          <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-slate-900">
+              <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
                 📦 Stock Report
               </h1>
 
-              <p className="mt-2 text-lg text-slate-600">
+              <p className="mt-2 text-base text-slate-600 sm:text-lg">
                 Review product availability, stock value and inventory alerts.
               </p>
             </div>
 
             <Link
               href="/reports"
-              className="w-fit rounded-xl border border-slate-300 bg-white px-6 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
+              className="w-full rounded-xl border border-slate-300 bg-white px-6 py-3 text-center font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-fit"
             >
               ← Back to Reports
             </Link>
           </div>
 
           {message && (
-            <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+            <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
               {message}
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Total Products</p>
 
-              <h2 className="mt-3 text-4xl font-bold text-blue-600">
+              <h2 className="mt-3 break-words text-3xl font-bold text-blue-600 sm:text-4xl">
                 {isLoading ? "..." : products.length}
               </h2>
 
@@ -271,10 +271,10 @@ export default function StockReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Stock Value</p>
 
-              <h2 className="mt-3 text-4xl font-bold text-green-600">
+              <h2 className="mt-3 break-words text-3xl font-bold text-green-600 sm:text-4xl">
                 {isLoading ? "..." : formatCurrency(stockValue)}
               </h2>
 
@@ -283,10 +283,10 @@ export default function StockReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Low Stock Items</p>
 
-              <h2 className="mt-3 text-4xl font-bold text-orange-500">
+              <h2 className="mt-3 break-words text-3xl font-bold text-orange-500 sm:text-4xl">
                 {isLoading ? "..." : lowStockCount}
               </h2>
 
@@ -295,10 +295,10 @@ export default function StockReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Out of Stock</p>
 
-              <h2 className="mt-3 text-4xl font-bold text-red-600">
+              <h2 className="mt-3 break-words text-3xl font-bold text-red-600 sm:text-4xl">
                 {isLoading ? "..." : outOfStockCount}
               </h2>
 
@@ -308,8 +308,8 @@ export default function StockReportPage() {
             </div>
           </div>
 
-          <div className="mt-8 rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+          <div className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:mt-8 sm:p-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <input
                 type="text"
                 value={searchTerm}
@@ -333,20 +333,20 @@ export default function StockReportPage() {
             <button
               type="button"
               onClick={resetFilters}
-              className="mt-4 rounded-xl border border-slate-300 bg-white px-5 py-2.5 font-semibold text-slate-700 transition hover:bg-slate-100"
+              className="mt-4 w-full rounded-xl border border-slate-300 bg-white px-5 py-2.5 font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto"
             >
               Reset Filters
             </button>
           </div>
 
-          <div className="mt-8 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
-            <div className="flex flex-col gap-3 border-b border-slate-200 px-8 py-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8">
+            <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">
+                <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
                   Inventory Products
                 </h2>
 
-                <p className="mt-1 text-slate-600">
+                <p className="mt-1 text-sm text-slate-600 sm:text-base">
                   {isLoading
                     ? "Loading cloud inventory..."
                     : `${filteredProducts.length} product${
@@ -360,7 +360,115 @@ export default function StockReportPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="p-4 md:hidden">
+              {isLoading ? (
+                <p className="py-10 text-center text-sm text-slate-500">
+                  Loading inventory from the cloud database...
+                </p>
+              ) : filteredProducts.length === 0 ? (
+                <div className="py-10 text-center text-slate-500">
+                  <p className="text-lg font-semibold text-slate-700">
+                    No products found
+                  </p>
+
+                  <p className="mt-2 text-sm">
+                    Change filters or add products from Inventory.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {filteredProducts.map((product) => {
+                    const status = getStockStatus(product);
+                    const productStockValue =
+                      product.quantity * product.purchasePrice;
+
+                    return (
+                      <article
+                        key={product.id}
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-lg font-bold text-slate-900">
+                              {product.name}
+                            </p>
+
+                            <p className="mt-1 truncate text-sm text-slate-500">
+                              {product.category} · SKU: {product.sku}
+                            </p>
+                          </div>
+
+                          <span
+                            className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${status.className}`}
+                          >
+                            {status.label}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          <div className="rounded-xl bg-white p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Available Stock
+                            </p>
+
+                            <p className="mt-1 font-bold text-slate-900">
+                              {product.quantity} {product.unit}
+                            </p>
+
+                            <p className="mt-1 text-xs text-slate-500">
+                              Alert at {product.lowStockAlert}
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl bg-white p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Stock Value
+                            </p>
+
+                            <p className="mt-1 break-words font-bold text-green-700">
+                              {formatCurrency(productStockValue)}
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl bg-white p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Purchase Price
+                            </p>
+
+                            <p className="mt-1 font-semibold text-slate-800">
+                              {formatCurrency(product.purchasePrice)}
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl bg-white p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Selling Price
+                            </p>
+
+                            <p className="mt-1 font-semibold text-slate-800">
+                              {formatCurrency(product.sellingPrice)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
+                          <span>Unit: {product.unit}</span>
+                          <span>GST: {product.gst}%</span>
+                        </div>
+
+                        {product.description && (
+                          <p className="mt-3 rounded-xl bg-white p-3 text-sm leading-6 text-slate-700">
+                            {product.description}
+                          </p>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[1100px]">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left">

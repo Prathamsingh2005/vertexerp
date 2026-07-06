@@ -79,10 +79,7 @@ export default function InventoryPage() {
   useEffect(() => {
     loadProductStats();
 
-    window.addEventListener(
-      "vertexerp-products-updated",
-      loadProductStats
-    );
+    window.addEventListener("vertexerp-products-updated", loadProductStats);
     window.addEventListener(
       "vertexerp-active-company-updated",
       loadProductStats
@@ -102,11 +99,9 @@ export default function InventoryPage() {
 
   const productStats = useMemo(() => {
     const totalProducts = products.length;
-
     const inStockProducts = products.filter(
       (product) => Number(product.quantity || 0) > 0
     ).length;
-
     const lowStockProducts = products.filter((product) => {
       const quantity = Number(product.quantity || 0);
       const lowStockAlert = Number(product.low_stock_alert || 0);
@@ -114,12 +109,12 @@ export default function InventoryPage() {
       return quantity > 0 && lowStockAlert > 0 && quantity <= lowStockAlert;
     }).length;
 
-    const stockValue = products.reduce((total, product) => {
-      return (
+    const stockValue = products.reduce(
+      (total, product) =>
         total +
-        Number(product.quantity || 0) * Number(product.purchase_price || 0)
-      );
-    }, 0);
+        Number(product.quantity || 0) * Number(product.purchase_price || 0),
+      0
+    );
 
     return {
       totalProducts,
@@ -142,14 +137,14 @@ export default function InventoryPage() {
       <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-6 md:p-8">
-          <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <main className="p-4 sm:p-6 lg:p-8">
+          <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-slate-900">
+              <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
                 📦 Inventory Management
               </h1>
 
-              <p className="mt-2 text-lg text-slate-600">
+              <p className="mt-2 max-w-3xl text-base text-slate-600 sm:text-lg">
                 Manage products, stock levels and inventory details.
               </p>
             </div>
@@ -157,63 +152,49 @@ export default function InventoryPage() {
             <button
               type="button"
               onClick={scrollToAddProductForm}
-              className="rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl"
+              className="w-full rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl active:scale-[0.98] sm:w-fit"
             >
               + Add Product
             </button>
           </div>
 
-          <section className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
+            <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Total Products</p>
-
-              <h2 className="mt-3 text-4xl font-bold text-blue-600">
+              <h2 className="mt-3 text-3xl font-bold text-blue-600 sm:text-4xl">
                 {isLoading ? "..." : productStats.totalProducts}
               </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                Items in catalogue
-              </p>
+              <p className="mt-2 text-sm text-slate-500">Items in catalogue</p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">In Stock</p>
-
-              <h2 className="mt-3 text-4xl font-bold text-green-600">
+              <h2 className="mt-3 text-3xl font-bold text-emerald-600 sm:text-4xl">
                 {isLoading ? "..." : productStats.inStockProducts}
               </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                Available products
-              </p>
+              <p className="mt-2 text-sm text-slate-500">Available products</p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-orange-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Low Stock</p>
-
-              <h2 className="mt-3 text-4xl font-bold text-orange-500">
+              <h2 className="mt-3 text-3xl font-bold text-orange-500 sm:text-4xl">
                 {isLoading ? "..." : productStats.lowStockProducts}
               </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                Needs attention
-              </p>
+              <p className="mt-2 text-sm text-slate-500">Needs attention</p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-purple-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Stock Value</p>
-
-              <h2 className="mt-3 text-4xl font-bold text-purple-600">
+              <h2 className="mt-3 break-words text-3xl font-bold text-purple-600 sm:text-4xl">
                 {isLoading ? "..." : formatCurrency(productStats.stockValue)}
               </h2>
-
               <p className="mt-2 text-sm text-slate-500">
                 Current inventory value
               </p>
             </div>
           </section>
 
-          <section className="mt-8 rounded-3xl border border-slate-100 bg-white p-5 shadow-lg">
+          <section className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:mt-8 sm:p-5">
             <div className="relative">
               <span className="absolute left-5 top-3.5 text-lg text-slate-400">
                 🔍
@@ -224,7 +205,7 @@ export default function InventoryPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search product by name, SKU or category..."
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 py-3 pl-14 pr-5 text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 py-3 pl-14 pr-5 text-slate-900 placeholder:text-sm placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 sm:placeholder:text-base"
               />
             </div>
           </section>

@@ -417,11 +417,11 @@ export default function ReportsManager() {
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
+        <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
           <p className="font-medium text-slate-600">Sales Revenue</p>
 
-          <h2 className="mt-3 text-4xl font-bold text-blue-600">
+          <h2 className="mt-3 break-words text-3xl font-bold text-blue-600 sm:text-4xl">
             {isLoading ? "..." : formatCurrency(reportData.totalSales)}
           </h2>
 
@@ -430,10 +430,10 @@ export default function ReportsManager() {
           </p>
         </div>
 
-        <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+        <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
           <p className="font-medium text-slate-600">Purchase Value</p>
 
-          <h2 className="mt-3 text-4xl font-bold text-purple-600">
+          <h2 className="mt-3 break-words text-3xl font-bold text-purple-600 sm:text-4xl">
             {isLoading ? "..." : formatCurrency(reportData.totalPurchase)}
           </h2>
 
@@ -442,12 +442,12 @@ export default function ReportsManager() {
           </p>
         </div>
 
-        <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+        <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
           <p className="font-medium text-slate-600">
             Customer Receivable
           </p>
 
-          <h2 className="mt-3 text-4xl font-bold text-orange-500">
+          <h2 className="mt-3 break-words text-3xl font-bold text-orange-500 sm:text-4xl">
             {isLoading
               ? "..."
               : formatCurrency(reportData.customerReceivable)}
@@ -458,10 +458,10 @@ export default function ReportsManager() {
           </p>
         </div>
 
-        <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+        <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
           <p className="font-medium text-slate-600">Stock Value</p>
 
-          <h2 className="mt-3 text-4xl font-bold text-green-600">
+          <h2 className="mt-3 break-words text-3xl font-bold text-green-600 sm:text-4xl">
             {isLoading ? "..." : formatCurrency(reportData.stockValue)}
           </h2>
 
@@ -475,8 +475,8 @@ export default function ReportsManager() {
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
-        <div className="rounded-3xl border border-orange-100 bg-orange-50 p-6">
+      <div className="mt-5 grid grid-cols-1 gap-4 sm:mt-6 sm:grid-cols-2 sm:gap-6">
+        <div className="rounded-3xl border border-orange-100 bg-orange-50 p-5 sm:p-6">
           <p className="font-semibold text-orange-800">
             Supplier Payable
           </p>
@@ -490,7 +490,7 @@ export default function ReportsManager() {
           </p>
         </div>
 
-        <div className="rounded-3xl border border-blue-100 bg-blue-50 p-6">
+        <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 sm:p-6">
           <p className="font-semibold text-blue-800">
             Inventory Alert
           </p>
@@ -505,25 +505,25 @@ export default function ReportsManager() {
         </div>
       </div>
 
-      <div className="mt-8 rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
-        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:mt-8 sm:p-6">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">
+            <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
               Report Date Filter
             </h2>
 
-            <p className="mt-1 text-slate-600">
+            <p className="mt-1 text-sm text-slate-600 sm:text-base">
               Select a date range to generate a filtered cloud report.
             </p>
           </div>
 
-          <span className="w-fit rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+          <span className="w-fit max-w-full break-words rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
             {dataStatus}
           </span>
         </div>
 
         {message && (
-          <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+          <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:text-base">
             {message}
           </div>
         )}
@@ -559,7 +559,7 @@ export default function ReportsManager() {
             type="button"
             onClick={handleGenerateReport}
             disabled={isLoading}
-            className="rounded-xl bg-blue-600 px-7 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto lg:px-7"
           >
             Generate Report
           </button>
@@ -568,7 +568,7 @@ export default function ReportsManager() {
             type="button"
             onClick={resetFilter}
             disabled={isLoading}
-            className="rounded-xl border border-slate-300 bg-white px-7 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto lg:px-7"
           >
             Reset Filter
           </button>

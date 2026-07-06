@@ -233,14 +233,14 @@ export default function PurchasePage() {
       <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-6 md:p-8">
-          <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-slate-900">
+              <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
                 🧾 Purchase & Stock Entry
               </h1>
 
-              <p className="mt-2 text-lg text-slate-600">
+              <p className="mt-2 max-w-3xl text-base text-slate-600 sm:text-lg">
                 Record supplier purchases and keep your inventory stock updated.
               </p>
             </div>
@@ -248,26 +248,19 @@ export default function PurchasePage() {
             <button
               type="button"
               onClick={scrollToPurchaseForm}
-              className="rounded-xl px-6 py-3 font-semibold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98]"
-              style={{
-                backgroundColor: "#2563eb",
-                color: "#ffffff",
-              }}
+              className="w-full rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl active:scale-[0.98] sm:w-fit"
             >
               + Create Purchase
             </button>
           </div>
 
-          <section className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-3xl border border-blue-100 bg-white p-6 shadow-lg">
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
+            <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Today&apos;s Purchase
               </p>
 
-              <h2
-                className="mt-3 text-4xl font-bold"
-                style={{ color: "#2563eb" }}
-              >
+              <h2 className="mt-3 break-words text-3xl font-bold text-blue-600 sm:text-4xl">
                 {isLoading
                   ? "..."
                   : formatCurrency(purchaseStats.todayPurchase)}
@@ -278,15 +271,12 @@ export default function PurchasePage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-emerald-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Purchase Bills
               </p>
 
-              <h2
-                className="mt-3 text-4xl font-bold"
-                style={{ color: "#059669" }}
-              >
+              <h2 className="mt-3 text-3xl font-bold text-emerald-600 sm:text-4xl">
                 {isLoading ? "..." : purchaseStats.totalBills}
               </h2>
 
@@ -295,15 +285,12 @@ export default function PurchasePage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-orange-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-orange-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Supplier Payable
               </p>
 
-              <h2
-                className="mt-3 text-4xl font-bold"
-                style={{ color: "#ea580c" }}
-              >
+              <h2 className="mt-3 break-words text-3xl font-bold text-orange-600 sm:text-4xl">
                 {isLoading
                   ? "..."
                   : formatCurrency(purchaseStats.supplierPayable)}
@@ -314,15 +301,12 @@ export default function PurchasePage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-purple-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-purple-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 This Month&apos;s Purchase
               </p>
 
-              <h2
-                className="mt-3 text-4xl font-bold"
-                style={{ color: "#7e22ce" }}
-              >
+              <h2 className="mt-3 break-words text-3xl font-bold text-purple-700 sm:text-4xl">
                 {isLoading
                   ? "..."
                   : formatCurrency(purchaseStats.monthlyPurchase)}
@@ -334,17 +318,17 @@ export default function PurchasePage() {
             </div>
           </section>
 
-          <section className="mt-8 rounded-3xl border border-slate-100 bg-white p-5 shadow-lg">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-xl">📄</span>
+          <section className="mt-6 rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:mt-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="pt-0.5 text-xl">📄</span>
 
                 <div>
                   <p className="font-bold text-slate-900">
                     Purchase Bill Register
                   </p>
 
-                  <p className="text-sm text-slate-600">
+                  <p className="mt-1 text-sm text-slate-600">
                     Saved purchase bills appear in the table below.
                   </p>
                 </div>

@@ -258,39 +258,39 @@ export default function PurchaseReportPage() {
       <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-6 md:p-8">
-          <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-slate-900">
+              <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
                 🧾 Purchase Report
               </h1>
 
-              <p className="mt-2 text-lg text-slate-600">
+              <p className="mt-2 text-base text-slate-600 sm:text-lg">
                 Review supplier purchases, bill details and payment status.
               </p>
             </div>
 
             <Link
               href="/reports"
-              className="w-fit rounded-xl border border-slate-300 bg-white px-6 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
+              className="w-full rounded-xl border border-slate-300 bg-white px-6 py-3 text-center font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-fit"
             >
               ← Back to Reports
             </Link>
           </div>
 
           {message && (
-            <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+            <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
               {message}
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Total Purchase
               </p>
 
-              <h2 className="mt-3 text-4xl font-bold text-purple-600">
+              <h2 className="mt-3 break-words text-3xl font-bold text-purple-600 sm:text-4xl">
                 {isLoading ? "..." : formatCurrency(totalPurchase)}
               </h2>
 
@@ -299,10 +299,10 @@ export default function PurchaseReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Paid Purchases</p>
 
-              <h2 className="mt-3 text-4xl font-bold text-green-600">
+              <h2 className="mt-3 break-words text-3xl font-bold text-green-600 sm:text-4xl">
                 {isLoading ? "..." : formatCurrency(paidPurchase)}
               </h2>
 
@@ -311,12 +311,12 @@ export default function PurchaseReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Credit Purchases
               </p>
 
-              <h2 className="mt-3 text-4xl font-bold text-orange-500">
+              <h2 className="mt-3 break-words text-3xl font-bold text-orange-500 sm:text-4xl">
                 {isLoading ? "..." : formatCurrency(creditPurchase)}
               </h2>
 
@@ -326,8 +326,8 @@ export default function PurchaseReportPage() {
             </div>
           </div>
 
-          <div className="mt-8 rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+          <div className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:mt-8 sm:p-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <input
                 type="text"
                 value={searchTerm}
@@ -354,20 +354,20 @@ export default function PurchaseReportPage() {
             <button
               type="button"
               onClick={resetFilters}
-              className="mt-4 rounded-xl border border-slate-300 bg-white px-5 py-2.5 font-semibold text-slate-700 transition hover:bg-slate-100"
+              className="mt-4 w-full rounded-xl border border-slate-300 bg-white px-5 py-2.5 font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto"
             >
               Reset Filters
             </button>
           </div>
 
-          <div className="mt-8 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
-            <div className="flex flex-col gap-3 border-b border-slate-200 px-8 py-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8">
+            <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">
+                <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
                   Purchase Bills
                 </h2>
 
-                <p className="mt-1 text-slate-600">
+                <p className="mt-1 text-sm text-slate-600 sm:text-base">
                   {isLoading
                     ? "Loading cloud purchase bills..."
                     : `${filteredPurchases.length} bill${
@@ -381,7 +381,106 @@ export default function PurchaseReportPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="p-4 md:hidden">
+              {isLoading ? (
+                <p className="py-10 text-center text-sm text-slate-500">
+                  Loading purchase bills from the cloud database...
+                </p>
+              ) : filteredPurchases.length === 0 ? (
+                <div className="py-10 text-center text-slate-500">
+                  <p className="text-lg font-semibold text-slate-700">
+                    No purchase bills found
+                  </p>
+
+                  <p className="mt-2 text-sm">
+                    Change the filters or create a new purchase bill.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {filteredPurchases.map((purchase) => {
+                    const isCredit = isCreditPayment(purchase.paymentMode);
+
+                    return (
+                      <article
+                        key={purchase.id}
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <Link
+                              href={`/purchase/bill/${purchase.id}`}
+                              className="block truncate text-lg font-bold text-purple-600 transition hover:text-purple-800 hover:underline"
+                            >
+                              {purchase.billNumber}
+                            </Link>
+
+                            <p className="mt-1 truncate text-sm text-slate-600">
+                              {purchase.supplierName}
+                            </p>
+
+                            <p className="mt-1 text-xs text-slate-500">
+                              {formatDate(purchase.date)}
+                            </p>
+                          </div>
+
+                          <span
+                            className={
+                              isCredit
+                                ? "shrink-0 rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700"
+                                : "shrink-0 rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700"
+                            }
+                          >
+                            {isCredit ? "Credit" : "Paid"}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          <div className="rounded-xl bg-white p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Items
+                            </p>
+
+                            <p className="mt-1 font-semibold text-slate-800">
+                              {purchase.itemCount} Item
+                              {purchase.itemCount !== 1 ? "s" : ""}
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl bg-white p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Payment Mode
+                            </p>
+
+                            <p className="mt-1 break-words font-semibold text-slate-800">
+                              {purchase.paymentMode}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex items-center justify-between rounded-xl bg-purple-50 p-3">
+                          <span className="text-sm font-semibold text-purple-700">
+                            Bill Total
+                          </span>
+
+                          <span className="text-lg font-bold text-purple-700">
+                            {formatCurrency(purchase.grandTotal)}
+                          </span>
+                        </div>
+
+                        {purchase.supplierMobile && (
+                          <p className="mt-3 text-sm text-slate-500">
+                            Mobile: {purchase.supplierMobile}
+                          </p>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[1000px]">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left">

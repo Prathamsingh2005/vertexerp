@@ -305,22 +305,22 @@ export default function PaymentReportPage() {
           <Navbar />
         </div>
 
-        <main className="payment-report-main p-6 md:p-8">
-          <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <main className="payment-report-main p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-slate-900">
+              <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
                 💳 Payment Report
               </h1>
 
-              <p className="mt-2 text-lg text-slate-600">
+              <p className="mt-2 text-base text-slate-600 sm:text-lg">
                 Analyze customer receipts and supplier payments.
               </p>
             </div>
 
-            <div className="payment-report-no-print flex flex-wrap gap-3">
+            <div className="payment-report-no-print flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap">
               <Link
                 href="/payments"
-                className="rounded-xl border border-slate-300 bg-white px-5 py-3 font-bold text-slate-700 transition hover:bg-slate-100"
+                className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 text-center font-bold text-slate-700 transition hover:bg-slate-100 sm:w-auto"
               >
                 ← Payments
               </Link>
@@ -328,7 +328,7 @@ export default function PaymentReportPage() {
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="rounded-xl px-5 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98]"
+                className="w-full rounded-xl px-5 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98] sm:w-auto"
                 style={{
                   backgroundColor: "#7e22ce",
                   color: "#ffffff",
@@ -340,23 +340,23 @@ export default function PaymentReportPage() {
           </div>
 
           {message && (
-            <div className="payment-report-no-print mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+            <div className="payment-report-no-print mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
               {message}
             </div>
           )}
 
-          <section className="payment-report-no-print rounded-3xl border border-slate-100 bg-white p-6 shadow-xl">
+          <section className="payment-report-no-print rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:p-6">
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-slate-900">
+              <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
                 Report Filters
               </h2>
 
-              <p className="mt-1 text-slate-600">
+              <p className="mt-1 text-sm text-slate-600 sm:text-base">
                 Filter payment entries by date, transaction type and mode.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
               <div>
                 <label className="mb-2 block font-semibold text-slate-800">
                   Start Date
@@ -435,14 +435,14 @@ export default function PaymentReportPage() {
             </div>
           </section>
 
-          <section className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-3xl border border-emerald-100 bg-white p-6 shadow-lg">
+          <section className="mt-6 grid grid-cols-1 gap-4 sm:mt-8 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
+            <div className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Customer Receipts
               </p>
 
               <h2
-                className="mt-3 text-3xl font-bold"
+                className="mt-3 break-words text-3xl font-bold sm:text-4xl"
                 style={{ color: "#059669" }}
               >
                 {isLoading ? "..." : formatCurrency(totalReceipts)}
@@ -453,13 +453,13 @@ export default function PaymentReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-purple-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-purple-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Supplier Payments
               </p>
 
               <h2
-                className="mt-3 text-3xl font-bold"
+                className="mt-3 break-words text-3xl font-bold sm:text-4xl"
                 style={{ color: "#7e22ce" }}
               >
                 {isLoading ? "..." : formatCurrency(totalSupplierPayments)}
@@ -470,13 +470,13 @@ export default function PaymentReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-blue-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Net Collection
               </p>
 
               <h2
-                className="mt-3 text-3xl font-bold"
+                className="mt-3 break-words text-3xl font-bold sm:text-4xl"
                 style={{
                   color: netCollection >= 0 ? "#2563eb" : "#dc2626",
                 }}
@@ -493,13 +493,13 @@ export default function PaymentReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-orange-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-orange-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Payment Entries
               </p>
 
               <h2
-                className="mt-3 text-3xl font-bold"
+                className="mt-3 break-words text-3xl font-bold sm:text-4xl"
                 style={{ color: "#ea580c" }}
               >
                 {isLoading ? "..." : filteredPayments.length}
@@ -511,9 +511,9 @@ export default function PaymentReportPage() {
             </div>
           </section>
 
-          <section className="mt-10 grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <section className="mt-6 grid grid-cols-1 gap-4 sm:mt-8 sm:gap-6 xl:grid-cols-3">
             <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl xl:col-span-1">
-              <div className="border-b border-slate-200 px-6 py-5">
+              <div className="border-b border-slate-200 px-4 py-5 sm:px-6">
                 <h2 className="text-xl font-bold text-slate-900">
                   Payment Mode Summary
                 </h2>
@@ -536,7 +536,7 @@ export default function PaymentReportPage() {
                   modeSummary.map((item) => (
                     <div
                       key={item.mode}
-                      className="flex items-center justify-between gap-4 px-6 py-4"
+                      className="flex items-center justify-between gap-3 px-4 py-4 sm:px-6"
                     >
                       <p className="font-bold text-slate-800">
                         {item.mode}
@@ -555,7 +555,7 @@ export default function PaymentReportPage() {
             </div>
 
             <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl xl:col-span-2">
-              <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-5 sm:px-6 md:flex-row md:items-center md:justify-between">
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">
                     Payment Transactions
@@ -571,7 +571,119 @@ export default function PaymentReportPage() {
                 </span>
               </div>
 
-              <div className="overflow-x-auto">
+              <div className="p-4 md:hidden">
+                {isLoading ? (
+                  <p className="py-10 text-center text-sm text-slate-500">
+                    Loading payment entries from the cloud database...
+                  </p>
+                ) : filteredPayments.length === 0 ? (
+                  <div className="py-10 text-center text-slate-500">
+                    <p className="text-lg font-semibold text-slate-700">
+                      No payment entries found
+                    </p>
+
+                    <p className="mt-2 text-sm">
+                      Change filters or record a payment first.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {filteredPayments.map((payment) => {
+                      const isReceipt =
+                        payment.type === "Customer Receipt";
+
+                      return (
+                        <article
+                          key={payment.id}
+                          className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-lg font-bold text-slate-900">
+                                {payment.partyName}
+                              </p>
+
+                              <p className="mt-1 text-sm text-slate-500">
+                                {formatDate(payment.date)}
+                              </p>
+                            </div>
+
+                            <span
+                              className={
+                                isReceipt
+                                  ? "shrink-0 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700"
+                                  : "shrink-0 rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700"
+                              }
+                            >
+                              {isReceipt
+                                ? "Customer Receipt"
+                                : "Supplier Payment"}
+                            </span>
+                          </div>
+
+                          <div className="mt-4 grid grid-cols-2 gap-3">
+                            <div className="rounded-xl bg-white p-3">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Payment Mode
+                              </p>
+
+                              <p className="mt-1 break-words font-semibold text-slate-800">
+                                {payment.paymentMode}
+                              </p>
+                            </div>
+
+                            <div className="rounded-xl bg-white p-3">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Reference
+                              </p>
+
+                              <p className="mt-1 break-words font-semibold text-slate-800">
+                                {payment.referenceNumber || "—"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div
+                            className={
+                              isReceipt
+                                ? "mt-3 flex items-center justify-between rounded-xl bg-emerald-50 p-3"
+                                : "mt-3 flex items-center justify-between rounded-xl bg-purple-50 p-3"
+                            }
+                          >
+                            <span
+                              className={
+                                isReceipt
+                                  ? "text-sm font-semibold text-emerald-700"
+                                  : "text-sm font-semibold text-purple-700"
+                              }
+                            >
+                              Amount
+                            </span>
+
+                            <span
+                              className={
+                                isReceipt
+                                  ? "text-lg font-bold text-emerald-700"
+                                  : "text-lg font-bold text-purple-700"
+                              }
+                            >
+                              {formatCurrency(payment.amount)}
+                            </span>
+                          </div>
+
+                          {payment.notes && (
+                            <p className="mt-3 rounded-xl bg-white p-3 text-sm leading-6 text-slate-700">
+                              {payment.notes}
+                            </p>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full min-w-[900px]">
                   <thead className="bg-slate-50">
                     <tr className="border-b border-slate-200 text-left">

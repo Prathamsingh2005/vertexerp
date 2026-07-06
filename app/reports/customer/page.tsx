@@ -317,37 +317,37 @@ export default function CustomerReportPage() {
       <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-6 md:p-8">
-          <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-slate-900">
+              <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
                 👥 Customer Report
               </h1>
 
-              <p className="mt-2 text-lg text-slate-600">
+              <p className="mt-2 text-base text-slate-600 sm:text-lg">
                 Review customer sales, receipts and outstanding balances.
               </p>
             </div>
 
             <Link
               href="/reports"
-              className="w-fit rounded-xl border border-slate-300 bg-white px-6 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
+              className="w-full rounded-xl border border-slate-300 bg-white px-6 py-3 text-center font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-fit"
             >
               ← Back to Reports
             </Link>
           </div>
 
           {message && (
-            <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+            <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
               {message}
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Total Customers</p>
 
-              <h2 className="mt-3 text-4xl font-bold text-blue-600">
+              <h2 className="mt-3 break-words text-3xl font-bold text-blue-600 sm:text-4xl">
                 {isLoading ? "..." : customerRows.length}
               </h2>
 
@@ -356,10 +356,10 @@ export default function CustomerReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Active Customers</p>
 
-              <h2 className="mt-3 text-4xl font-bold text-green-600">
+              <h2 className="mt-3 break-words text-3xl font-bold text-green-600 sm:text-4xl">
                 {isLoading ? "..." : activeCustomers}
               </h2>
 
@@ -368,12 +368,12 @@ export default function CustomerReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Total Customer Sales
               </p>
 
-              <h2 className="mt-3 text-4xl font-bold text-purple-600">
+              <h2 className="mt-3 break-words text-3xl font-bold text-purple-600 sm:text-4xl">
                 {isLoading ? "..." : formatCurrency(totalSales)}
               </h2>
 
@@ -382,10 +382,10 @@ export default function CustomerReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Outstanding Amount</p>
 
-              <h2 className="mt-3 text-4xl font-bold text-orange-500">
+              <h2 className="mt-3 break-words text-3xl font-bold text-orange-500 sm:text-4xl">
                 {isLoading ? "..." : formatCurrency(totalPending)}
               </h2>
 
@@ -395,8 +395,8 @@ export default function CustomerReportPage() {
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
-            <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-6">
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:mt-6 sm:grid-cols-2 sm:gap-6">
+            <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-5 sm:p-6">
               <p className="font-semibold text-emerald-800">
                 Customer Receipts
               </p>
@@ -410,7 +410,7 @@ export default function CustomerReportPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-blue-100 bg-blue-50 p-6">
+            <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 sm:p-6">
               <p className="font-semibold text-blue-800">
                 Balance Calculation
               </p>
@@ -422,8 +422,8 @@ export default function CustomerReportPage() {
             </div>
           </div>
 
-          <div className="mt-8 rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+          <div className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:mt-8 sm:p-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <input
                 type="text"
                 value={searchTerm}
@@ -435,21 +435,21 @@ export default function CustomerReportPage() {
               <button
                 type="button"
                 onClick={resetSearch}
-                className="rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
+                className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto"
               >
                 Reset Search
               </button>
             </div>
           </div>
 
-          <div className="mt-8 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
-            <div className="flex flex-col gap-3 border-b border-slate-200 px-8 py-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8">
+            <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">
+                <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
                   Customer Summary
                 </h2>
 
-                <p className="mt-1 text-slate-600">
+                <p className="mt-1 text-sm text-slate-600 sm:text-base">
                   {isLoading
                     ? "Loading customer data from the cloud..."
                     : `${filteredCustomers.length} customer${
@@ -463,7 +463,111 @@ export default function CustomerReportPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="p-4 md:hidden">
+              {isLoading ? (
+                <p className="py-10 text-center text-sm text-slate-500">
+                  Loading customer report from the cloud database...
+                </p>
+              ) : filteredCustomers.length === 0 ? (
+                <div className="py-10 text-center text-slate-500">
+                  <p className="text-lg font-semibold text-slate-700">
+                    No customers found
+                  </p>
+
+                  <p className="mt-2 text-sm">
+                    Add a Customer ledger or create a sales invoice.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {filteredCustomers.map((customer) => (
+                    <article
+                      key={customer.id}
+                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-lg font-bold text-slate-900">
+                            {customer.name}
+                          </p>
+
+                          <p className="mt-1 truncate text-sm text-slate-500">
+                            {customer.mobile || customer.email || "No contact details"}
+                          </p>
+                        </div>
+
+                        <span
+                          className={
+                            customer.pendingAmount > 0
+                              ? "shrink-0 rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700"
+                              : "shrink-0 rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700"
+                          }
+                        >
+                          {customer.pendingAmount > 0 ? "Payment Due" : "Clear"}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Invoices
+                          </p>
+                          <p className="mt-1 font-bold text-slate-900">
+                            {customer.invoiceCount}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Opening Balance
+                          </p>
+                          <p className="mt-1 break-words font-semibold text-slate-800">
+                            {formatCurrency(customer.openingBalance)}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Total Sales
+                          </p>
+                          <p className="mt-1 break-words font-bold text-blue-700">
+                            {formatCurrency(customer.totalSales)}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Receipts
+                          </p>
+                          <p className="mt-1 break-words font-bold text-emerald-700">
+                            {formatCurrency(customer.receivedAmount)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 rounded-xl bg-orange-50 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-orange-700">
+                          Outstanding Amount
+                        </p>
+
+                        <p className="mt-1 text-xl font-bold text-orange-700">
+                          {formatCurrency(customer.pendingAmount)}
+                        </p>
+                      </div>
+
+                      {(customer.gst || customer.email) && (
+                        <div className="mt-3 space-y-1 text-sm text-slate-600">
+                          {customer.email && <p className="truncate">{customer.email}</p>}
+                          {customer.gst && <p className="break-words">GST: {customer.gst}</p>}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[1250px]">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left">

@@ -249,8 +249,8 @@ export default function PurchaseBillPreviewPage() {
         <div className="min-w-0 flex-1">
           <Navbar />
 
-          <main className="p-6 md:p-8">
-            <div className="rounded-3xl border border-slate-100 bg-white p-10 text-center shadow-xl">
+          <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+            <div className="rounded-3xl border border-slate-100 bg-white p-6 text-center shadow-xl sm:p-10">
               <p className="text-lg font-semibold text-slate-700">
                 Loading purchase bill from the cloud database...
               </p>
@@ -269,9 +269,9 @@ export default function PurchaseBillPreviewPage() {
         <div className="min-w-0 flex-1">
           <Navbar />
 
-          <main className="p-6 md:p-8">
-            <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-lg">
-              <h1 className="text-3xl font-bold text-slate-900">
+          <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-lg sm:p-10">
+              <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
                 Purchase Bill Not Found
               </h1>
 
@@ -368,11 +368,11 @@ export default function PurchaseBillPreviewPage() {
             <Navbar />
           </div>
 
-          <main className="purchase-main-print p-6 md:p-8">
-            <div className="purchase-actions-print mb-6 flex flex-wrap items-center justify-between gap-3">
+          <main className="purchase-main-print p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+            <div className="purchase-actions-print mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <Link
                 href="/purchase"
-                className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
+                className="flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 sm:inline-flex sm:w-auto"
               >
                 ← Back to Purchase
               </Link>
@@ -380,7 +380,7 @@ export default function PurchaseBillPreviewPage() {
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="inline-flex items-center gap-2 rounded-xl px-6 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] hover:opacity-90 active:scale-[0.98]"
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] hover:opacity-90 active:scale-[0.98] sm:inline-flex sm:w-auto"
                 style={{ backgroundColor: "#7e22ce" }}
               >
                 <span className="text-lg">🖨️</span>
@@ -388,14 +388,14 @@ export default function PurchaseBillPreviewPage() {
               </button>
             </div>
 
-            <section className="purchase-card-print mx-auto max-w-6xl rounded-3xl border border-slate-200 bg-white p-6 shadow-xl md:p-8">
-              <div className="flex flex-col gap-6 border-b border-slate-200 pb-6 sm:flex-row sm:items-start sm:justify-between">
+            <section className="purchase-card-print mx-auto max-w-6xl rounded-3xl border border-slate-200 bg-white p-4 shadow-xl sm:p-6 md:p-8">
+              <div className="flex flex-col gap-5 border-b border-slate-200 pb-5 sm:gap-6 sm:pb-6 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-sm font-bold tracking-[0.2em] text-purple-600">
                     PURCHASE BILL
                   </p>
 
-                  <h1 className="mt-3 text-3xl font-bold text-slate-900">
+                  <h1 className="mt-3 break-words text-2xl font-bold text-slate-900 sm:text-3xl">
                     {bill.billNumber}
                   </h1>
 
@@ -404,18 +404,18 @@ export default function PurchaseBillPreviewPage() {
                   </p>
                 </div>
 
-                <div className="rounded-2xl bg-purple-50 px-5 py-4 print:border print:border-slate-200 print:bg-white">
+                <div className="w-full rounded-2xl bg-purple-50 px-5 py-4 print:border print:border-slate-200 print:bg-white sm:w-auto">
                   <p className="text-sm font-semibold text-purple-700">
                     Grand Total
                   </p>
 
-                  <p className="mt-2 text-3xl font-bold text-purple-600">
+                  <p className="mt-2 break-words text-2xl font-bold text-purple-600 sm:text-3xl">
                     {formatCurrency(bill.grandTotal)}
                   </p>
                 </div>
               </div>
 
-              <div className="mt-8 grid grid-cols-1 gap-8 border-b border-slate-200 pb-8 md:grid-cols-2">
+              <div className="mt-6 grid grid-cols-1 gap-6 border-b border-slate-200 pb-6 sm:mt-8 sm:gap-8 sm:pb-8 md:grid-cols-2">
                 <div>
                   <p className="text-sm font-bold uppercase tracking-wider text-slate-500">
                     Supplier Details
@@ -458,7 +458,7 @@ export default function PurchaseBillPreviewPage() {
                 </div>
               </div>
 
-              <div className="mt-8">
+              <div className="mt-6 sm:mt-8">
                 <h2 className="text-xl font-bold text-slate-900">
                   Purchased Items
                 </h2>
@@ -468,7 +468,74 @@ export default function PurchaseBillPreviewPage() {
                   in this bill.
                 </p>
 
-                <div className="purchase-table-wrap-print mt-5 overflow-x-auto rounded-2xl border border-slate-200">
+                <div className="mt-5 space-y-4 md:hidden">
+                  {items.map((item, index) => (
+                    <article
+                      key={`${item.productId}-${index}`}
+                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Item {index + 1}
+                          </p>
+
+                          <p className="mt-1 break-words text-base font-bold text-slate-900">
+                            {item.productName}
+                          </p>
+                        </div>
+
+                        <p className="shrink-0 text-lg font-bold text-purple-700">
+                          {formatCurrency(item.amount)}
+                        </p>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Quantity
+                          </p>
+
+                          <p className="mt-1 font-semibold text-slate-800">
+                            {item.quantity}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Rate
+                          </p>
+
+                          <p className="mt-1 break-words font-semibold text-slate-800">
+                            {formatCurrency(item.rate)}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            GST
+                          </p>
+
+                          <p className="mt-1 font-semibold text-slate-800">
+                            {item.gst}%
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Discount
+                          </p>
+
+                          <p className="mt-1 break-words font-semibold text-slate-800">
+                            {formatCurrency(item.discount)}
+                          </p>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                <div className="purchase-table-wrap-print mt-5 hidden overflow-x-auto rounded-2xl border border-slate-200 md:block">
                   <table className="purchase-table-print w-full min-w-[850px]">
                     <thead className="bg-slate-50">
                       <tr className="border-b border-slate-200 text-left">
@@ -544,7 +611,7 @@ export default function PurchaseBillPreviewPage() {
                 </div>
               </div>
 
-              <div className="mt-8 ml-auto max-w-sm rounded-2xl border border-slate-200 bg-slate-50 p-5 print:bg-white">
+              <div className="mt-5 w-full max-w-sm rounded-2xl border border-slate-200 bg-slate-50 p-4 print:bg-white sm:ml-auto sm:mt-8 sm:p-5">
                 <div className="flex items-center justify-between gap-4 text-slate-700">
                   <span>Subtotal</span>
 

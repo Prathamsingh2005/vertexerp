@@ -76,7 +76,9 @@ export default function SalesPage() {
         .eq("id", user.id)
         .maybeSingle();
 
-      if (profileError) throw profileError;
+      if (profileError) {
+        throw profileError;
+      }
 
       const activeCompanyId =
         (profile as ProfileRow | null)?.active_company_id || null;
@@ -98,8 +100,13 @@ export default function SalesPage() {
           .eq("company_id", activeCompanyId),
       ]);
 
-      if (salesResponse.error) throw salesResponse.error;
-      if (paymentsResponse.error) throw paymentsResponse.error;
+      if (salesResponse.error) {
+        throw salesResponse.error;
+      }
+
+      if (paymentsResponse.error) {
+        throw paymentsResponse.error;
+      }
 
       setSales(salesResponse.data || []);
       setPayments(paymentsResponse.data || []);
@@ -148,7 +155,9 @@ export default function SalesPage() {
     sales
       .filter((sale) => sale.payment_mode.trim().toLowerCase() === "credit")
       .forEach((sale) => {
-        if (!sale.customer_id) return;
+        if (!sale.customer_id) {
+          return;
+        }
 
         creditByCustomer.set(
           sale.customer_id,
@@ -201,13 +210,14 @@ export default function SalesPage() {
       <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-6 md:p-8">
-          <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-slate-900">
+              <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
                 🛒 Sales & Billing
               </h1>
-              <p className="mt-2 text-lg text-slate-600">
+
+              <p className="mt-2 max-w-3xl text-base text-slate-600 sm:text-lg">
                 Create invoices, manage sales and track customer payments.
               </p>
             </div>
@@ -215,54 +225,79 @@ export default function SalesPage() {
             <button
               type="button"
               onClick={scrollToInvoiceForm}
-              className="rounded-xl px-6 py-3 font-semibold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98]"
-              style={{ backgroundColor: "#2563eb", color: "#ffffff" }}
+              className="w-full rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl active:scale-[0.98] sm:w-fit"
             >
               + Create Invoice
             </button>
           </div>
 
-          <section className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-3xl border border-blue-100 bg-white p-6 shadow-lg">
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
+            <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Today&apos;s Sales</p>
-              <h2 className="mt-3 text-4xl font-bold" style={{ color: "#2563eb" }}>
+
+              <h2 className="mt-3 break-words text-3xl font-bold text-blue-600 sm:text-4xl">
                 {isLoading ? "..." : formatCurrency(salesStats.todaySales)}
               </h2>
-              <p className="mt-2 text-sm text-slate-500">Total sales recorded today</p>
+
+              <p className="mt-2 text-sm text-slate-500">
+                Total sales recorded today
+              </p>
             </div>
 
-            <div className="rounded-3xl border border-emerald-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Total Invoices</p>
-              <h2 className="mt-3 text-4xl font-bold" style={{ color: "#059669" }}>
+
+              <h2 className="mt-3 text-3xl font-bold text-emerald-600 sm:text-4xl">
                 {isLoading ? "..." : salesStats.totalInvoices}
               </h2>
-              <p className="mt-2 text-sm text-slate-500">All saved sales invoices</p>
+
+              <p className="mt-2 text-sm text-slate-500">
+                All saved sales invoices
+              </p>
             </div>
 
-            <div className="rounded-3xl border border-orange-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-orange-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Pending Payments</p>
-              <h2 className="mt-3 text-4xl font-bold" style={{ color: "#ea580c" }}>
-                {isLoading ? "..." : formatCurrency(salesStats.pendingPayments)}
+
+              <h2 className="mt-3 break-words text-3xl font-bold text-orange-600 sm:text-4xl">
+                {isLoading
+                  ? "..."
+                  : formatCurrency(salesStats.pendingPayments)}
               </h2>
-              <p className="mt-2 text-sm text-slate-500">Credit amount still to receive</p>
+
+              <p className="mt-2 text-sm text-slate-500">
+                Credit amount still to receive
+              </p>
             </div>
 
-            <div className="rounded-3xl border border-purple-100 bg-white p-6 shadow-lg">
-              <p className="font-medium text-slate-600">This Month&apos;s Sales</p>
-              <h2 className="mt-3 text-4xl font-bold" style={{ color: "#7e22ce" }}>
+            <div className="rounded-3xl border border-purple-100 bg-white p-5 shadow-lg sm:p-6">
+              <p className="font-medium text-slate-600">
+                This Month&apos;s Sales
+              </p>
+
+              <h2 className="mt-3 break-words text-3xl font-bold text-purple-700 sm:text-4xl">
                 {isLoading ? "..." : formatCurrency(salesStats.monthlySales)}
               </h2>
-              <p className="mt-2 text-sm text-slate-500">Total invoice value for current month</p>
+
+              <p className="mt-2 text-sm text-slate-500">
+                Total invoice value for current month
+              </p>
             </div>
           </section>
 
-          <section className="mt-8 rounded-3xl border border-slate-100 bg-white p-5 shadow-lg">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-xl">📄</span>
+          <section className="mt-6 rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:mt-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="pt-0.5 text-xl">📄</span>
+
                 <div>
-                  <p className="font-bold text-slate-900">Sales Invoice Register</p>
-                  <p className="text-sm text-slate-600">Saved invoices appear in the table below.</p>
+                  <p className="font-bold text-slate-900">
+                    Sales Invoice Register
+                  </p>
+
+                  <p className="mt-1 text-sm text-slate-600">
+                    Saved invoices appear in the table below.
+                  </p>
                 </div>
               </div>
 

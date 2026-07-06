@@ -541,25 +541,25 @@ export default function PaymentsPage() {
       <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-6 md:p-8">
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold text-slate-900">
+        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          <div className="mb-6 lg:mb-8">
+            <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
               💳 Record Payment
             </h1>
 
-            <p className="mt-2 text-lg text-slate-600">
+            <p className="mt-2 text-base text-slate-600 sm:text-lg">
               Record customer receipts and supplier payments.
             </p>
           </div>
 
-          <section className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            <div className="rounded-3xl border border-blue-100 bg-white p-6 shadow-lg">
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
+            <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Customer Receivable
               </p>
 
               <h2
-                className="mt-3 text-3xl font-bold"
+                className="mt-3 break-words text-3xl font-bold sm:text-4xl"
                 style={{ color: "#2563eb" }}
               >
                 {isLoading ? "..." : formatCurrency(totalReceivable)}
@@ -570,13 +570,13 @@ export default function PaymentsPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-purple-100 bg-white p-6 shadow-lg">
+            <div className="rounded-3xl border border-purple-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Supplier Payable
               </p>
 
               <h2
-                className="mt-3 text-3xl font-bold"
+                className="mt-3 break-words text-3xl font-bold sm:text-4xl"
                 style={{ color: "#7e22ce" }}
               >
                 {isLoading ? "..." : formatCurrency(totalPayable)}
@@ -590,33 +590,33 @@ export default function PaymentsPage() {
 
           <form
             onSubmit={handleSubmit}
-            className="mt-10 rounded-3xl border border-slate-100 bg-white p-6 shadow-xl md:p-8"
+            className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:mt-8 sm:p-6 lg:mt-10 lg:p-8"
           >
-            <div className="border-b border-slate-200 pb-6">
-              <h2 className="text-2xl font-bold text-slate-900">
+            <div className="border-b border-slate-200 pb-5 sm:pb-6">
+              <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
                 New Payment Entry
               </h2>
 
-              <p className="mt-1 text-slate-600">
+              <p className="mt-1 text-sm text-slate-600 sm:text-base">
                 Record a full or partial payment against credit transactions.
               </p>
             </div>
 
             {message && (
-              <div className="mt-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+              <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mt-6 sm:text-base">
                 {message}
               </div>
             )}
 
             {!isLoading && !activeCompanyId && (
-              <div className="mt-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-700">
+              <div className="mt-5 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700 sm:mt-6 sm:text-base">
                 Select an active company from the <strong>Companies</strong>{" "}
                 page before recording a payment.
               </div>
             )}
 
             <fieldset disabled={isFormDisabled}>
-              <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+              <div className="mt-6 grid grid-cols-1 gap-5 sm:mt-8 md:grid-cols-2 xl:grid-cols-3">
                 <div>
                   <label className="mb-2 block font-semibold text-slate-800">
                     Transaction Type *
@@ -762,18 +762,18 @@ export default function PaymentsPage() {
               </div>
 
               {selectedParty && (
-                <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:mt-6 sm:p-5">
                   <p className="text-sm font-bold text-emerald-800">
                     Available Outstanding Balance
                   </p>
 
-                  <div className="mt-2 flex items-center justify-between gap-4">
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                     <p className="text-lg font-bold text-slate-900">
                       {selectedParty.name}
                     </p>
 
                     <p
-                      className="text-2xl font-bold"
+                      className="text-xl font-bold sm:text-2xl"
                       style={{ color: "#059669" }}
                     >
                       {formatCurrency(selectedParty.outstanding)}
@@ -782,7 +782,7 @@ export default function PaymentsPage() {
                 </div>
               )}
 
-              <div className="mt-6">
+              <div className="mt-5 sm:mt-6">
                 <label className="mb-2 block font-semibold text-slate-800">
                   Notes
                 </label>
@@ -801,10 +801,10 @@ export default function PaymentsPage() {
                 />
               </div>
 
-              <div className="mt-8 flex flex-wrap gap-4">
+              <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:gap-4">
                 <button
                   type="submit"
-                  className="rounded-xl px-7 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98]"
+                  className="w-full rounded-xl px-5 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98] sm:w-auto sm:px-7"
                   style={{
                     backgroundColor: "#059669",
                     color: "#ffffff",
@@ -816,7 +816,7 @@ export default function PaymentsPage() {
                 <button
                   type="button"
                   onClick={() => resetForm()}
-                  className="rounded-xl border border-slate-300 bg-white px-7 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto sm:px-7"
                 >
                   Reset
                 </button>
@@ -824,14 +824,14 @@ export default function PaymentsPage() {
             </fieldset>
           </form>
 
-          <section className="mt-10 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
-            <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-6 md:flex-row md:items-center md:justify-between">
+          <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8 lg:mt-10">
+            <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">
+                <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
                   Payment History
                 </h2>
 
-                <p className="mt-1 text-slate-600">
+                <p className="mt-1 text-sm text-slate-600 sm:text-base">
                   Customer receipts and supplier payment entries.
                 </p>
               </div>
@@ -841,7 +841,119 @@ export default function PaymentsPage() {
               </span>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="p-4 md:hidden">
+              {isLoading ? (
+                <div className="py-10 text-center text-sm text-slate-500">
+                  Loading payment history from the cloud database...
+                </div>
+              ) : payments.length === 0 ? (
+                <div className="py-10 text-center text-slate-500">
+                  <p className="text-lg font-semibold text-slate-700">
+                    No payment entries yet
+                  </p>
+
+                  <p className="mt-2 text-sm">
+                    Record a receipt or supplier payment from the form above.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {payments.map((payment) => {
+                    const isCustomerReceipt =
+                      payment.type === "Customer Receipt";
+
+                    return (
+                      <article
+                        key={payment.id}
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-lg font-bold text-slate-900">
+                              {payment.partyName}
+                            </p>
+
+                            <p className="mt-1 text-sm text-slate-500">
+                              {formatDate(payment.date)}
+                            </p>
+                          </div>
+
+                          <span
+                            className={
+                              isCustomerReceipt
+                                ? "shrink-0 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700"
+                                : "shrink-0 rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700"
+                            }
+                          >
+                            {isCustomerReceipt ? "Receipt" : "Payment"}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          <div className="rounded-xl bg-white p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Payment Mode
+                            </p>
+
+                            <p className="mt-1 font-semibold text-slate-800">
+                              {payment.paymentMode}
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl bg-white p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Amount
+                            </p>
+
+                            <p
+                              className={
+                                isCustomerReceipt
+                                  ? "mt-1 font-bold text-emerald-700"
+                                  : "mt-1 font-bold text-purple-700"
+                              }
+                            >
+                              {formatCurrency(payment.amount)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Reference
+                          </p>
+
+                          <p className="mt-1 break-words font-semibold text-slate-800">
+                            {payment.referenceNumber || "—"}
+                          </p>
+                        </div>
+
+                        {payment.notes && (
+                          <div className="mt-3 rounded-xl bg-white p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Notes
+                            </p>
+
+                            <p className="mt-1 text-sm leading-6 text-slate-700">
+                              {payment.notes}
+                            </p>
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePayment(payment)}
+                          className="mt-4 w-full rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700"
+                        >
+                          Delete Payment
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[1050px]">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left">

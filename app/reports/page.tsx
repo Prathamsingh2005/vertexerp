@@ -1,7 +1,76 @@
+"use client";
+
 import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import ReportsManager from "@/components/ReportsManager";
+
+const reportCards = [
+  {
+    icon: "🛒",
+    title: "Sales Report",
+    description: "View invoice-wise sales, customer sales and payment details.",
+    href: "/reports/sales",
+    action: "View Sales Report →",
+    actionClassName: "text-blue-600 hover:text-blue-800",
+    borderClassName: "border-slate-100",
+  },
+  {
+    icon: "🧾",
+    title: "Purchase Report",
+    description: "Track supplier purchases, bills and pending payment amounts.",
+    href: "/reports/purchase",
+    action: "View Purchase Report →",
+    actionClassName: "text-blue-600 hover:text-blue-800",
+    borderClassName: "border-slate-100",
+  },
+  {
+    icon: "📦",
+    title: "Stock Report",
+    description: "Check available stock, low-stock items and inventory value.",
+    href: "/reports/stock",
+    action: "View Stock Report →",
+    actionClassName: "text-blue-600 hover:text-blue-800",
+    borderClassName: "border-slate-100",
+  },
+  {
+    icon: "👥",
+    title: "Customer Report",
+    description: "Analyze customer-wise sales, balances and payment history.",
+    href: "/reports/customer",
+    action: "View Customer Report →",
+    actionClassName: "text-blue-600 hover:text-blue-800",
+    borderClassName: "border-slate-100",
+  },
+  {
+    icon: "🏢",
+    title: "Supplier Report",
+    description: "Review supplier bills, purchases and pending amounts.",
+    href: "/reports/supplier",
+    action: "View Supplier Report →",
+    actionClassName: "text-blue-600 hover:text-blue-800",
+    borderClassName: "border-slate-100",
+  },
+  {
+    icon: "💰",
+    title: "Profit & Loss",
+    description: "Compare sales, purchases and expenses to calculate profit.",
+    href: "/reports/profit",
+    action: "View Profit & Loss →",
+    actionClassName: "text-blue-600 hover:text-blue-800",
+    borderClassName: "border-slate-100",
+  },
+  {
+    icon: "💳",
+    title: "Payment Report",
+    description:
+      "Review customer receipts, supplier payments and collection summary.",
+    href: "/reports/payments",
+    action: "View Payment Report →",
+    actionClassName: "text-emerald-600 hover:text-emerald-800",
+    borderClassName: "border-emerald-100",
+  },
+];
 
 export default function ReportsPage() {
   return (
@@ -11,13 +80,13 @@ export default function ReportsPage() {
       <div className="min-w-0 flex-1">
         <Navbar />
 
-        <main className="p-6 md:p-8">
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold text-slate-900">
-              📈 Reports & Analytics
+        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          <div className="mb-6 lg:mb-8">
+            <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
+              📈 Reports &amp; Analytics
             </h1>
 
-            <p className="mt-2 text-lg text-slate-600">
+            <p className="mt-2 max-w-3xl text-base text-slate-600 sm:text-lg">
               Track sales, purchases, stock and business performance from one
               place.
             </p>
@@ -25,140 +94,30 @@ export default function ReportsPage() {
 
           <ReportsManager />
 
-          <section className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-            <div className="rounded-3xl border border-slate-100 bg-white p-7 shadow-lg transition hover:-translate-y-1 hover:shadow-xl">
-              <div className="text-4xl">🛒</div>
-
-              <h2 className="mt-5 text-2xl font-bold text-slate-900">
-                Sales Report
-              </h2>
-
-              <p className="mt-2 text-slate-600">
-                View invoice-wise sales, customer sales and payment details.
-              </p>
-
-              <Link
-                href="/reports/sales"
-                className="mt-6 inline-block font-semibold text-blue-600 transition hover:text-blue-800"
+          <section className="mt-6 grid grid-cols-1 gap-4 sm:mt-8 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
+            {reportCards.map((report) => (
+              <article
+                key={report.href}
+                className={`flex min-h-[210px] flex-col rounded-3xl border bg-white p-5 shadow-lg transition hover:-translate-y-1 hover:shadow-xl sm:min-h-[230px] sm:p-7 ${report.borderClassName}`}
               >
-                View Sales Report →
-              </Link>
-            </div>
+                <div className="text-3xl sm:text-4xl">{report.icon}</div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-7 shadow-lg transition hover:-translate-y-1 hover:shadow-xl">
-              <div className="text-4xl">🧾</div>
+                <h2 className="mt-4 text-xl font-bold text-slate-900 sm:mt-5 sm:text-2xl">
+                  {report.title}
+                </h2>
 
-              <h2 className="mt-5 text-2xl font-bold text-slate-900">
-                Purchase Report
-              </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600 sm:text-base">
+                  {report.description}
+                </p>
 
-              <p className="mt-2 text-slate-600">
-                Track supplier purchases, bills and pending payment amounts.
-              </p>
-
-              <Link
-                href="/reports/purchase"
-                className="mt-6 inline-block font-semibold text-blue-600 transition hover:text-blue-800"
-              >
-                View Purchase Report →
-              </Link>
-            </div>
-
-            <div className="rounded-3xl border border-slate-100 bg-white p-7 shadow-lg transition hover:-translate-y-1 hover:shadow-xl">
-              <div className="text-4xl">📦</div>
-
-              <h2 className="mt-5 text-2xl font-bold text-slate-900">
-                Stock Report
-              </h2>
-
-              <p className="mt-2 text-slate-600">
-                Check available stock, low-stock items and inventory value.
-              </p>
-
-              <Link
-                href="/reports/stock"
-                className="mt-6 inline-block font-semibold text-blue-600 transition hover:text-blue-800"
-              >
-                View Stock Report →
-              </Link>
-            </div>
-
-            <div className="rounded-3xl border border-slate-100 bg-white p-7 shadow-lg transition hover:-translate-y-1 hover:shadow-xl">
-              <div className="text-4xl">👥</div>
-
-              <h2 className="mt-5 text-2xl font-bold text-slate-900">
-                Customer Report
-              </h2>
-
-              <p className="mt-2 text-slate-600">
-                Analyze customer-wise sales, balances and payment history.
-              </p>
-
-              <Link
-                href="/reports/customer"
-                className="mt-6 inline-block font-semibold text-blue-600 transition hover:text-blue-800"
-              >
-                View Customer Report →
-              </Link>
-            </div>
-
-            <div className="rounded-3xl border border-slate-100 bg-white p-7 shadow-lg transition hover:-translate-y-1 hover:shadow-xl">
-              <div className="text-4xl">🏢</div>
-
-              <h2 className="mt-5 text-2xl font-bold text-slate-900">
-                Supplier Report
-              </h2>
-
-              <p className="mt-2 text-slate-600">
-                Review supplier bills, purchases and pending amounts.
-              </p>
-
-              <Link
-                href="/reports/supplier"
-                className="mt-6 inline-block font-semibold text-blue-600 transition hover:text-blue-800"
-              >
-                View Supplier Report →
-              </Link>
-            </div>
-
-            <div className="rounded-3xl border border-slate-100 bg-white p-7 shadow-lg transition hover:-translate-y-1 hover:shadow-xl">
-              <div className="text-4xl">💰</div>
-
-              <h2 className="mt-5 text-2xl font-bold text-slate-900">
-                Profit & Loss
-              </h2>
-
-              <p className="mt-2 text-slate-600">
-                Compare sales, purchases and expenses to calculate profit.
-              </p>
-
-              <Link
-                href="/reports/profit"
-                className="mt-6 inline-block font-semibold text-blue-600 transition hover:text-blue-800"
-              >
-                View Profit & Loss →
-              </Link>
-            </div>
-
-            <div className="rounded-3xl border border-emerald-100 bg-white p-7 shadow-lg transition hover:-translate-y-1 hover:shadow-xl">
-              <div className="text-4xl">💳</div>
-
-              <h2 className="mt-5 text-2xl font-bold text-slate-900">
-                Payment Report
-              </h2>
-
-              <p className="mt-2 text-slate-600">
-                Review customer receipts, supplier payments and collection
-                summary.
-              </p>
-
-              <Link
-                href="/reports/payments"
-                className="mt-6 inline-block font-semibold text-emerald-600 transition hover:text-emerald-800"
-              >
-                View Payment Report →
-              </Link>
-            </div>
+                <Link
+                  href={report.href}
+                  className={`mt-auto pt-5 font-semibold transition ${report.actionClassName}`}
+                >
+                  {report.action}
+                </Link>
+              </article>
+            ))}
           </section>
         </main>
       </div>

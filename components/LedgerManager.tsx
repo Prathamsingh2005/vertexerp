@@ -289,17 +289,17 @@ export default function LedgerManager({
 
   return (
     <>
-      <section className="mt-8 rounded-3xl border border-blue-100 bg-blue-50 p-5">
+      <section className="mt-6 rounded-3xl border border-blue-100 bg-blue-50 p-4 sm:mt-8 sm:p-5">
         <p className="text-sm font-bold text-blue-800">Active Company</p>
 
-        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xl font-bold text-slate-900">
+        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="break-words text-lg font-bold text-slate-900 sm:text-xl">
             {isLoading
               ? "Loading company..."
               : activeCompanyName || "No active company selected"}
           </p>
 
-          <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-bold text-blue-700 shadow-sm">
+          <span className="w-fit rounded-full bg-white px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
             {activeCompanyId
               ? "Ledgers are saved in cloud"
               : "Select a company first"}
@@ -308,17 +308,23 @@ export default function LedgerManager({
       </section>
 
       {message && (
-        <div className="mt-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+        <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mt-6 sm:text-base">
           {message}
         </div>
       )}
 
-      <div className={!activeCompanyId && !isLoading ? "pointer-events-none opacity-60" : ""}>
+      <div
+        className={
+          !activeCompanyId && !isLoading
+            ? "pointer-events-none opacity-60"
+            : ""
+        }
+      >
         <LedgerForm onAddLedger={addLedger} />
       </div>
 
       {isLoading ? (
-        <div className="mt-10 rounded-3xl border border-slate-100 bg-white p-10 text-center text-slate-500 shadow-xl">
+        <div className="mt-6 rounded-3xl border border-slate-100 bg-white p-6 text-center text-slate-500 shadow-xl sm:mt-10 sm:p-10">
           Loading ledgers from the cloud database...
         </div>
       ) : (

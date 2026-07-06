@@ -204,23 +204,23 @@ export default function ExpenseForm() {
 
   return (
     <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-900 px-6 py-7 text-white md:px-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-900 px-4 py-5 text-white sm:px-6 sm:py-6 md:px-8 md:py-7">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-200">
               Expense Entry
             </p>
 
-            <h2 className="mt-2 text-2xl font-bold">
+            <h2 className="mt-2 text-xl font-bold sm:text-2xl">
               Add a Business Expense
             </h2>
 
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
               Record operational expenses to keep your profit and loss report accurate.
             </p>
           </div>
 
-          <div className="w-fit rounded-2xl border border-white/15 bg-white/10 px-4 py-3">
+          <div className="w-fit rounded-2xl border border-white/15 bg-white/10 px-4 py-2.5">
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-300">
               Amount Preview
             </p>
@@ -232,16 +232,16 @@ export default function ExpenseForm() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="p-6 md:p-8">
+      <form onSubmit={handleSubmit} className="p-4 sm:p-6 md:p-8">
         {!isLoadingCompany && !activeCompanyId && (
-          <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-700">
+          <div className="mb-5 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700 sm:mb-6 sm:text-base">
             Select an active company from the <strong>Companies</strong> page
             before saving expenses.
           </div>
         )}
 
         {activeCompanyId && (
-          <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+          <div className="mb-5 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 sm:mb-6">
             <p className="text-sm font-semibold text-blue-700">
               Saving expense for
             </p>
@@ -253,9 +253,9 @@ export default function ExpenseForm() {
         )}
 
         <fieldset disabled={isFormDisabled}>
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3 lg:gap-6">
             <div className="space-y-5 lg:col-span-2">
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <div>
                   <label className="mb-2 flex items-center justify-between text-sm font-semibold text-slate-700">
                     Expense Date
@@ -336,7 +336,7 @@ export default function ExpenseForm() {
                 </label>
 
                 <textarea
-                  rows={4}
+                  rows={3}
                   placeholder="Example: Office electricity bill for July"
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
@@ -345,7 +345,52 @@ export default function ExpenseForm() {
               </div>
             </div>
 
-            <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:hidden">
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+                Entry Summary
+              </p>
+
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-white p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Category
+                  </p>
+                  <p className="mt-1 truncate font-bold text-slate-900">
+                    {category}
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-white p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Payment Mode
+                  </p>
+                  <p className="mt-1 truncate font-bold text-slate-900">
+                    {paymentMode}
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-white p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Date
+                  </p>
+                  <p className="mt-1 truncate font-bold text-slate-900">
+                    {date || "Not selected"}
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-blue-600 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-100">
+                    Total
+                  </p>
+                  <p className="mt-1 text-lg font-bold text-white">
+                    {formatCurrency(expenseAmount)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <aside className="hidden rounded-2xl border border-slate-200 bg-slate-50 p-5 lg:block">
               <p className="text-sm font-bold uppercase tracking-wider text-slate-500">
                 Entry Summary
               </p>
@@ -395,7 +440,7 @@ export default function ExpenseForm() {
           </div>
         </fieldset>
 
-        <div className="mt-7 flex flex-col gap-4 border-t border-slate-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-6 flex flex-col gap-4 border-t border-slate-200 pt-5 sm:mt-7 sm:flex-row sm:items-center sm:justify-between sm:pt-6">
           <div>
             {message ? (
               <p
@@ -417,7 +462,7 @@ export default function ExpenseForm() {
           <button
             type="submit"
             disabled={isFormDisabled}
-            className="rounded-xl bg-blue-600 px-7 py-3 font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-7"
           >
             {isSaving ? "Saving Expense..." : "Save Expense"}
           </button>
