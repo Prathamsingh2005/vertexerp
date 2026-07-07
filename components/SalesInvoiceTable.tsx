@@ -30,6 +30,7 @@ type Sale = {
   gstTotal: number;
   discountTotal: number;
   grandTotal: number;
+  notes: string;
   createdAt: string;
 };
 
@@ -54,6 +55,7 @@ type SaleRow = {
   gst_total: number | string | null;
   discount_total: number | string | null;
   grand_total: number | string | null;
+  notes: string | null;
   created_at: string;
   customer: CustomerRow | CustomerRow[] | null;
   sale_items:
@@ -102,6 +104,7 @@ function mapSaleRow(row: SaleRow): Sale {
     gstTotal: Number(row.gst_total || 0),
     discountTotal: Number(row.discount_total || 0),
     grandTotal: Number(row.grand_total || 0),
+    notes: row.notes || "",
     createdAt: row.created_at || "",
   };
 }
@@ -161,6 +164,7 @@ export default function SalesInvoiceTable() {
             gst_total,
             discount_total,
             grand_total,
+            notes,
             created_at,
             customer:ledgers!sales_customer_id_fkey(
               id,
@@ -208,6 +212,14 @@ export default function SalesInvoiceTable() {
       window.removeEventListener("vertexerp-active-company-updated", loadSales);
     };
   }, []);
+
+  function startEditingInvoice(invoice: Sale) {
+    window.dispatchEvent(
+      new CustomEvent("vertexerp-edit-sale", {
+        detail: invoice,
+      })
+    );
+  }
 
   async function deleteInvoice(invoice: Sale) {
     const shouldDelete = window.confirm(
@@ -347,18 +359,26 @@ export default function SalesInvoiceTable() {
                     </div>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="mt-4 grid grid-cols-3 gap-3">
                     <Link
                       href={`/sales/invoice/${sale.id}`}
-                      className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-center text-sm font-bold text-blue-700 transition hover:bg-blue-100"
+                      className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-center text-sm font-bold text-blue-700 transition hover:bg-blue-100"
                     >
-                      View Invoice
+                      View
                     </Link>
 
                     <button
                       type="button"
+                      onClick={() => startEditingInvoice(sale)}
+                      className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-bold text-amber-700 transition hover:bg-amber-100"
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => deleteInvoice(sale)}
-                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                      className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
                     >
                       Delete
                     </button>
@@ -445,6 +465,13 @@ export default function SalesInvoiceTable() {
                         >
                           View
                         </Link>
+                        <button
+                          type="button"
+                          onClick={() => startEditingInvoice(sale)}
+                          className="font-semibold text-amber-600 transition hover:text-amber-800"
+                        >
+                          Edit
+                        </button>
                         <button
                           type="button"
                           onClick={() => deleteInvoice(sale)}

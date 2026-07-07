@@ -60,6 +60,29 @@ type CalculatedItem = {
   availableStock: number;
 };
 
+type EditableSaleItem = {
+  productId: string;
+  productName: string;
+  quantity: number;
+  rate: number;
+  gst: number;
+  discount: number;
+  baseAmount: number;
+  gstAmount: number;
+  amount: number;
+};
+
+type EditableSale = {
+  id: string;
+  invoiceNumber: string;
+  date: string;
+  paymentMode: string;
+  customerId: string;
+  customerName: string;
+  notes: string;
+  items: EditableSaleItem[];
+};
+
 function getToday() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -101,6 +124,7 @@ export default function SalesInvoiceForm() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [editingSale, setEditingSale] = useState<EditableSale | null>(null);
 
   const [form, setForm] = useState({
     invoiceNumber: "",
@@ -203,6 +227,64 @@ export default function SalesInvoiceForm() {
     };
   }, []);
 
+  useEffect(() => {
+    function handleEditSale(event: Event) {
+      const sale = (event as CustomEvent<EditableSale>).detail;
+
+      if (!sale?.id) {
+        return;
+      }
+
+      setEditingSale(sale);
+      setForm({
+        invoiceNumber: sale.invoiceNumber,
+        date: sale.date,
+        paymentMode: sale.paymentMode || "Cash",
+        customerId: sale.customerId,
+      });
+      setItems(
+        sale.items.length > 0
+          ? sale.items.map((item) => ({
+              productId: item.productId,
+              quantity: String(item.quantity),
+              rate: String(item.rate),
+              gst: String(item.gst),
+              discount: String(item.discount),
+            }))
+          : [createEmptyItem()]
+      );
+
+      window.setTimeout(() => {
+        document
+          .getElementById("sales-invoice-form")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 0);
+    }
+
+    window.addEventListener("vertexerp-edit-sale", handleEditSale);
+
+    return () => {
+      window.removeEventListener("vertexerp-edit-sale", handleEditSale);
+    };
+  }, []);
+
+  const editStockCreditByProduct = useMemo(() => {
+    const quantityByProduct = new Map<string, number>();
+
+    editingSale?.items.forEach((item) => {
+      if (!item.productId) {
+        return;
+      }
+
+      quantityByProduct.set(
+        item.productId,
+        (quantityByProduct.get(item.productId) || 0) + item.quantity
+      );
+    });
+
+    return quantityByProduct;
+  }, [editingSale]);
+
   const calculatedItems = useMemo<CalculatedItem[]>(() => {
     return items.map((item) => {
       const selectedProduct = products.find(
@@ -227,10 +309,12 @@ export default function SalesInvoiceForm() {
         baseAmount,
         gstAmount,
         amount: taxableAmount + gstAmount,
-        availableStock: selectedProduct?.quantity || 0,
+        availableStock:
+          (selectedProduct?.quantity || 0) +
+          (editStockCreditByProduct.get(item.productId) || 0),
       };
     });
-  }, [items, products]);
+  }, [editStockCreditByProduct, items, products]);
 
   const totals = useMemo(() => {
     return calculatedItems.reduce(
@@ -301,6 +385,11 @@ export default function SalesInvoiceForm() {
     setItems([createEmptyItem()]);
   }
 
+  function cancelSaleEdit() {
+    setEditingSale(null);
+    resetForm();
+  }
+
   function validateStock(validItems: CalculatedItem[]): string | null {
     const requestedByProduct = new Map<string, number>();
 
@@ -318,8 +407,11 @@ export default function SalesInvoiceForm() {
         return "One or more selected products are unavailable.";
       }
 
-      if (requestedQuantity > product.quantity) {
-        return `Insufficient stock for ${product.name}. Available stock: ${product.quantity}, requested: ${requestedQuantity}.`;
+      const availableQuantity =
+        product.quantity + (editStockCreditByProduct.get(productId) || 0);
+
+      if (requestedQuantity > availableQuantity) {
+        return `Insufficient stock for ${product.name}. Available stock for this edit: ${availableQuantity}, requested: ${requestedQuantity}.`;
       }
     }
 
@@ -330,7 +422,11 @@ export default function SalesInvoiceForm() {
     event.preventDefault();
 
     if (!activeCompanyId) {
-      showMessage("Select an active company before creating an invoice.");
+      showMessage(
+        editingSale
+          ? "Select an active company before updating an invoice."
+          : "Select an active company before creating an invoice."
+      );
       return;
     }
 
@@ -369,37 +465,59 @@ export default function SalesInvoiceForm() {
       return;
     }
 
+    const enteredInvoiceNumber = form.invoiceNumber.trim();
+
+    if (editingSale && !enteredInvoiceNumber) {
+      showMessage("Invoice number is required when editing an invoice.");
+      return;
+    }
+
     const invoiceNumber =
-      form.invoiceNumber.trim() ||
-      `INV-${Date.now().toString().slice(-6)}`;
+      enteredInvoiceNumber || `INV-${Date.now().toString().slice(-6)}`;
+
+    const invoiceItems = validItems.map((item) => ({
+      product_id: item.productId,
+      product_name: item.productName,
+      quantity: item.quantity,
+      rate: item.rate,
+      gst_rate: item.gst,
+      discount: item.discount,
+      base_amount: item.baseAmount,
+      gst_amount: item.gstAmount,
+      amount: item.amount,
+    }));
 
     setIsSaving(true);
 
     try {
       const supabase = createClient();
 
-      const { error } = await supabase.rpc("create_sale_with_stock", {
-        p_company_id: activeCompanyId,
-        p_customer_id: selectedCustomer.id,
-        p_invoice_number: invoiceNumber,
-        p_invoice_date: form.date,
-        p_payment_mode: form.paymentMode,
-        p_subtotal: totals.subtotal,
-        p_gst_total: totals.gstTotal,
-        p_discount_total: totals.discountTotal,
-        p_grand_total: totals.grandTotal,
-        p_items: validItems.map((item) => ({
-          product_id: item.productId,
-          product_name: item.productName,
-          quantity: item.quantity,
-          rate: item.rate,
-          gst_rate: item.gst,
-          discount: item.discount,
-          base_amount: item.baseAmount,
-          gst_amount: item.gstAmount,
-          amount: item.amount,
-        })),
-      });
+      const { error } = editingSale
+        ? await supabase.rpc("update_sale_with_stock", {
+            p_sale_id: editingSale.id,
+            p_customer_id: selectedCustomer.id,
+            p_invoice_number: invoiceNumber,
+            p_invoice_date: form.date,
+            p_payment_mode: form.paymentMode,
+            p_subtotal: totals.subtotal,
+            p_gst_total: totals.gstTotal,
+            p_discount_total: totals.discountTotal,
+            p_grand_total: totals.grandTotal,
+            p_notes: editingSale.notes,
+            p_items: invoiceItems,
+          })
+        : await supabase.rpc("create_sale_with_stock", {
+            p_company_id: activeCompanyId,
+            p_customer_id: selectedCustomer.id,
+            p_invoice_number: invoiceNumber,
+            p_invoice_date: form.date,
+            p_payment_mode: form.paymentMode,
+            p_subtotal: totals.subtotal,
+            p_gst_total: totals.gstTotal,
+            p_discount_total: totals.discountTotal,
+            p_grand_total: totals.grandTotal,
+            p_items: invoiceItems,
+          });
 
       if (error) {
         if (error.code === "23505") {
@@ -412,15 +530,18 @@ export default function SalesInvoiceForm() {
         throw error;
       }
 
+      const successMessage = editingSale
+        ? `Invoice ${invoiceNumber} updated, stock rebalanced and audit history saved.`
+        : `Invoice ${invoiceNumber} saved and product stock updated successfully.`;
+
+      setEditingSale(null);
       resetForm();
       await loadFormData();
 
       window.dispatchEvent(new Event("vertexerp-sales-updated"));
       window.dispatchEvent(new Event("vertexerp-products-updated"));
 
-      showMessage(
-        `Invoice ${invoiceNumber} saved and product stock updated successfully.`
-      );
+      showMessage(successMessage);
     } catch (error) {
       showMessage(
         error instanceof Error ? error.message : "Invoice could not be saved."
@@ -438,27 +559,44 @@ export default function SalesInvoiceForm() {
 
   return (
     <form
+      id="sales-invoice-form"
       onSubmit={handleSubmit}
       className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:mt-8 sm:p-6 lg:p-8"
     >
       <div className="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-6 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-            Create Sales Invoice
+            {editingSale ? "Edit Sales Invoice" : "Create Sales Invoice"}
           </h2>
           <p className="mt-1 text-sm text-slate-600 sm:text-base">
-            Save customer invoices and automatically reduce product stock.
+            {editingSale
+              ? "Update invoice details and items safely. Stock is rebalanced and the previous version is retained in Audit History."
+              : "Save customer invoices and automatically reduce product stock."}
           </p>
         </div>
 
-        <div className="w-fit rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
-          Cloud Invoice
+        <div
+          className={`w-fit rounded-full px-4 py-2 text-sm font-semibold ${
+            editingSale
+              ? "bg-amber-50 text-amber-700"
+              : "bg-blue-50 text-blue-700"
+          }`}
+        >
+          {editingSale ? "Editing Invoice" : "Cloud Invoice"}
         </div>
       </div>
 
       {message && (
         <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
           {message}
+        </div>
+      )}
+
+      {editingSale && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 sm:text-base">
+          Editing invoice <strong>{editingSale.invoiceNumber}</strong> for{" "}
+          <strong>{editingSale.customerName}</strong>. Save Changes will
+          rebalance stock and create an UPDATE record in Audit History.
         </div>
       )}
 
@@ -648,7 +786,9 @@ export default function SalesInvoiceForm() {
 
                   <div className="mt-4 flex items-center justify-between rounded-xl bg-white px-4 py-3">
                     <span className="text-sm font-semibold text-slate-600">
-                      Available Stock
+                      {editingSale
+                        ? "Stock Available For Edit"
+                        : "Available Stock"}
                     </span>
 
                     <span className="font-bold text-slate-900">
@@ -750,7 +890,9 @@ export default function SalesInvoiceForm() {
               <thead className="bg-slate-50">
                 <tr className="text-left">
                   <th className="px-5 py-4 text-sm font-bold text-slate-700">Product</th>
-                  <th className="px-5 py-4 text-sm font-bold text-slate-700">Available Stock</th>
+                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
+                    {editingSale ? "Stock Available For Edit" : "Available Stock"}
+                  </th>
                   <th className="px-5 py-4 text-sm font-bold text-slate-700">Quantity</th>
                   <th className="px-5 py-4 text-sm font-bold text-slate-700">Rate</th>
                   <th className="px-5 py-4 text-sm font-bold text-slate-700">GST</th>
@@ -890,15 +1032,21 @@ export default function SalesInvoiceForm() {
             type="submit"
             className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl sm:w-auto sm:px-7"
           >
-            {isSaving ? "Saving Invoice..." : "Save Invoice & Update Stock"}
+            {isSaving
+              ? editingSale
+                ? "Saving Changes..."
+                : "Saving Invoice..."
+              : editingSale
+                ? "Save Changes & Rebalance Stock"
+                : "Save Invoice & Update Stock"}
           </button>
 
           <button
             type="button"
-            onClick={resetForm}
+            onClick={editingSale ? cancelSaleEdit : resetForm}
             className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto sm:px-7"
           >
-            Reset
+            {editingSale ? "Cancel Edit" : "Reset"}
           </button>
         </div>
       </fieldset>
