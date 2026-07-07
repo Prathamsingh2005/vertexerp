@@ -250,6 +250,14 @@ export default function PurchaseTable() {
     };
   }, []);
 
+  function startEditingPurchase(purchase: Purchase) {
+    window.dispatchEvent(
+      new CustomEvent("vertexerp-edit-purchase", {
+        detail: purchase,
+      })
+    );
+  }
+
   async function deletePurchase(purchase: Purchase) {
     const shouldDelete = window.confirm(
       `Delete purchase bill ${purchase.billNumber}?\n\nThe purchased quantity will be reversed from inventory. Deletion is blocked if any of this stock has already been sold or adjusted.`
@@ -384,18 +392,26 @@ export default function PurchaseTable() {
                   </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="mt-4 grid grid-cols-3 gap-3">
                   <Link
                     href={`/purchase/bill/${purchase.id}`}
-                    className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-center text-sm font-bold text-blue-700 transition hover:bg-blue-100"
+                    className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-center text-sm font-bold text-blue-700 transition hover:bg-blue-100"
                   >
-                    View Bill
+                    View
                   </Link>
 
                   <button
                     type="button"
+                    onClick={() => startEditingPurchase(purchase)}
+                    className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-bold text-amber-700 transition hover:bg-amber-100"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => deletePurchase(purchase)}
-                    className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                    className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
                   >
                     Delete
                   </button>
@@ -495,6 +511,14 @@ export default function PurchaseTable() {
                         >
                           View
                         </Link>
+
+                        <button
+                          type="button"
+                          onClick={() => startEditingPurchase(purchase)}
+                          className="font-semibold text-amber-600 transition hover:text-amber-800"
+                        >
+                          Edit
+                        </button>
 
                         <button
                           type="button"

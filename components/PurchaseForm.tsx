@@ -57,6 +57,28 @@ type CalculatedPurchaseItem = {
   amount: number;
 };
 
+type EditablePurchaseItem = {
+  productId: string;
+  productName: string;
+  quantity: number;
+  rate: number;
+  gst: number;
+  discount: number;
+  baseAmount: number;
+  gstAmount: number;
+  amount: number;
+};
+
+type EditablePurchase = {
+  id: string;
+  billNumber: string;
+  date: string;
+  paymentMode: string;
+  supplierId: string;
+  supplierName: string;
+  items: EditablePurchaseItem[];
+};
+
 function getToday() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -97,6 +119,8 @@ export default function PurchaseForm() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [editingPurchase, setEditingPurchase] =
+    useState<EditablePurchase | null>(null);
 
   const [form, setForm] = useState({
     billNumber: "",
@@ -210,6 +234,53 @@ export default function PurchaseForm() {
     };
   }, []);
 
+  useEffect(() => {
+    function handleEditPurchase(event: Event) {
+      const purchase = (event as CustomEvent<EditablePurchase>).detail;
+
+      if (!purchase?.id) {
+        return;
+      }
+
+      setEditingPurchase(purchase);
+      setForm({
+        billNumber: purchase.billNumber,
+        date: purchase.date,
+        paymentMode: purchase.paymentMode || "Cash",
+        supplierId: purchase.supplierId,
+      });
+      setItems(
+        purchase.items.length > 0
+          ? purchase.items.map((item) => ({
+              productId: item.productId,
+              quantity: String(item.quantity),
+              rate: String(item.rate),
+              gst: String(item.gst),
+              discount: String(item.discount),
+            }))
+          : [createEmptyItem()]
+      );
+
+      window.setTimeout(() => {
+        document
+          .getElementById("purchase-bill-form")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 0);
+    }
+
+    window.addEventListener(
+      "vertexerp-edit-purchase",
+      handleEditPurchase
+    );
+
+    return () => {
+      window.removeEventListener(
+        "vertexerp-edit-purchase",
+        handleEditPurchase
+      );
+    };
+  }, []);
+
   const calculatedItems = useMemo<CalculatedPurchaseItem[]>(() => {
     return items.map((item) => {
       const selectedProduct = products.find(
@@ -316,11 +387,20 @@ export default function PurchaseForm() {
     setItems([createEmptyItem()]);
   }
 
+  function cancelPurchaseEdit() {
+    setEditingPurchase(null);
+    resetForm();
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!activeCompanyId) {
-      showMessage("Select an active company before creating a purchase bill.");
+      showMessage(
+        editingPurchase
+          ? "Select an active company before updating a purchase bill."
+          : "Select an active company before creating a purchase bill."
+      );
       return;
     }
 
@@ -353,37 +433,58 @@ export default function PurchaseForm() {
       return;
     }
 
+    const enteredBillNumber = form.billNumber.trim();
+
+    if (editingPurchase && !enteredBillNumber) {
+      showMessage("Purchase bill number is required when editing a bill.");
+      return;
+    }
+
     const billNumber =
-      form.billNumber.trim() ||
-      `PUR-${Date.now().toString().slice(-6)}`;
+      enteredBillNumber || `PUR-${Date.now().toString().slice(-6)}`;
+
+    const purchaseItems = validItems.map((item) => ({
+      product_id: item.productId,
+      product_name: item.productName,
+      quantity: item.quantity,
+      rate: item.rate,
+      gst_rate: item.gst,
+      discount: item.discount,
+      base_amount: item.baseAmount,
+      gst_amount: item.gstAmount,
+      amount: item.amount,
+    }));
 
     setIsSaving(true);
 
     try {
       const supabase = createClient();
 
-      const { error } = await supabase.rpc("create_purchase_with_stock", {
-        p_company_id: activeCompanyId,
-        p_supplier_id: selectedSupplier.id,
-        p_bill_number: billNumber,
-        p_purchase_date: form.date,
-        p_payment_mode: form.paymentMode,
-        p_subtotal: totals.subtotal,
-        p_gst_total: totals.gstTotal,
-        p_discount_total: totals.discountTotal,
-        p_grand_total: totals.grandTotal,
-        p_items: validItems.map((item) => ({
-          product_id: item.productId,
-          product_name: item.productName,
-          quantity: item.quantity,
-          rate: item.rate,
-          gst_rate: item.gst,
-          discount: item.discount,
-          base_amount: item.baseAmount,
-          gst_amount: item.gstAmount,
-          amount: item.amount,
-        })),
-      });
+      const { error } = editingPurchase
+        ? await supabase.rpc("update_purchase_with_stock", {
+            p_purchase_id: editingPurchase.id,
+            p_supplier_id: selectedSupplier.id,
+            p_bill_number: billNumber,
+            p_purchase_date: form.date,
+            p_payment_mode: form.paymentMode,
+            p_subtotal: totals.subtotal,
+            p_gst_total: totals.gstTotal,
+            p_discount_total: totals.discountTotal,
+            p_grand_total: totals.grandTotal,
+            p_items: purchaseItems,
+          })
+        : await supabase.rpc("create_purchase_with_stock", {
+            p_company_id: activeCompanyId,
+            p_supplier_id: selectedSupplier.id,
+            p_bill_number: billNumber,
+            p_purchase_date: form.date,
+            p_payment_mode: form.paymentMode,
+            p_subtotal: totals.subtotal,
+            p_gst_total: totals.gstTotal,
+            p_discount_total: totals.discountTotal,
+            p_grand_total: totals.grandTotal,
+            p_items: purchaseItems,
+          });
 
       if (error) {
         if (error.code === "23505") {
@@ -396,15 +497,18 @@ export default function PurchaseForm() {
         throw error;
       }
 
+      const successMessage = editingPurchase
+        ? `Purchase bill ${billNumber} updated, inventory rebalanced and audit history saved.`
+        : `Purchase bill ${billNumber} saved and product stock updated successfully.`;
+
+      setEditingPurchase(null);
       resetForm();
       await loadFormData();
 
       window.dispatchEvent(new Event("vertexerp-purchases-updated"));
       window.dispatchEvent(new Event("vertexerp-products-updated"));
 
-      showMessage(
-        `Purchase bill ${billNumber} saved and product stock updated successfully.`
-      );
+      showMessage(successMessage);
     } catch (error) {
       const errorMessage =
         error instanceof Error
@@ -425,28 +529,46 @@ export default function PurchaseForm() {
 
   return (
     <form
+      id="purchase-bill-form"
       onSubmit={handleSubmit}
       className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:mt-8 sm:p-6 lg:p-8"
     >
       <div className="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-6 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-            Create Purchase Bill
+            {editingPurchase ? "Edit Purchase Bill" : "Create Purchase Bill"}
           </h2>
 
           <p className="mt-1 text-sm text-slate-600 sm:text-base">
-            Save supplier purchase bills and automatically increase product stock.
+            {editingPurchase
+              ? "Update supplier bill details and received quantities safely. Inventory is rebalanced and the previous version remains in Audit History."
+              : "Save supplier purchase bills and automatically increase product stock."}
           </p>
         </div>
 
-        <div className="w-fit rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
-          Cloud Stock Entry
+        <div
+          className={`w-fit rounded-full px-4 py-2 text-sm font-semibold ${
+            editingPurchase
+              ? "bg-amber-50 text-amber-700"
+              : "bg-blue-50 text-blue-700"
+          }`}
+        >
+          {editingPurchase ? "Editing Bill" : "Cloud Stock Entry"}
         </div>
       </div>
 
       {message && (
         <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:text-base">
           {message}
+        </div>
+      )}
+
+      {editingPurchase && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 sm:text-base">
+          Editing purchase bill <strong>{editingPurchase.billNumber}</strong>{" "}
+          from <strong>{editingPurchase.supplierName}</strong>. Save Changes
+          will rebalance inventory and create an UPDATE record in Audit
+          History.
         </div>
       )}
 
@@ -893,15 +1015,21 @@ export default function PurchaseForm() {
             type="submit"
             className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl sm:w-auto sm:px-7"
           >
-            {isSaving ? "Saving Purchase..." : "Save Purchase & Update Stock"}
+            {isSaving
+              ? editingPurchase
+                ? "Saving Changes..."
+                : "Saving Purchase..."
+              : editingPurchase
+                ? "Save Changes & Rebalance Stock"
+                : "Save Purchase & Update Stock"}
           </button>
 
           <button
             type="button"
-            onClick={resetForm}
+            onClick={editingPurchase ? cancelPurchaseEdit : resetForm}
             className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto sm:px-7"
           >
-            Reset
+            {editingPurchase ? "Cancel Edit" : "Reset"}
           </button>
         </div>
       </fieldset>
