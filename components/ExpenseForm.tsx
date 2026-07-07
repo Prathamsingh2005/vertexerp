@@ -20,6 +20,15 @@ type ProfileRow = {
   active_company_id: string | null;
 };
 
+type EditableExpense = {
+  id: string;
+  date: string;
+  category: string;
+  amount: number;
+  paymentMode: string;
+  description: string;
+};
+
 function getTodayDate() {
   return new Date().toISOString().split("T")[0];
 }
@@ -35,6 +44,8 @@ export default function ExpenseForm() {
   const [activeCompanyName, setActiveCompanyName] = useState("");
   const [isLoadingCompany, setIsLoadingCompany] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [editingExpense, setEditingExpense] =
+    useState<EditableExpense | null>(null);
 
   const [date, setDate] = useState(getTodayDate());
   const [category, setCategory] = useState("Rent");
@@ -148,6 +159,43 @@ export default function ExpenseForm() {
     setDescription("");
   }
 
+  function cancelExpenseEdit() {
+    setEditingExpense(null);
+    resetForm();
+  }
+
+  useEffect(() => {
+    function handleEditExpense(event: Event) {
+      const expense = (event as CustomEvent<EditableExpense>).detail;
+
+      if (!expense?.id) {
+        return;
+      }
+
+      setEditingExpense(expense);
+      setDate(expense.date);
+      setCategory(expense.category || "Other");
+      setAmount(String(expense.amount));
+      setPaymentMode(expense.paymentMode || "Cash");
+      setDescription(expense.description || "");
+
+      window.setTimeout(() => {
+        document
+          .getElementById("expense-entry-form")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 0);
+    }
+
+    window.addEventListener("vertexerp-edit-expense", handleEditExpense);
+
+    return () => {
+      window.removeEventListener(
+        "vertexerp-edit-expense",
+        handleEditExpense
+      );
+    };
+  }, []);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -169,24 +217,38 @@ export default function ExpenseForm() {
     try {
       const supabase = createClient();
 
-      const { error } = await supabase.from("expenses").insert({
-        company_id: activeCompanyId,
-        expense_date: date,
-        category,
-        amount: expenseAmount,
-        payment_mode: paymentMode,
-        description: description.trim() || null,
-      });
+      const { error } = editingExpense
+        ? await supabase.rpc("update_expense_entry", {
+            p_expense_id: editingExpense.id,
+            p_expense_date: date,
+            p_category: category,
+            p_description: description.trim(),
+            p_payment_mode: paymentMode,
+            p_amount: expenseAmount,
+          })
+        : await supabase.from("expenses").insert({
+            company_id: activeCompanyId,
+            expense_date: date,
+            category,
+            amount: expenseAmount,
+            payment_mode: paymentMode,
+            description: description.trim() || null,
+          });
 
       if (error) {
         throw error;
       }
 
+      const successMessage = editingExpense
+        ? "Expense updated successfully. An UPDATE record was saved in Audit History."
+        : "Expense saved to the cloud database.";
+
+      setEditingExpense(null);
       resetForm();
 
       window.dispatchEvent(new Event("vertexerp-expenses-updated"));
 
-      showMessage("success", "Expense saved to the cloud database.");
+      showMessage("success", successMessage);
     } catch (error) {
       showMessage(
         "error",
@@ -199,11 +261,18 @@ export default function ExpenseForm() {
     }
   }
 
+  const categoryOptions = categories.includes(category)
+    ? categories
+    : [category, ...categories];
+
   const isFormDisabled =
     isLoadingCompany || !activeCompanyId || isSaving;
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+    <section
+      id="expense-entry-form"
+      className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
+    >
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-900 px-4 py-5 text-white sm:px-6 sm:py-6 md:px-8 md:py-7">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -212,11 +281,13 @@ export default function ExpenseForm() {
             </p>
 
             <h2 className="mt-2 text-xl font-bold sm:text-2xl">
-              Add a Business Expense
+              {editingExpense ? "Edit Business Expense" : "Add a Business Expense"}
             </h2>
 
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
-              Record operational expenses to keep your profit and loss report accurate.
+              {editingExpense
+                ? "Update this expense securely. The previous values will remain available in Audit History."
+                : "Record operational expenses to keep your profit and loss report accurate."}
             </p>
           </div>
 
@@ -237,6 +308,13 @@ export default function ExpenseForm() {
           <div className="mb-5 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700 sm:mb-6 sm:text-base">
             Select an active company from the <strong>Companies</strong> page
             before saving expenses.
+          </div>
+        )}
+
+        {editingExpense && (
+          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 sm:mb-6 sm:text-base">
+            Editing the {editingExpense.category} expense from {editingExpense.date}.
+            Save Changes to retain an UPDATE record in Audit History.
           </div>
         )}
 
@@ -282,7 +360,7 @@ export default function ExpenseForm() {
                     onChange={(event) => setCategory(event.target.value)}
                     className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                   >
-                    {categories.map((item) => (
+                    {categoryOptions.map((item) => (
                       <option key={item}>{item}</option>
                     ))}
                   </select>
@@ -459,13 +537,32 @@ export default function ExpenseForm() {
             )}
           </div>
 
-          <button
-            type="submit"
-            disabled={isFormDisabled}
-            className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-7"
-          >
-            {isSaving ? "Saving Expense..." : "Save Expense"}
-          </button>
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+            {editingExpense && (
+              <button
+                type="button"
+                onClick={cancelExpenseEdit}
+                disabled={isSaving}
+                className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-7"
+              >
+                Cancel Edit
+              </button>
+            )}
+
+            <button
+              type="submit"
+              disabled={isFormDisabled}
+              className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-7"
+            >
+              {isSaving
+                ? editingExpense
+                  ? "Saving Changes..."
+                  : "Saving Expense..."
+                : editingExpense
+                  ? "Save Changes"
+                  : "Save Expense"}
+            </button>
+          </div>
         </div>
       </form>
     </section>

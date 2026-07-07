@@ -142,7 +142,6 @@ function getBalances(
       paidAmount: Math.min(party.paidAmount, party.totalCredit),
       outstanding: Math.max(0, party.totalCredit - party.paidAmount),
     }))
-    .filter((party) => party.outstanding > 0)
     .sort((first, second) => second.outstanding - first.outstanding);
 }
 
@@ -154,6 +153,7 @@ export default function PaymentsPage() {
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
   const [isDeletingPayment, setIsDeletingPayment] = useState(false);
   const [paymentPendingDeletion, setPaymentPendingDeletion] =
     useState<Payment | null>(null);
@@ -374,7 +374,7 @@ export default function PaymentsPage() {
       }));
   }, [purchases, ledgerNameById]);
 
-  const customerBalances = useMemo(() => {
+  const customerBalanceSummary = useMemo(() => {
     return getBalances(
       customerCreditEntries,
       "Customer Receipt",
@@ -382,7 +382,7 @@ export default function PaymentsPage() {
     );
   }, [customerCreditEntries, payments]);
 
-  const supplierBalances = useMemo(() => {
+  const supplierBalanceSummary = useMemo(() => {
     return getBalances(
       supplierCreditEntries,
       "Supplier Payment",
@@ -390,14 +390,53 @@ export default function PaymentsPage() {
     );
   }, [supplierCreditEntries, payments]);
 
-  const partyOptions =
-    form.type === "Customer Receipt"
-      ? customerBalances
-      : supplierBalances;
+  const customerBalances = useMemo(
+    () =>
+      customerBalanceSummary.filter((party) => party.outstanding > 0),
+    [customerBalanceSummary]
+  );
+
+  const supplierBalances = useMemo(
+    () =>
+      supplierBalanceSummary.filter((party) => party.outstanding > 0),
+    [supplierBalanceSummary]
+  );
+
+  const partyOptions = useMemo(() => {
+    const balances =
+      form.type === "Customer Receipt"
+        ? customerBalanceSummary
+        : supplierBalanceSummary;
+
+    return balances.filter((party) => {
+      const originalAmountForParty =
+        editingPayment &&
+        editingPayment.type === form.type &&
+        editingPayment.partyId === party.id
+          ? editingPayment.amount
+          : 0;
+
+      return party.outstanding + originalAmountForParty > 0;
+    });
+  }, [
+    customerBalanceSummary,
+    editingPayment,
+    form.type,
+    supplierBalanceSummary,
+  ]);
 
   const selectedParty = partyOptions.find(
     (party) => party.id === form.partyId
   );
+
+  const selectedPartyAvailableAmount = selectedParty
+    ? selectedParty.outstanding +
+      (editingPayment &&
+      editingPayment.type === form.type &&
+      editingPayment.partyId === selectedParty.id
+        ? editingPayment.amount
+        : 0)
+    : 0;
 
   const totalReceivable = customerBalances.reduce(
     (total, customer) => total + customer.outstanding,
@@ -409,7 +448,7 @@ export default function PaymentsPage() {
     0
   );
 
-  function resetForm(paymentType = form.type) {
+  function resetForm(paymentType: PaymentType = "Customer Receipt") {
     setForm({
       type: paymentType,
       partyId: "",
@@ -421,13 +460,41 @@ export default function PaymentsPage() {
     });
   }
 
+  function startEditingPayment(payment: Payment) {
+    setEditingPayment(payment);
+    setForm({
+      type: payment.type,
+      partyId: payment.partyId,
+      date: payment.date,
+      amount: String(payment.amount),
+      paymentMode: payment.paymentMode,
+      referenceNumber: payment.referenceNumber,
+      notes: payment.notes,
+    });
+
+    window.setTimeout(() => {
+      document
+        .getElementById("payment-entry-form")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }
+
+  function cancelPaymentEdit() {
+    setEditingPayment(null);
+    resetForm();
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const paymentAmount = toNumber(form.amount);
 
     if (!activeCompanyId) {
-      showMessage("Select an active company before recording a payment.");
+      showMessage(
+        editingPayment
+          ? "Select an active company before updating a payment."
+          : "Select an active company before recording a payment."
+      );
       return;
     }
 
@@ -446,10 +513,10 @@ export default function PaymentsPage() {
       return;
     }
 
-    if (paymentAmount > selectedParty.outstanding) {
+    if (paymentAmount > selectedPartyAvailableAmount) {
       showMessage(
-        `Payment cannot exceed outstanding amount of ${formatCurrency(
-          selectedParty.outstanding
+        `Payment cannot exceed available amount of ${formatCurrency(
+          selectedPartyAvailableAmount
         )}.`
       );
       return;
@@ -460,39 +527,51 @@ export default function PaymentsPage() {
     try {
       const supabase = createClient();
 
-      const { error } = await supabase.rpc(
-        "create_payment_with_validation",
-        {
-          p_company_id: activeCompanyId,
-          p_payment_type: form.type,
-          p_party_id: selectedParty.id,
-          p_payment_date: form.date,
-          p_amount: paymentAmount,
-          p_payment_mode: form.paymentMode,
-          p_reference_number: form.referenceNumber.trim(),
-          p_notes: form.notes.trim(),
-        }
-      );
+      const { error } = editingPayment
+        ? await supabase.rpc("update_payment_with_validation", {
+            p_payment_id: editingPayment.id,
+            p_payment_type: form.type,
+            p_party_id: selectedParty.id,
+            p_payment_date: form.date,
+            p_amount: paymentAmount,
+            p_payment_mode: form.paymentMode,
+            p_reference_number: form.referenceNumber.trim(),
+            p_notes: form.notes.trim(),
+          })
+        : await supabase.rpc("create_payment_with_validation", {
+            p_company_id: activeCompanyId,
+            p_payment_type: form.type,
+            p_party_id: selectedParty.id,
+            p_payment_date: form.date,
+            p_amount: paymentAmount,
+            p_payment_mode: form.paymentMode,
+            p_reference_number: form.referenceNumber.trim(),
+            p_notes: form.notes.trim(),
+          });
 
       if (error) {
         throw error;
       }
 
+      const successMessage = editingPayment
+        ? `Payment of ${formatCurrency(paymentAmount)} updated successfully.`
+        : `${form.type} of ${formatCurrency(
+            paymentAmount
+          )} saved successfully.`;
+
+      setEditingPayment(null);
       resetForm();
       await loadData();
 
       window.dispatchEvent(new Event("vertexerp-payments-updated"));
-
-      showMessage(
-        `${form.type} of ${formatCurrency(
-          paymentAmount
-        )} saved successfully.`
-      );
+      showMessage(successMessage);
     } catch (error) {
       showMessage(
         error instanceof Error
           ? error.message
-          : "Payment could not be saved."
+          : editingPayment
+            ? "Payment could not be updated."
+            : "Payment could not be saved."
       );
     } finally {
       setIsSaving(false);
@@ -595,22 +674,33 @@ export default function PaymentsPage() {
           </section>
 
           <form
+            id="payment-entry-form"
             onSubmit={handleSubmit}
             className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:mt-8 sm:p-6 lg:mt-10 lg:p-8"
           >
             <div className="border-b border-slate-200 pb-5 sm:pb-6">
               <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-                New Payment Entry
+                {editingPayment ? "Edit Payment Entry" : "New Payment Entry"}
               </h2>
 
               <p className="mt-1 text-sm text-slate-600 sm:text-base">
-                Record a full or partial payment against credit transactions.
+                {editingPayment
+                  ? "Update this payment securely. The previous values will be retained in Audit History."
+                  : "Record a full or partial payment against credit transactions."}
               </p>
             </div>
 
             {message && (
               <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mt-6 sm:text-base">
                 {message}
+              </div>
+            )}
+
+            {editingPayment && (
+              <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 sm:mt-6 sm:text-base">
+                Editing {editingPayment.type.toLowerCase()} for{" "}
+                <strong>{editingPayment.partyName}</strong>. Save Changes to
+                retain an UPDATE record in Audit History.
               </div>
             )}
 
@@ -630,9 +720,14 @@ export default function PaymentsPage() {
 
                   <select
                     value={form.type}
-                    onChange={(event) => {
-                      resetForm(event.target.value as PaymentType);
-                    }}
+                    onChange={(event) =>
+                      setForm((currentForm) => ({
+                        ...currentForm,
+                        type: event.target.value as PaymentType,
+                        partyId: "",
+                        amount: "",
+                      }))
+                    }
                     className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                   >
                     <option value="Customer Receipt">
@@ -711,7 +806,7 @@ export default function PaymentsPage() {
                     type="number"
                     min="0"
                     step="0.01"
-                    max={selectedParty?.outstanding || undefined}
+                    max={selectedPartyAvailableAmount || undefined}
                     value={form.amount}
                     onChange={(event) =>
                       setForm({
@@ -770,7 +865,9 @@ export default function PaymentsPage() {
               {selectedParty && (
                 <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:mt-6 sm:p-5">
                   <p className="text-sm font-bold text-emerald-800">
-                    Available Outstanding Balance
+                    {editingPayment
+                      ? "Available Amount For This Edit"
+                      : "Available Outstanding Balance"}
                   </p>
 
                   <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
@@ -782,7 +879,7 @@ export default function PaymentsPage() {
                       className="text-xl font-bold sm:text-2xl"
                       style={{ color: "#059669" }}
                     >
-                      {formatCurrency(selectedParty.outstanding)}
+                      {formatCurrency(selectedPartyAvailableAmount)}
                     </p>
                   </div>
                 </div>
@@ -816,15 +913,27 @@ export default function PaymentsPage() {
                     color: "#ffffff",
                   }}
                 >
-                  {isSaving ? "Saving Payment..." : "Save Payment"}
+                  {isSaving
+                    ? editingPayment
+                      ? "Saving Changes..."
+                      : "Saving Payment..."
+                    : editingPayment
+                      ? "Save Changes"
+                      : "Save Payment"}
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => resetForm()}
+                  onClick={() => {
+                    if (editingPayment) {
+                      cancelPaymentEdit();
+                    } else {
+                      resetForm();
+                    }
+                  }}
                   className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto sm:px-7"
                 >
-                  Reset
+                  {editingPayment ? "Cancel Edit" : "Reset"}
                 </button>
               </div>
             </fieldset>
@@ -945,13 +1054,23 @@ export default function PaymentsPage() {
                           </div>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={() => setPaymentPendingDeletion(payment)}
-                          className="mt-4 w-full rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700"
-                        >
-                          Delete Payment
-                        </button>
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => startEditingPayment(payment)}
+                            className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-bold text-blue-700 transition hover:bg-blue-100"
+                          >
+                            Edit
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setPaymentPendingDeletion(payment)}
+                            className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </article>
                     );
                   })}
@@ -1076,18 +1195,28 @@ export default function PaymentsPage() {
                             {formatCurrency(payment.amount)}
                           </td>
 
-                          <td className="px-6 py-5 text-right">
-                            <button
-                              type="button"
-                              onClick={() => setPaymentPendingDeletion(payment)}
-                              className="rounded-lg px-4 py-2 text-sm font-bold text-white transition hover:scale-[1.03] active:scale-[0.97]"
-                              style={{
-                                backgroundColor: "#dc2626",
-                                color: "#ffffff",
-                              }}
-                            >
-                              Delete
-                            </button>
+                          <td className="px-6 py-5">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => startEditingPayment(payment)}
+                                className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-100"
+                              >
+                                Edit
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setPaymentPendingDeletion(payment)}
+                                className="rounded-lg px-4 py-2 text-sm font-bold text-white transition hover:scale-[1.03] active:scale-[0.97]"
+                                style={{
+                                  backgroundColor: "#dc2626",
+                                  color: "#ffffff",
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );

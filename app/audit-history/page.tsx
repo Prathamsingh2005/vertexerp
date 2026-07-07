@@ -242,10 +242,15 @@ export default function AuditHistoryPage() {
     return auditLogs.map((auditLog) => {
       const metadata = getRecord(auditLog.metadata);
       const oldData = getRecord(auditLog.old_data);
-      const sale = getRecord(oldData.sale);
-      const purchase = getRecord(oldData.purchase);
-      const payment = getRecord(oldData.payment);
-      const expense = getRecord(oldData.expense);
+      const newData = getRecord(auditLog.new_data);
+      const sourceData =
+        auditLog.action === "UPDATE" && Object.keys(newData).length > 0
+          ? newData
+          : oldData;
+      const sale = getRecord(sourceData.sale);
+      const purchase = getRecord(sourceData.purchase);
+      const payment = getRecord(sourceData.payment);
+      const expense = getRecord(sourceData.expense);
 
       const partyId =
         getString(metadata.party_id) || getString(payment.party_id);
@@ -568,11 +573,19 @@ export default function AuditHistoryPage() {
 
                       <details className="mt-3 rounded-xl bg-white p-3">
                         <summary className="cursor-pointer text-sm font-bold text-blue-700">
-                          View protected record details
+                          View audit details
                         </summary>
 
                         <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-950 p-3 text-xs leading-5 text-slate-100">
-                          {JSON.stringify(row.old_data, null, 2)}
+                          {JSON.stringify(
+                            {
+                              before: row.old_data,
+                              after: row.new_data,
+                              metadata: row.metadata,
+                            },
+                            null,
+                            2
+                          )}
                         </pre>
                       </details>
                     </article>
@@ -686,7 +699,15 @@ export default function AuditHistoryPage() {
                             </summary>
 
                             <pre className="absolute right-8 z-20 mt-2 max-h-80 w-[440px] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-slate-950 p-4 text-xs leading-5 text-slate-100 shadow-2xl">
-                              {JSON.stringify(row.old_data, null, 2)}
+                              {JSON.stringify(
+                            {
+                              before: row.old_data,
+                              after: row.new_data,
+                              metadata: row.metadata,
+                            },
+                            null,
+                            2
+                          )}
                             </pre>
                           </details>
                         </td>

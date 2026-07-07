@@ -1,33 +1,41 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import { createClient } from "@/lib/supabase/client";
+import ConfirmDeleteModal from "@/components/ConfirmDeleteModal";
 
 type PaymentType = "Customer Receipt" | "Supplier Payment";
 
-type LedgerRow = {
-  id: string;
-  name: string;
+type SaleRow = {
+  customer_id: string | null;
+  payment_mode: string;
+  grand_total: number | string | null;
+};
+
+type PurchaseRow = {
+  supplier_id: string | null;
+  payment_mode: string;
+  grand_total: number | string | null;
 };
 
 type PaymentRow = {
   id: string;
   payment_type: PaymentType;
-  party_id: string | null;
+  party_id: string;
   payment_date: string;
   amount: number | string | null;
-  payment_mode: string | null;
+  payment_mode: string;
   reference_number: string | null;
   notes: string | null;
   created_at: string;
-  party: LedgerRow | LedgerRow[] | null;
 };
 
-type ProfileRow = {
-  active_company_id: string | null;
+type LedgerRow = {
+  id: string;
+  name: string;
+  ledger_type: string;
 };
 
 type Payment = {
@@ -43,16 +51,33 @@ type Payment = {
   createdAt: string;
 };
 
+type PartyBalance = {
+  id: string;
+  name: string;
+  totalCredit: number;
+  paidAmount: number;
+  outstanding: number;
+};
+
+type ProfileRow = {
+  active_company_id: string | null;
+};
+
 function toNumber(value: unknown) {
   const numberValue = Number(value);
-
   return Number.isFinite(numberValue) ? numberValue : 0;
 }
 
 function formatCurrency(amount: number) {
-  return `₹${toNumber(amount).toLocaleString("en-IN", {
-    maximumFractionDigits: 2,
-  })}`;
+  return `₹${toNumber(amount).toLocaleString("en-IN")}`;
+}
+
+function isCreditPayment(paymentMode: string) {
+  return String(paymentMode || "").trim().toLowerCase() === "credit";
+}
+
+function getToday() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function formatDate(dateValue: string) {
@@ -73,51 +98,86 @@ function formatDate(dateValue: string) {
   });
 }
 
-function getToday() {
-  return new Date().toISOString().slice(0, 10);
+function getBalances(
+  entries: {
+    partyId: string;
+    partyName: string;
+    amount: number;
+  }[],
+  paymentType: PaymentType,
+  payments: Payment[]
+) {
+  const balanceMap = new Map<string, PartyBalance>();
+
+  entries.forEach((entry) => {
+    const existingParty = balanceMap.get(entry.partyId);
+
+    if (existingParty) {
+      existingParty.totalCredit += entry.amount;
+      return;
+    }
+
+    balanceMap.set(entry.partyId, {
+      id: entry.partyId,
+      name: entry.partyName,
+      totalCredit: entry.amount,
+      paidAmount: 0,
+      outstanding: 0,
+    });
+  });
+
+  payments
+    .filter((payment) => payment.type === paymentType)
+    .forEach((payment) => {
+      const party = balanceMap.get(payment.partyId);
+
+      if (party) {
+        party.paidAmount += toNumber(payment.amount);
+      }
+    });
+
+  return Array.from(balanceMap.values())
+    .map((party) => ({
+      ...party,
+      paidAmount: Math.min(party.paidAmount, party.totalCredit),
+      outstanding: Math.max(0, party.totalCredit - party.paidAmount),
+    }))
+    .sort((first, second) => second.outstanding - first.outstanding);
 }
 
-function getJoinedLedger(
-  party: LedgerRow | LedgerRow[] | null
-): LedgerRow | null {
-  return Array.isArray(party) ? party[0] || null : party;
-}
-
-function mapPayment(row: PaymentRow): Payment {
-  const party = getJoinedLedger(row.party);
-
-  return {
-    id: row.id,
-    type: row.payment_type,
-    partyId: row.party_id || "",
-    partyName: party?.name || "Unknown Party",
-    date: row.payment_date || "",
-    amount: toNumber(row.amount),
-    paymentMode: row.payment_mode || "Cash",
-    referenceNumber: row.reference_number || "",
-    notes: row.notes || "",
-    createdAt: row.created_at || "",
-  };
-}
-
-export default function PaymentReportPage() {
+export default function PaymentsPage() {
+  const [sales, setSales] = useState<SaleRow[]>([]);
+  const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState(getToday());
-  const [paymentType, setPaymentType] = useState("All");
-  const [paymentMode, setPaymentMode] = useState("All");
+  const [ledgers, setLedgers] = useState<LedgerRow[]>([]);
+  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+  const [isDeletingPayment, setIsDeletingPayment] = useState(false);
+  const [paymentPendingDeletion, setPaymentPendingDeletion] =
+    useState<Payment | null>(null);
   const [message, setMessage] = useState("");
+
+  const [form, setForm] = useState({
+    type: "Customer Receipt" as PaymentType,
+    partyId: "",
+    date: getToday(),
+    amount: "",
+    paymentMode: "Cash",
+    referenceNumber: "",
+    notes: "",
+  });
 
   function showMessage(nextMessage: string) {
     setMessage(nextMessage);
 
     window.setTimeout(() => {
       setMessage("");
-    }, 4500);
+    }, 4000);
   }
 
-  async function loadPayments() {
+  async function loadData() {
     setIsLoading(true);
 
     try {
@@ -129,8 +189,12 @@ export default function PaymentReportPage() {
       } = await supabase.auth.getUser();
 
       if (userError || !user) {
+        setSales([]);
+        setPurchases([]);
         setPayments([]);
-        showMessage("Please sign in to view the payment report.");
+        setLedgers([]);
+        setActiveCompanyId(null);
+        showMessage("Please sign in before recording payments.");
         return;
       }
 
@@ -144,52 +208,96 @@ export default function PaymentReportPage() {
         throw profileError;
       }
 
-      const activeCompanyId =
+      const companyId =
         (profile as ProfileRow | null)?.active_company_id || null;
 
-      if (!activeCompanyId) {
+      setActiveCompanyId(companyId);
+
+      if (!companyId) {
+        setSales([]);
+        setPurchases([]);
         setPayments([]);
+        setLedgers([]);
         showMessage("Select an active company from the Companies page first.");
         return;
       }
 
-      const { data, error } = await supabase
-        .from("payments")
-        .select(
-          `
-            id,
-            payment_type,
-            party_id,
-            payment_date,
-            amount,
-            payment_mode,
-            reference_number,
-            notes,
-            created_at,
-            party:ledgers!payments_party_id_fkey(
-              id,
-              name
-            )
-          `
-        )
-        .eq("company_id", activeCompanyId)
-        .order("payment_date", { ascending: false })
-        .order("created_at", { ascending: false });
+      const [
+        salesResponse,
+        purchasesResponse,
+        paymentsResponse,
+        ledgersResponse,
+      ] = await Promise.all([
+        supabase
+          .from("sales")
+          .select("customer_id, payment_mode, grand_total")
+          .eq("company_id", companyId),
+        supabase
+          .from("purchases")
+          .select("supplier_id, payment_mode, grand_total")
+          .eq("company_id", companyId),
+        supabase
+          .from("payments")
+          .select(
+            "id, payment_type, party_id, payment_date, amount, payment_mode, reference_number, notes, created_at"
+          )
+          .eq("company_id", companyId)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("ledgers")
+          .select("id, name, ledger_type")
+          .eq("company_id", companyId),
+      ]);
 
-      if (error) {
-        throw error;
+      if (salesResponse.error) {
+        throw salesResponse.error;
       }
 
+      if (purchasesResponse.error) {
+        throw purchasesResponse.error;
+      }
+
+      if (paymentsResponse.error) {
+        throw paymentsResponse.error;
+      }
+
+      if (ledgersResponse.error) {
+        throw ledgersResponse.error;
+      }
+
+      const nextLedgers = (ledgersResponse.data || []) as LedgerRow[];
+      const ledgerNameById = new Map(
+        nextLedgers.map((ledger) => [ledger.id, ledger.name])
+      );
+
+      setSales((salesResponse.data || []) as SaleRow[]);
+      setPurchases((purchasesResponse.data || []) as PurchaseRow[]);
+      setLedgers(nextLedgers);
       setPayments(
-        ((data || []) as unknown as PaymentRow[]).map(mapPayment)
+        ((paymentsResponse.data || []) as PaymentRow[]).map((payment) => ({
+          id: payment.id,
+          type: payment.payment_type,
+          partyId: payment.party_id,
+          partyName:
+            ledgerNameById.get(payment.party_id) || "Unknown Party",
+          date: payment.payment_date,
+          amount: toNumber(payment.amount),
+          paymentMode: payment.payment_mode || "Cash",
+          referenceNumber: payment.reference_number || "",
+          notes: payment.notes || "",
+          createdAt: payment.created_at,
+        }))
       );
     } catch (error) {
+      setSales([]);
+      setPurchases([]);
       setPayments([]);
+      setLedgers([]);
 
       showMessage(
         error instanceof Error
           ? error.message
-          : "Payment report data could not be loaded from the cloud database."
+          : "Payment data could not be loaded from the cloud database."
       );
     } finally {
       setIsLoading(false);
@@ -197,714 +305,949 @@ export default function PaymentReportPage() {
   }
 
   useEffect(() => {
-    loadPayments();
+    loadData();
 
-    const refreshEvents = [
+    window.addEventListener(
+      "vertexerp-sales-updated",
+      loadData
+    );
+    window.addEventListener(
+      "vertexerp-purchases-updated",
+      loadData
+    );
+    window.addEventListener(
       "vertexerp-payments-updated",
-      "vertexerp-ledgers-updated",
+      loadData
+    );
+    window.addEventListener(
       "vertexerp-active-company-updated",
-    ];
-
-    refreshEvents.forEach((eventName) => {
-      window.addEventListener(eventName, loadPayments);
-    });
+      loadData
+    );
 
     return () => {
-      refreshEvents.forEach((eventName) => {
-        window.removeEventListener(eventName, loadPayments);
-      });
+      window.removeEventListener(
+        "vertexerp-sales-updated",
+        loadData
+      );
+      window.removeEventListener(
+        "vertexerp-purchases-updated",
+        loadData
+      );
+      window.removeEventListener(
+        "vertexerp-payments-updated",
+        loadData
+      );
+      window.removeEventListener(
+        "vertexerp-active-company-updated",
+        loadData
+      );
     };
   }, []);
 
-  const availableModes = useMemo(() => {
-    const modes = new Set(
+  const ledgerNameById = useMemo(() => {
+    return new Map(ledgers.map((ledger) => [ledger.id, ledger.name]));
+  }, [ledgers]);
+
+  const customerCreditEntries = useMemo(() => {
+    return sales
+      .filter((sale) => isCreditPayment(sale.payment_mode))
+      .filter((sale) => Boolean(sale.customer_id))
+      .map((sale) => ({
+        partyId: sale.customer_id as string,
+        partyName:
+          ledgerNameById.get(sale.customer_id as string) ||
+          "Unknown Customer",
+        amount: toNumber(sale.grand_total),
+      }));
+  }, [sales, ledgerNameById]);
+
+  const supplierCreditEntries = useMemo(() => {
+    return purchases
+      .filter((purchase) => isCreditPayment(purchase.payment_mode))
+      .filter((purchase) => Boolean(purchase.supplier_id))
+      .map((purchase) => ({
+        partyId: purchase.supplier_id as string,
+        partyName:
+          ledgerNameById.get(purchase.supplier_id as string) ||
+          "Unknown Supplier",
+        amount: toNumber(purchase.grand_total),
+      }));
+  }, [purchases, ledgerNameById]);
+
+  const customerBalanceSummary = useMemo(() => {
+    return getBalances(
+      customerCreditEntries,
+      "Customer Receipt",
       payments
-        .map((payment) => payment.paymentMode.trim())
-        .filter(Boolean)
     );
+  }, [customerCreditEntries, payments]);
 
-    return Array.from(modes).sort();
-  }, [payments]);
+  const supplierBalanceSummary = useMemo(() => {
+    return getBalances(
+      supplierCreditEntries,
+      "Supplier Payment",
+      payments
+    );
+  }, [supplierCreditEntries, payments]);
 
-  const filteredPayments = useMemo(() => {
-    return payments
-      .filter((payment) => {
-        const matchesType =
-          paymentType === "All" || payment.type === paymentType;
+  const customerBalances = useMemo(
+    () =>
+      customerBalanceSummary.filter((party) => party.outstanding > 0),
+    [customerBalanceSummary]
+  );
 
-        const matchesMode =
-          paymentMode === "All" || payment.paymentMode === paymentMode;
+  const supplierBalances = useMemo(
+    () =>
+      supplierBalanceSummary.filter((party) => party.outstanding > 0),
+    [supplierBalanceSummary]
+  );
 
-        const matchesStartDate =
-          !startDate || payment.date >= startDate;
+  const partyOptions = useMemo(() => {
+    const balances =
+      form.type === "Customer Receipt"
+        ? customerBalanceSummary
+        : supplierBalanceSummary;
 
-        const matchesEndDate = !endDate || payment.date <= endDate;
+    return balances.filter((party) => {
+      const originalAmountForParty =
+        editingPayment &&
+        editingPayment.type === form.type &&
+        editingPayment.partyId === party.id
+          ? editingPayment.amount
+          : 0;
 
-        return (
-          matchesType &&
-          matchesMode &&
-          matchesStartDate &&
-          matchesEndDate
-        );
-      })
-      .sort((first, second) => {
-        const firstDate = `${first.date}-${first.createdAt}`;
-        const secondDate = `${second.date}-${second.createdAt}`;
+      return party.outstanding + originalAmountForParty > 0;
+    });
+  }, [
+    customerBalanceSummary,
+    editingPayment,
+    form.type,
+    supplierBalanceSummary,
+  ]);
 
-        return secondDate.localeCompare(firstDate);
-      });
-  }, [payments, startDate, endDate, paymentType, paymentMode]);
+  const selectedParty = partyOptions.find(
+    (party) => party.id === form.partyId
+  );
 
-  const totalReceipts = useMemo(() => {
-    return filteredPayments
-      .filter((payment) => payment.type === "Customer Receipt")
-      .reduce((total, payment) => total + toNumber(payment.amount), 0);
-  }, [filteredPayments]);
+  const selectedPartyAvailableAmount = selectedParty
+    ? selectedParty.outstanding +
+      (editingPayment &&
+      editingPayment.type === form.type &&
+      editingPayment.partyId === selectedParty.id
+        ? editingPayment.amount
+        : 0)
+    : 0;
 
-  const totalSupplierPayments = useMemo(() => {
-    return filteredPayments
-      .filter((payment) => payment.type === "Supplier Payment")
-      .reduce((total, payment) => total + toNumber(payment.amount), 0);
-  }, [filteredPayments]);
+  const totalReceivable = customerBalances.reduce(
+    (total, customer) => total + customer.outstanding,
+    0
+  );
 
-  const netCollection = totalReceipts - totalSupplierPayments;
+  const totalPayable = supplierBalances.reduce(
+    (total, supplier) => total + supplier.outstanding,
+    0
+  );
 
-  const modeSummary = useMemo(() => {
-    const summaryMap = new Map<string, number>();
+  function resetForm(paymentType: PaymentType = "Customer Receipt") {
+    setForm({
+      type: paymentType,
+      partyId: "",
+      date: getToday(),
+      amount: "",
+      paymentMode: "Cash",
+      referenceNumber: "",
+      notes: "",
+    });
+  }
 
-    filteredPayments.forEach((payment) => {
-      const mode = payment.paymentMode || "Unknown";
-      const currentAmount = summaryMap.get(mode) || 0;
-
-      summaryMap.set(mode, currentAmount + toNumber(payment.amount));
+  function startEditingPayment(payment: Payment) {
+    setEditingPayment(payment);
+    setForm({
+      type: payment.type,
+      partyId: payment.partyId,
+      date: payment.date,
+      amount: String(payment.amount),
+      paymentMode: payment.paymentMode,
+      referenceNumber: payment.referenceNumber,
+      notes: payment.notes,
     });
 
-    return Array.from(summaryMap.entries())
-      .map(([mode, amount]) => ({
-        mode,
-        amount,
-      }))
-      .sort((first, second) => second.amount - first.amount);
-  }, [filteredPayments]);
-
-  function clearFilters() {
-    setStartDate("");
-    setEndDate(getToday());
-    setPaymentType("All");
-    setPaymentMode("All");
+    window.setTimeout(() => {
+      document
+        .getElementById("payment-entry-form")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
   }
+
+  function cancelPaymentEdit() {
+    setEditingPayment(null);
+    resetForm();
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const paymentAmount = toNumber(form.amount);
+
+    if (!activeCompanyId) {
+      showMessage(
+        editingPayment
+          ? "Select an active company before updating a payment."
+          : "Select an active company before recording a payment."
+      );
+      return;
+    }
+
+    if (!selectedParty) {
+      showMessage("Please select a customer or supplier.");
+      return;
+    }
+
+    if (!form.date) {
+      showMessage("Please select a payment date.");
+      return;
+    }
+
+    if (paymentAmount <= 0) {
+      showMessage("Enter a valid payment amount.");
+      return;
+    }
+
+    if (paymentAmount > selectedPartyAvailableAmount) {
+      showMessage(
+        `Payment cannot exceed available amount of ${formatCurrency(
+          selectedPartyAvailableAmount
+        )}.`
+      );
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const supabase = createClient();
+
+      const { error } = editingPayment
+        ? await supabase.rpc("update_payment_with_validation", {
+            p_payment_id: editingPayment.id,
+            p_payment_type: form.type,
+            p_party_id: selectedParty.id,
+            p_payment_date: form.date,
+            p_amount: paymentAmount,
+            p_payment_mode: form.paymentMode,
+            p_reference_number: form.referenceNumber.trim(),
+            p_notes: form.notes.trim(),
+          })
+        : await supabase.rpc("create_payment_with_validation", {
+            p_company_id: activeCompanyId,
+            p_payment_type: form.type,
+            p_party_id: selectedParty.id,
+            p_payment_date: form.date,
+            p_amount: paymentAmount,
+            p_payment_mode: form.paymentMode,
+            p_reference_number: form.referenceNumber.trim(),
+            p_notes: form.notes.trim(),
+          });
+
+      if (error) {
+        throw error;
+      }
+
+      const successMessage = editingPayment
+        ? `Payment of ${formatCurrency(paymentAmount)} updated successfully.`
+        : `${form.type} of ${formatCurrency(
+            paymentAmount
+          )} saved successfully.`;
+
+      setEditingPayment(null);
+      resetForm();
+      await loadData();
+
+      window.dispatchEvent(new Event("vertexerp-payments-updated"));
+      showMessage(successMessage);
+    } catch (error) {
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : editingPayment
+            ? "Payment could not be updated."
+            : "Payment could not be saved."
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function confirmDeletePayment() {
+    const payment = paymentPendingDeletion;
+
+    if (!payment || isDeletingPayment) {
+      return;
+    }
+
+    setIsDeletingPayment(true);
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase.rpc("delete_payment_entry", {
+        p_payment_id: payment.id,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      await loadData();
+      window.dispatchEvent(new Event("vertexerp-payments-updated"));
+
+      setPaymentPendingDeletion(null);
+
+      showMessage(
+        `Payment of ${formatCurrency(payment.amount)} deleted successfully.`
+      );
+    } catch (error) {
+      showMessage(
+        error instanceof Error
+          ? error.message
+          : "Payment could not be deleted."
+      );
+    } finally {
+      setIsDeletingPayment(false);
+    }
+  }
+
+  const isFormDisabled = isLoading || !activeCompanyId || isSaving;
 
   return (
     <div className="flex min-h-screen bg-slate-100">
-      <div className="payment-report-sidebar">
-        <Sidebar />
-      </div>
+      <Sidebar />
 
       <div className="min-w-0 flex-1">
-        <div className="payment-report-navbar">
-          <Navbar />
-        </div>
+        <Navbar />
 
-        <main className="payment-report-main p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
-          <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
-                💳 Payment Report
-              </h1>
+        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          <div className="mb-6 lg:mb-8">
+            <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
+              💳 Record Payment
+            </h1>
 
-              <p className="mt-2 text-base text-slate-600 sm:text-lg">
-                Analyze customer receipts and supplier payments.
-              </p>
-            </div>
-
-            <div className="payment-report-no-print flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap">
-              <Link
-                href="/payments"
-                className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 text-center font-bold text-slate-700 transition hover:bg-slate-100 sm:w-auto"
-              >
-                ← Payments
-              </Link>
-
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="w-full rounded-xl px-5 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98] sm:w-auto"
-                style={{
-                  backgroundColor: "#7e22ce",
-                  color: "#ffffff",
-                }}
-              >
-                🖨️ Print Report
-              </button>
-            </div>
+            <p className="mt-2 text-base text-slate-600 sm:text-lg">
+              Record customer receipts and supplier payments.
+            </p>
           </div>
 
-          {message && (
-            <div className="payment-report-no-print mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
-              {message}
-            </div>
-          )}
-
-          <section className="payment-report-no-print rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:p-6">
-            <div className="mb-6">
-              <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-                Report Filters
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-600 sm:text-base">
-                Filter payment entries by date, transaction type and mode.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-              <div>
-                <label className="mb-2 block font-semibold text-slate-800">
-                  Start Date
-                </label>
-
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(event) => setStartDate(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block font-semibold text-slate-800">
-                  End Date
-                </label>
-
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(event) => setEndDate(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block font-semibold text-slate-800">
-                  Transaction Type
-                </label>
-
-                <select
-                  value={paymentType}
-                  onChange={(event) => setPaymentType(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
-                >
-                  <option value="All">All Transactions</option>
-                  <option value="Customer Receipt">
-                    Customer Receipts
-                  </option>
-                  <option value="Supplier Payment">
-                    Supplier Payments
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block font-semibold text-slate-800">
-                  Payment Mode
-                </label>
-
-                <select
-                  value={paymentMode}
-                  onChange={(event) => setPaymentMode(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
-                >
-                  <option value="All">All Modes</option>
-
-                  {availableModes.map((mode) => (
-                    <option key={mode} value={mode}>
-                      {mode}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-end">
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-bold text-slate-700 transition hover:bg-slate-100"
-                >
-                  Clear Filters
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <section className="mt-6 grid grid-cols-1 gap-4 sm:mt-8 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
-            <div className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-lg sm:p-6">
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
+            <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
-                Customer Receipts
+                Customer Receivable
               </p>
 
               <h2
                 className="mt-3 break-words text-3xl font-bold sm:text-4xl"
-                style={{ color: "#059669" }}
+                style={{ color: "#2563eb" }}
               >
-                {isLoading ? "..." : formatCurrency(totalReceipts)}
+                {isLoading ? "..." : formatCurrency(totalReceivable)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Total amount received from customers
+                Pending amount to collect from customers
               </p>
             </div>
 
             <div className="rounded-3xl border border-purple-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
-                Supplier Payments
+                Supplier Payable
               </p>
 
               <h2
                 className="mt-3 break-words text-3xl font-bold sm:text-4xl"
                 style={{ color: "#7e22ce" }}
               >
-                {isLoading ? "..." : formatCurrency(totalSupplierPayments)}
+                {isLoading ? "..." : formatCurrency(totalPayable)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Total amount paid to suppliers
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-lg sm:p-6">
-              <p className="font-medium text-slate-600">
-                Net Collection
-              </p>
-
-              <h2
-                className="mt-3 break-words text-3xl font-bold sm:text-4xl"
-                style={{
-                  color: netCollection >= 0 ? "#2563eb" : "#dc2626",
-                }}
-              >
-                {isLoading
-                  ? "..."
-                  : formatCurrency(Math.abs(netCollection))}
-              </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                {netCollection >= 0
-                  ? "More received than paid"
-                  : "More paid than received"}
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-orange-100 bg-white p-5 shadow-lg sm:p-6">
-              <p className="font-medium text-slate-600">
-                Payment Entries
-              </p>
-
-              <h2
-                className="mt-3 break-words text-3xl font-bold sm:text-4xl"
-                style={{ color: "#ea580c" }}
-              >
-                {isLoading ? "..." : filteredPayments.length}
-              </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                Entries matching current filters
+                Pending amount payable to suppliers
               </p>
             </div>
           </section>
 
-          <section className="mt-6 grid grid-cols-1 gap-4 sm:mt-8 sm:gap-6 xl:grid-cols-3">
-            <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl xl:col-span-1">
-              <div className="border-b border-slate-200 px-4 py-5 sm:px-6">
-                <h2 className="text-xl font-bold text-slate-900">
-                  Payment Mode Summary
+          <form
+            id="payment-entry-form"
+            onSubmit={handleSubmit}
+            className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:mt-8 sm:p-6 lg:mt-10 lg:p-8"
+          >
+            <div className="border-b border-slate-200 pb-5 sm:pb-6">
+              <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+                {editingPayment ? "Edit Payment Entry" : "New Payment Entry"}
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-600 sm:text-base">
+                {editingPayment
+                  ? "Update this payment securely. The previous values will be retained in Audit History."
+                  : "Record a full or partial payment against credit transactions."}
+              </p>
+            </div>
+
+            {message && (
+              <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mt-6 sm:text-base">
+                {message}
+              </div>
+            )}
+
+            {editingPayment && (
+              <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 sm:mt-6 sm:text-base">
+                Editing {editingPayment.type.toLowerCase()} for{" "}
+                <strong>{editingPayment.partyName}</strong>. Save Changes to
+                retain an UPDATE record in Audit History.
+              </div>
+            )}
+
+            {!isLoading && !activeCompanyId && (
+              <div className="mt-5 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700 sm:mt-6 sm:text-base">
+                Select an active company from the <strong>Companies</strong>{" "}
+                page before recording a payment.
+              </div>
+            )}
+
+            <fieldset disabled={isFormDisabled}>
+              <div className="mt-6 grid grid-cols-1 gap-5 sm:mt-8 md:grid-cols-2 xl:grid-cols-3">
+                <div>
+                  <label className="mb-2 block font-semibold text-slate-800">
+                    Transaction Type *
+                  </label>
+
+                  <select
+                    value={form.type}
+                    onChange={(event) =>
+                      setForm((currentForm) => ({
+                        ...currentForm,
+                        type: event.target.value as PaymentType,
+                        partyId: "",
+                        amount: "",
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  >
+                    <option value="Customer Receipt">
+                      Customer Receipt
+                    </option>
+
+                    <option value="Supplier Payment">
+                      Supplier Payment
+                    </option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block font-semibold text-slate-800">
+                    {form.type === "Customer Receipt"
+                      ? "Customer *"
+                      : "Supplier *"}
+                  </label>
+
+                  <select
+                    value={form.partyId}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        partyId: event.target.value,
+                        amount: "",
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  >
+                    <option value="">
+                      Select{" "}
+                      {form.type === "Customer Receipt"
+                        ? "customer"
+                        : "supplier"}
+                    </option>
+
+                    {partyOptions.map((party) => (
+                      <option key={party.id} value={party.id}>
+                        {party.name} — {formatCurrency(party.outstanding)}
+                      </option>
+                    ))}
+                  </select>
+
+                  {!isLoading && partyOptions.length === 0 && (
+                    <p className="mt-2 text-sm font-medium text-orange-600">
+                      No pending outstanding balance found.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="mb-2 block font-semibold text-slate-800">
+                    Payment Date *
+                  </label>
+
+                  <input
+                    type="date"
+                    value={form.date}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        date: event.target.value,
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block font-semibold text-slate-800">
+                    Payment Amount *
+                  </label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    max={selectedPartyAvailableAmount || undefined}
+                    value={form.amount}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        amount: event.target.value,
+                      })
+                    }
+                    placeholder="Enter amount"
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block font-semibold text-slate-800">
+                    Payment Mode
+                  </label>
+
+                  <select
+                    value={form.paymentMode}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        paymentMode: event.target.value,
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  >
+                    <option>Cash</option>
+                    <option>UPI</option>
+                    <option>Bank Transfer</option>
+                    <option>Card</option>
+                    <option>Cheque</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block font-semibold text-slate-800">
+                    Reference Number
+                  </label>
+
+                  <input
+                    type="text"
+                    value={form.referenceNumber}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        referenceNumber: event.target.value,
+                      })
+                    }
+                    placeholder="UPI / Cheque / Bank reference"
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  />
+                </div>
+              </div>
+
+              {selectedParty && (
+                <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:mt-6 sm:p-5">
+                  <p className="text-sm font-bold text-emerald-800">
+                    {editingPayment
+                      ? "Available Amount For This Edit"
+                      : "Available Outstanding Balance"}
+                  </p>
+
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                    <p className="text-lg font-bold text-slate-900">
+                      {selectedParty.name}
+                    </p>
+
+                    <p
+                      className="text-xl font-bold sm:text-2xl"
+                      style={{ color: "#059669" }}
+                    >
+                      {formatCurrency(selectedPartyAvailableAmount)}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-5 sm:mt-6">
+                <label className="mb-2 block font-semibold text-slate-800">
+                  Notes
+                </label>
+
+                <textarea
+                  rows={4}
+                  value={form.notes}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      notes: event.target.value,
+                    })
+                  }
+                  placeholder="Optional note for this payment..."
+                  className="w-full resize-none rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                />
+              </div>
+
+              <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:gap-4">
+                <button
+                  type="submit"
+                  className="w-full rounded-xl px-5 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98] sm:w-auto sm:px-7"
+                  style={{
+                    backgroundColor: "#059669",
+                    color: "#ffffff",
+                  }}
+                >
+                  {isSaving
+                    ? editingPayment
+                      ? "Saving Changes..."
+                      : "Saving Payment..."
+                    : editingPayment
+                      ? "Save Changes"
+                      : "Save Payment"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (editingPayment) {
+                      cancelPaymentEdit();
+                    } else {
+                      resetForm();
+                    }
+                  }}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto sm:px-7"
+                >
+                  {editingPayment ? "Cancel Edit" : "Reset"}
+                </button>
+              </div>
+            </fieldset>
+          </form>
+
+          <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8 lg:mt-10">
+            <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+                  Payment History
                 </h2>
 
-                <p className="mt-1 text-sm text-slate-600">
-                  Total payments by mode
+                <p className="mt-1 text-sm text-slate-600 sm:text-base">
+                  Customer receipts and supplier payment entries.
                 </p>
               </div>
 
-              <div className="divide-y divide-slate-100">
-                {isLoading ? (
-                  <p className="px-6 py-12 text-center text-slate-500">
-                    Loading cloud payment data...
-                  </p>
-                ) : modeSummary.length === 0 ? (
-                  <p className="px-6 py-12 text-center text-slate-500">
-                    No payment data found.
-                  </p>
-                ) : (
-                  modeSummary.map((item) => (
-                    <div
-                      key={item.mode}
-                      className="flex items-center justify-between gap-3 px-4 py-4 sm:px-6"
-                    >
-                      <p className="font-bold text-slate-800">
-                        {item.mode}
-                      </p>
-
-                      <p
-                        className="font-bold"
-                        style={{ color: "#2563eb" }}
-                      >
-                        {formatCurrency(item.amount)}
-                      </p>
-                    </div>
-                  ))
-                )}
-              </div>
+              <span className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700">
+                Entries: {payments.length}
+              </span>
             </div>
 
-            <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl xl:col-span-2">
-              <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-5 sm:px-6 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">
-                    Payment Transactions
-                  </h2>
+            <div className="p-4 md:hidden">
+              {isLoading ? (
+                <div className="py-10 text-center text-sm text-slate-500">
+                  Loading payment history from the cloud database...
+                </div>
+              ) : payments.length === 0 ? (
+                <div className="py-10 text-center text-slate-500">
+                  <p className="text-lg font-semibold text-slate-700">
+                    No payment entries yet
+                  </p>
 
-                  <p className="mt-1 text-sm text-slate-600">
-                    Detailed entries matching selected filters
+                  <p className="mt-2 text-sm">
+                    Record a receipt or supplier payment from the form above.
                   </p>
                 </div>
+              ) : (
+                <div className="space-y-4">
+                  {payments.map((payment) => {
+                    const isCustomerReceipt =
+                      payment.type === "Customer Receipt";
 
-                <span className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700">
-                  Entries: {isLoading ? "..." : filteredPayments.length}
-                </span>
-              </div>
+                    return (
+                      <article
+                        key={payment.id}
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-lg font-bold text-slate-900">
+                              {payment.partyName}
+                            </p>
 
-              <div className="p-4 md:hidden">
-                {isLoading ? (
-                  <p className="py-10 text-center text-sm text-slate-500">
-                    Loading payment entries from the cloud database...
-                  </p>
-                ) : filteredPayments.length === 0 ? (
-                  <div className="py-10 text-center text-slate-500">
-                    <p className="text-lg font-semibold text-slate-700">
-                      No payment entries found
-                    </p>
+                            <p className="mt-1 text-sm text-slate-500">
+                              {formatDate(payment.date)}
+                            </p>
+                          </div>
 
-                    <p className="mt-2 text-sm">
-                      Change filters or record a payment first.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {filteredPayments.map((payment) => {
-                      const isReceipt =
+                          <span
+                            className={
+                              isCustomerReceipt
+                                ? "shrink-0 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700"
+                                : "shrink-0 rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700"
+                            }
+                          >
+                            {isCustomerReceipt ? "Receipt" : "Payment"}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          <div className="rounded-xl bg-white p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Payment Mode
+                            </p>
+
+                            <p className="mt-1 font-semibold text-slate-800">
+                              {payment.paymentMode}
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl bg-white p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Amount
+                            </p>
+
+                            <p
+                              className={
+                                isCustomerReceipt
+                                  ? "mt-1 font-bold text-emerald-700"
+                                  : "mt-1 font-bold text-purple-700"
+                              }
+                            >
+                              {formatCurrency(payment.amount)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Reference
+                          </p>
+
+                          <p className="mt-1 break-words font-semibold text-slate-800">
+                            {payment.referenceNumber || "—"}
+                          </p>
+                        </div>
+
+                        {payment.notes && (
+                          <div className="mt-3 rounded-xl bg-white p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Notes
+                            </p>
+
+                            <p className="mt-1 text-sm leading-6 text-slate-700">
+                              {payment.notes}
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => startEditingPayment(payment)}
+                            className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-bold text-blue-700 transition hover:bg-blue-100"
+                          >
+                            Edit
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setPaymentPendingDeletion(payment)}
+                            className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[1050px]">
+                <thead className="bg-slate-50">
+                  <tr className="border-b border-slate-200 text-left">
+                    <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                      Date
+                    </th>
+
+                    <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                      Type
+                    </th>
+
+                    <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                      Party
+                    </th>
+
+                    <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                      Mode
+                    </th>
+
+                    <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                      Reference
+                    </th>
+
+                    <th className="px-6 py-4 text-right text-sm font-bold text-slate-700">
+                      Amount
+                    </th>
+
+                    <th className="px-6 py-4 text-right text-sm font-bold text-slate-700">
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {isLoading ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-6 py-14 text-center text-slate-500"
+                      >
+                        Loading payment history from the cloud database...
+                      </td>
+                    </tr>
+                  ) : payments.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-6 py-14 text-center text-slate-500"
+                      >
+                        <p className="text-lg font-semibold text-slate-700">
+                          No payment entries yet
+                        </p>
+
+                        <p className="mt-2">
+                          Record a receipt or supplier payment from the form
+                          above.
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    payments.map((payment) => {
+                      const isCustomerReceipt =
                         payment.type === "Customer Receipt";
 
                       return (
-                        <article
+                        <tr
                           key={payment.id}
-                          className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                          className="border-b border-slate-100 transition hover:bg-slate-50"
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="truncate text-lg font-bold text-slate-900">
-                                {payment.partyName}
-                              </p>
+                          <td className="px-6 py-5 text-slate-700">
+                            {formatDate(payment.date)}
+                          </td>
 
-                              <p className="mt-1 text-sm text-slate-500">
-                                {formatDate(payment.date)}
-                              </p>
-                            </div>
-
+                          <td className="px-6 py-5">
                             <span
                               className={
-                                isReceipt
-                                  ? "shrink-0 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700"
-                                  : "shrink-0 rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700"
+                                isCustomerReceipt
+                                  ? "rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700"
+                                  : "rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700"
                               }
                             >
-                              {isReceipt
-                                ? "Customer Receipt"
-                                : "Supplier Payment"}
+                              {payment.type}
                             </span>
-                          </div>
+                          </td>
 
-                          <div className="mt-4 grid grid-cols-2 gap-3">
-                            <div className="rounded-xl bg-white p-3">
-                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                Payment Mode
-                              </p>
-
-                              <p className="mt-1 break-words font-semibold text-slate-800">
-                                {payment.paymentMode}
-                              </p>
-                            </div>
-
-                            <div className="rounded-xl bg-white p-3">
-                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                Reference
-                              </p>
-
-                              <p className="mt-1 break-words font-semibold text-slate-800">
-                                {payment.referenceNumber || "—"}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div
-                            className={
-                              isReceipt
-                                ? "mt-3 flex items-center justify-between rounded-xl bg-emerald-50 p-3"
-                                : "mt-3 flex items-center justify-between rounded-xl bg-purple-50 p-3"
-                            }
-                          >
-                            <span
-                              className={
-                                isReceipt
-                                  ? "text-sm font-semibold text-emerald-700"
-                                  : "text-sm font-semibold text-purple-700"
-                              }
-                            >
-                              Amount
-                            </span>
-
-                            <span
-                              className={
-                                isReceipt
-                                  ? "text-lg font-bold text-emerald-700"
-                                  : "text-lg font-bold text-purple-700"
-                              }
-                            >
-                              {formatCurrency(payment.amount)}
-                            </span>
-                          </div>
-
-                          {payment.notes && (
-                            <p className="mt-3 rounded-xl bg-white p-3 text-sm leading-6 text-slate-700">
-                              {payment.notes}
+                          <td className="px-6 py-5">
+                            <p className="font-bold text-slate-900">
+                              {payment.partyName}
                             </p>
-                          )}
-                        </article>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
 
-              <div className="hidden overflow-x-auto md:block">
-                <table className="w-full min-w-[900px]">
-                  <thead className="bg-slate-50">
-                    <tr className="border-b border-slate-200 text-left">
-                      <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                        Date
-                      </th>
-
-                      <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                        Type
-                      </th>
-
-                      <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                        Party
-                      </th>
-
-                      <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                        Mode
-                      </th>
-
-                      <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                        Reference
-                      </th>
-
-                      <th className="px-6 py-4 text-right text-sm font-bold text-slate-700">
-                        Amount
-                      </th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {isLoading ? (
-                      <tr>
-                        <td
-                          colSpan={6}
-                          className="px-6 py-14 text-center text-slate-500"
-                        >
-                          Loading payment entries from the cloud database...
-                        </td>
-                      </tr>
-                    ) : filteredPayments.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={6}
-                          className="px-6 py-14 text-center text-slate-500"
-                        >
-                          <p className="text-lg font-semibold text-slate-700">
-                            No payment entries found
-                          </p>
-
-                          <p className="mt-2">
-                            Change filters or record a payment first.
-                          </p>
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredPayments.map((payment) => {
-                        const isReceipt =
-                          payment.type === "Customer Receipt";
-
-                        return (
-                          <tr
-                            key={payment.id}
-                            className="border-b border-slate-100 transition hover:bg-slate-50"
-                          >
-                            <td className="px-6 py-5 text-slate-700">
-                              {formatDate(payment.date)}
-                            </td>
-
-                            <td className="px-6 py-5">
-                              <span
-                                className={
-                                  isReceipt
-                                    ? "rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700"
-                                    : "rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700"
-                                }
-                              >
-                                {payment.type}
-                              </span>
-                            </td>
-
-                            <td className="px-6 py-5">
-                              <p className="font-bold text-slate-900">
-                                {payment.partyName}
+                            {payment.notes && (
+                              <p className="mt-1 max-w-[220px] truncate text-sm text-slate-500">
+                                {payment.notes}
                               </p>
+                            )}
+                          </td>
 
-                              {payment.notes && (
-                                <p className="mt-1 max-w-[250px] truncate text-sm text-slate-500">
-                                  {payment.notes}
-                                </p>
-                              )}
-                            </td>
+                          <td className="px-6 py-5 text-slate-700">
+                            {payment.paymentMode}
+                          </td>
 
-                            <td className="px-6 py-5 text-slate-700">
-                              {payment.paymentMode}
-                            </td>
+                          <td className="px-6 py-5 text-slate-700">
+                            {payment.referenceNumber || "—"}
+                          </td>
 
-                            <td className="px-6 py-5 text-slate-700">
-                              {payment.referenceNumber || "—"}
-                            </td>
+                          <td
+                            className="px-6 py-5 text-right text-lg font-bold"
+                            style={{
+                              color: isCustomerReceipt
+                                ? "#059669"
+                                : "#7e22ce",
+                            }}
+                          >
+                            {formatCurrency(payment.amount)}
+                          </td>
 
-                            <td
-                              className="px-6 py-5 text-right text-lg font-bold"
-                              style={{
-                                color: isReceipt
-                                  ? "#059669"
-                                  : "#7e22ce",
-                              }}
-                            >
-                              {formatCurrency(payment.amount)}
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                          <td className="px-6 py-5">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => startEditingPayment(payment)}
+                                className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-100"
+                              >
+                                Edit
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setPaymentPendingDeletion(payment)}
+                                className="rounded-lg px-4 py-2 text-sm font-bold text-white transition hover:scale-[1.03] active:scale-[0.97]"
+                                style={{
+                                  backgroundColor: "#dc2626",
+                                  color: "#ffffff",
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </section>
         </main>
       </div>
 
-      <style jsx global>{`
-        @page {
-          size: A4 landscape;
-          margin: 8mm;
+      <ConfirmDeleteModal
+        isOpen={Boolean(paymentPendingDeletion)}
+        title="Delete payment entry?"
+        description={
+          paymentPendingDeletion
+            ? `This will remove the ${paymentPendingDeletion.type.toLowerCase()} of ${formatCurrency(
+                paymentPendingDeletion.amount
+              )} for ${paymentPendingDeletion.partyName}.`
+            : ""
         }
-
-        @media print {
-          .payment-report-sidebar,
-          .payment-report-navbar,
-          .payment-report-no-print {
-            display: none !important;
+        confirmLabel="Delete Payment"
+        isDeleting={isDeletingPayment}
+        onCancel={() => {
+          if (!isDeletingPayment) {
+            setPaymentPendingDeletion(null);
           }
-
-          html,
-          body {
-            width: 100%;
-            background: white !important;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-
-          .payment-report-main {
-            padding: 0 !important;
-          }
-
-          .payment-report-main > div:first-child {
-            margin-bottom: 12px !important;
-          }
-
-          .payment-report-main h1 {
-            font-size: 24px !important;
-          }
-
-          .payment-report-main h2 {
-            font-size: 16px !important;
-          }
-
-          .payment-report-main p {
-            font-size: 10px !important;
-          }
-
-          .payment-report-main > section:nth-of-type(2) {
-            display: grid !important;
-            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-            gap: 8px !important;
-            margin-top: 12px !important;
-          }
-
-          .payment-report-main > section:nth-of-type(2) > div {
-            padding: 12px !important;
-            border-radius: 12px !important;
-            box-shadow: none !important;
-          }
-
-          .payment-report-main > section:nth-of-type(2) h2 {
-            margin-top: 6px !important;
-            font-size: 20px !important;
-          }
-
-          .payment-report-main > section:nth-of-type(3) {
-            display: grid !important;
-            grid-template-columns: 30% 70% !important;
-            gap: 10px !important;
-            margin-top: 14px !important;
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
-
-          .payment-report-main > section:nth-of-type(3) > div {
-            box-shadow: none !important;
-            border-radius: 12px !important;
-          }
-
-          .payment-report-main .overflow-x-auto {
-            overflow: visible !important;
-          }
-
-          .payment-report-main table {
-            width: 100% !important;
-            min-width: 0 !important;
-            font-size: 9px !important;
-          }
-
-          .payment-report-main th,
-          .payment-report-main td {
-            padding: 6px !important;
-            white-space: normal !important;
-          }
-
-          .payment-report-main thead {
-            display: table-header-group;
-          }
-
-          .payment-report-main tr {
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
-        }
-      `}</style>
+        }}
+        onConfirm={confirmDeletePayment}
+      />
     </div>
   );
 }

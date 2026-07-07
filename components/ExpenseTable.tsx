@@ -162,6 +162,14 @@ export default function ExpenseTable() {
     };
   }, []);
 
+  function startEditingExpense(expense: Expense) {
+    window.dispatchEvent(
+      new CustomEvent("vertexerp-edit-expense", {
+        detail: expense,
+      })
+    );
+  }
+
   async function confirmDeleteExpense() {
     const expense = expensePendingDeletion;
 
@@ -313,13 +321,23 @@ export default function ExpenseTable() {
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setExpensePendingDeletion(expense)}
-                  className="mt-4 w-full rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
-                >
-                  Delete Expense
-                </button>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => startEditingExpense(expense)}
+                    className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-bold text-blue-700 transition hover:bg-blue-100"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setExpensePendingDeletion(expense)}
+                    className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                  >
+                    Delete
+                  </button>
+                </div>
               </article>
             ))}
           </div>
@@ -382,14 +400,24 @@ export default function ExpenseTable() {
                       {formatCurrency(expense.amount)}
                     </td>
 
-                    <td className="px-6 py-5 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setExpensePendingDeletion(expense)}
-                        className="font-semibold text-red-500 transition hover:text-red-700"
-                      >
-                        Delete
-                      </button>
+                    <td className="px-6 py-5">
+                      <div className="flex justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => startEditingExpense(expense)}
+                          className="font-semibold text-blue-600 transition hover:text-blue-800"
+                        >
+                          Edit
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setExpensePendingDeletion(expense)}
+                          className="font-semibold text-red-500 transition hover:text-red-700"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
