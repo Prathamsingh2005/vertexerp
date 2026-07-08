@@ -11,6 +11,7 @@ import {
   CircleDollarSign,
   Cloud,
   History,
+  Landmark,
   LayoutDashboard,
   ReceiptText,
   ShoppingCart,
@@ -40,13 +41,14 @@ const navigationItems: NavigationItem[] = [
   { href: "/expenses", label: "Expenses", icon: WalletCards },
   { href: "/outstanding", label: "Outstanding", icon: CircleDollarSign },
   { href: "/payments", label: "Payments", icon: CircleDollarSign },
-  { href: "/reports", label: "Reports", icon: BarChart3 },
   {
-    href: "/audit-history",
-    label: "Audit History",
-    icon: History,
+    href: "/accounting",
+    label: "Accounting",
+    icon: Landmark,
     section: "Management",
   },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
+  { href: "/audit-history", label: "Audit History", icon: History },
 ];
 
 function isActiveRoute(pathname: string, href: string) {
