@@ -1,16 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import { createClient } from "@/lib/supabase/client";
-
-type ProductRow = {
-  id: string;
-  name: string;
-  purchase_price: number | string | null;
-};
 
 type LedgerRow = {
   id: string;
@@ -19,8 +13,9 @@ type LedgerRow = {
 
 type SaleItemRow = {
   product_id: string | null;
-  product_name: string;
+  product_name: string | null;
   quantity: number | string | null;
+  cogs_amount: number | string | null;
 };
 
 type SaleRow = {
@@ -49,31 +44,18 @@ type ProfileRow = {
   active_company_id: string | null;
 };
 
-type SaleItem = {
-  productId: string;
-  productName: string;
-  quantity: number;
+type ProfitLossSummaryRow = {
+  total_income: number | string | null;
+  total_expense: number | string | null;
+  net_profit: number | string | null;
 };
 
-type Sale = {
-  id: string;
-  invoiceNumber: string;
-  date: string;
-  customerName: string;
-  subtotal: number;
-  gstTotal: number;
-  discountTotal: number;
-  grandTotal: number;
-  items: SaleItem[];
-};
-
-type Expense = {
-  id: string;
-  date: string;
-  category: string;
-  amount: number;
-  paymentMode: string;
-  description: string;
+type ProfitLossAccountRow = {
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  account_type: "Income" | "Expense";
+  amount: number | string | null;
 };
 
 type ProfitRow = {
@@ -82,8 +64,37 @@ type ProfitRow = {
   date: string;
   customerName: string;
   netSales: number;
-  estimatedCost: number;
+  cogsAmount: number;
   grossProfit: number;
+  hasCogsSnapshot: boolean;
+};
+
+type ProfitReportData = {
+  totalRevenue: number;
+  totalCogs: number;
+  grossProfit: number;
+  operatingExpenses: number;
+  netProfit: number;
+  totalGst: number;
+  grossMargin: number;
+  netProfitMargin: number;
+  invoiceCount: number;
+  expenseCount: number;
+  profitRows: ProfitRow[];
+};
+
+const initialReportData: ProfitReportData = {
+  totalRevenue: 0,
+  totalCogs: 0,
+  grossProfit: 0,
+  operatingExpenses: 0,
+  netProfit: 0,
+  totalGst: 0,
+  grossMargin: 0,
+  netProfitMargin: 0,
+  invoiceCount: 0,
+  expenseCount: 0,
+  profitRows: [],
 };
 
 function toNumber(value: unknown) {
@@ -121,41 +132,36 @@ function getJoinedLedger(
   return Array.isArray(ledger) ? ledger[0] || null : ledger;
 }
 
-function mapSale(row: SaleRow): Sale {
-  const customer = getJoinedLedger(row.customer);
+function isDateInRange(dateValue: string, fromDate: string, toDate: string) {
+  if (!dateValue) {
+    return false;
+  }
 
-  return {
-    id: row.id,
-    invoiceNumber: row.invoice_number || "Sales Invoice",
-    date: row.invoice_date || "",
-    customerName: customer?.name || "Unknown Customer",
-    subtotal: toNumber(row.subtotal),
-    gstTotal: toNumber(row.gst_total),
-    discountTotal: toNumber(row.discount_total),
-    grandTotal: toNumber(row.grand_total),
-    items: (row.sale_items || []).map((item) => ({
-      productId: item.product_id || "",
-      productName: item.product_name || "Product",
-      quantity: toNumber(item.quantity),
-    })),
-  };
+  if (fromDate && dateValue < fromDate) {
+    return false;
+  }
+
+  if (toDate && dateValue > toDate) {
+    return false;
+  }
+
+  return true;
 }
 
-function mapExpense(row: ExpenseRow): Expense {
-  return {
-    id: row.id,
-    date: row.expense_date || "",
-    category: row.category || "Other",
-    amount: toNumber(row.amount),
-    paymentMode: row.payment_mode || "Cash",
-    description: row.description || "",
-  };
+function isCostOfGoodsSoldAccount(account: ProfitLossAccountRow) {
+  return (
+    account.account_code === "5000" ||
+    account.account_name.trim().toLowerCase() === "cost of goods sold"
+  );
+}
+
+function calculateMargin(numerator: number, denominator: number) {
+  return denominator > 0 ? (numerator / denominator) * 100 : 0;
 }
 
 export default function ProfitReportPage() {
-  const [products, setProducts] = useState<ProductRow[]>([]);
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [reportData, setReportData] =
+    useState<ProfitReportData>(initialReportData);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -169,7 +175,7 @@ export default function ProfitReportPage() {
     }, 4500);
   }
 
-  async function loadReportData() {
+  const loadReportData = useCallback(async () => {
     setIsLoading(true);
 
     try {
@@ -181,9 +187,7 @@ export default function ProfitReportPage() {
       } = await supabase.auth.getUser();
 
       if (userError || !user) {
-        setProducts([]);
-        setSales([]);
-        setExpenses([]);
+        setReportData(initialReportData);
         showMessage("Please sign in to view the profit and loss report.");
         return;
       }
@@ -202,19 +206,13 @@ export default function ProfitReportPage() {
         (profile as ProfileRow | null)?.active_company_id || null;
 
       if (!activeCompanyId) {
-        setProducts([]);
-        setSales([]);
-        setExpenses([]);
+        setReportData(initialReportData);
         showMessage("Select an active company from the Companies page first.");
         return;
       }
 
-      const [productsResponse, salesResponse, expensesResponse] =
+      const [salesResponse, expensesResponse, summaryResponse, accountsResponse] =
         await Promise.all([
-          supabase
-            .from("products")
-            .select("id, name, purchase_price")
-            .eq("company_id", activeCompanyId),
           supabase
             .from("sales")
             .select(
@@ -234,7 +232,8 @@ export default function ProfitReportPage() {
                 sale_items(
                   product_id,
                   product_name,
-                  quantity
+                  quantity,
+                  cogs_amount
                 )
               `
             )
@@ -245,11 +244,17 @@ export default function ProfitReportPage() {
               "id, expense_date, category, amount, payment_mode, description"
             )
             .eq("company_id", activeCompanyId),
+          supabase.rpc("get_profit_loss_summary", {
+            p_company_id: activeCompanyId,
+            p_from_date: fromDate || null,
+            p_to_date: toDate || null,
+          }),
+          supabase.rpc("get_profit_loss_accounts", {
+            p_company_id: activeCompanyId,
+            p_from_date: fromDate || null,
+            p_to_date: toDate || null,
+          }),
         ]);
-
-      if (productsResponse.error) {
-        throw productsResponse.error;
-      }
 
       if (salesResponse.error) {
         throw salesResponse.error;
@@ -259,17 +264,93 @@ export default function ProfitReportPage() {
         throw expensesResponse.error;
       }
 
-      setProducts((productsResponse.data || []) as ProductRow[]);
-      setSales(
-        ((salesResponse.data || []) as unknown as SaleRow[]).map(mapSale)
+      if (summaryResponse.error) {
+        throw summaryResponse.error;
+      }
+
+      if (accountsResponse.error) {
+        throw accountsResponse.error;
+      }
+
+      const sales = (salesResponse.data || []) as unknown as SaleRow[];
+      const expenses = (expensesResponse.data || []) as ExpenseRow[];
+      const summary = ((summaryResponse.data || []) as ProfitLossSummaryRow[])[0];
+      const profitLossAccounts =
+        (accountsResponse.data || []) as ProfitLossAccountRow[];
+
+      const filteredSales = sales.filter((sale) =>
+        isDateInRange(sale.invoice_date, fromDate, toDate)
       );
-      setExpenses(
-        ((expensesResponse.data || []) as ExpenseRow[]).map(mapExpense)
+
+      const filteredExpenses = expenses.filter((expense) =>
+        isDateInRange(expense.expense_date, fromDate, toDate)
       );
+
+      const totalRevenue = toNumber(summary?.total_income);
+
+      const totalCogs = profitLossAccounts
+        .filter(
+          (account) =>
+            account.account_type === "Expense" &&
+            isCostOfGoodsSoldAccount(account)
+        )
+        .reduce((total, account) => total + toNumber(account.amount), 0);
+
+      const totalAccountingExpenses = toNumber(summary?.total_expense);
+      const operatingExpenses = Math.max(0, totalAccountingExpenses - totalCogs);
+      const grossProfit = totalRevenue - totalCogs;
+      const netProfit = toNumber(summary?.net_profit);
+
+      const totalGst = filteredSales.reduce(
+        (total, sale) => total + toNumber(sale.gst_total),
+        0
+      );
+
+      const profitRows = filteredSales
+        .map((sale) => {
+          const customer = getJoinedLedger(sale.customer);
+          const cogsAmount = (sale.sale_items || []).reduce(
+            (total, item) => total + toNumber(item.cogs_amount),
+            0
+          );
+
+          const hasCogsSnapshot = (sale.sale_items || []).some(
+            (item) => item.cogs_amount !== null && item.cogs_amount !== undefined
+          );
+
+          const netSales = Math.max(
+            0,
+            toNumber(sale.subtotal) - toNumber(sale.discount_total)
+          );
+
+          return {
+            id: sale.id,
+            invoiceNumber: sale.invoice_number || "Sales Invoice",
+            date: sale.invoice_date || "",
+            customerName: customer?.name || "Unknown Customer",
+            netSales,
+            cogsAmount,
+            grossProfit: netSales - cogsAmount,
+            hasCogsSnapshot,
+          };
+        })
+        .sort((first, second) => second.date.localeCompare(first.date));
+
+      setReportData({
+        totalRevenue,
+        totalCogs,
+        grossProfit,
+        operatingExpenses,
+        netProfit,
+        totalGst,
+        grossMargin: calculateMargin(grossProfit, totalRevenue),
+        netProfitMargin: calculateMargin(netProfit, totalRevenue),
+        invoiceCount: profitRows.length,
+        expenseCount: filteredExpenses.length,
+        profitRows,
+      });
     } catch (error) {
-      setProducts([]);
-      setSales([]);
-      setExpenses([]);
+      setReportData(initialReportData);
 
       showMessage(
         error instanceof Error
@@ -279,7 +360,7 @@ export default function ProfitReportPage() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [fromDate, toDate]);
 
   useEffect(() => {
     loadReportData();
@@ -287,6 +368,7 @@ export default function ProfitReportPage() {
     const refreshEvents = [
       "vertexerp-products-updated",
       "vertexerp-sales-updated",
+      "vertexerp-purchases-updated",
       "vertexerp-expenses-updated",
       "vertexerp-active-company-updated",
     ];
@@ -300,84 +382,13 @@ export default function ProfitReportPage() {
         window.removeEventListener(eventName, loadReportData);
       });
     };
-  }, []);
+  }, [loadReportData]);
 
-  const filteredSales = useMemo(() => {
-    return sales.filter((sale) => {
-      const matchesFromDate = !fromDate || sale.date >= fromDate;
-      const matchesToDate = !toDate || sale.date <= toDate;
-
-      return matchesFromDate && matchesToDate;
-    });
-  }, [sales, fromDate, toDate]);
-
-  const filteredExpenses = useMemo(() => {
-    return expenses.filter((expense) => {
-      const matchesFromDate = !fromDate || expense.date >= fromDate;
-      const matchesToDate = !toDate || expense.date <= toDate;
-
-      return matchesFromDate && matchesToDate;
-    });
-  }, [expenses, fromDate, toDate]);
-
-  const profitRows = useMemo<ProfitRow[]>(() => {
-    const productCostMap = new Map<string, number>();
-
-    products.forEach((product) => {
-      productCostMap.set(product.id, toNumber(product.purchase_price));
-    });
-
-    return filteredSales
-      .map((sale) => {
-        const netSales = Math.max(0, sale.subtotal - sale.discountTotal);
-
-        const estimatedCost = sale.items.reduce((total, item) => {
-          const purchasePrice = productCostMap.get(item.productId) || 0;
-
-          return total + item.quantity * purchasePrice;
-        }, 0);
-
-        return {
-          id: sale.id,
-          invoiceNumber: sale.invoiceNumber,
-          date: sale.date,
-          customerName: sale.customerName,
-          netSales,
-          estimatedCost,
-          grossProfit: netSales - estimatedCost,
-        };
-      })
-      .sort((first, second) => second.date.localeCompare(first.date));
-  }, [filteredSales, products]);
-
-  const totalRevenue = profitRows.reduce(
-    (total, row) => total + row.netSales,
-    0
-  );
-
-  const totalEstimatedCost = profitRows.reduce(
-    (total, row) => total + row.estimatedCost,
-    0
-  );
-
-  const grossProfit = totalRevenue - totalEstimatedCost;
-
-  const totalOperatingExpenses = filteredExpenses.reduce(
-    (total, expense) => total + expense.amount,
-    0
-  );
-
-  const netProfit = grossProfit - totalOperatingExpenses;
-
-  const grossMargin =
-    totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
-
-  const netProfitMargin =
-    totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
-
-  const totalGst = filteredSales.reduce(
-    (total, sale) => total + sale.gstTotal,
-    0
+  const netProfitIsPositive = reportData.netProfit >= 0;
+  const grossProfitIsPositive = reportData.grossProfit >= 0;
+  const hasLegacyRows = useMemo(
+    () => reportData.profitRows.some((row) => !row.hasCogsSnapshot),
+    [reportData.profitRows]
   );
 
   function resetFilters() {
@@ -396,11 +407,12 @@ export default function ProfitReportPage() {
           <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
-                💰 Profit &amp; Loss
+                Profit &amp; Loss
               </h1>
 
               <p className="mt-2 text-base text-slate-600 sm:text-lg">
-                Analyze sales revenue, product cost, expenses and net profit.
+                Analyze accounting revenue, Cost of Goods Sold, operating
+                expenses and net profit from posted vouchers.
               </p>
             </div>
 
@@ -418,48 +430,54 @@ export default function ProfitReportPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
+          {hasLegacyRows && (
+            <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 sm:mb-6 sm:text-base">
+              Some older invoices do not have COGS snapshots because they were
+              recorded before the costing engine was enabled. Their invoice-wise
+              COGS may show as zero until historical migration is performed.
+            </div>
+          )}
+
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
             <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Sales Revenue</p>
 
               <h2 className="mt-3 break-words text-3xl font-bold text-blue-600 sm:text-4xl">
-                {isLoading ? "..." : formatCurrency(totalRevenue)}
+                {isLoading ? "..." : formatCurrency(reportData.totalRevenue)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Sales excluding GST
+                Posted income excluding GST
               </p>
             </div>
 
             <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
-                Estimated Product Cost
+                Cost of Goods Sold
               </p>
 
               <h2 className="mt-3 break-words text-3xl font-bold text-purple-600 sm:text-4xl">
-                {isLoading ? "..." : formatCurrency(totalEstimatedCost)}
+                {isLoading ? "..." : formatCurrency(reportData.totalCogs)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Based on current purchase prices
+                Actual cost from sale item snapshots
               </p>
             </div>
 
             <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
-              <p className="font-medium text-slate-600">
-                Gross Profit Estimate
-              </p>
+              <p className="font-medium text-slate-600">Gross Profit</p>
 
               <h2
                 className={`mt-3 break-words text-3xl font-bold sm:text-4xl ${
-                  grossProfit >= 0 ? "text-green-600" : "text-red-600"
+                  grossProfitIsPositive ? "text-green-600" : "text-red-600"
                 }`}
               >
-                {isLoading ? "..." : formatCurrency(grossProfit)}
+                {isLoading ? "..." : formatCurrency(reportData.grossProfit)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Revenue minus product cost
+                Sales revenue minus COGS
               </p>
             </div>
 
@@ -469,33 +487,35 @@ export default function ProfitReportPage() {
               </p>
 
               <h2 className="mt-3 break-words text-3xl font-bold text-orange-500 sm:text-4xl">
-                {isLoading ? "..." : formatCurrency(totalOperatingExpenses)}
+                {isLoading
+                  ? "..."
+                  : formatCurrency(reportData.operatingExpenses)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
                 {isLoading
                   ? "Loading expenses..."
-                  : `${filteredExpenses.length} expense${
-                      filteredExpenses.length !== 1 ? "s" : ""
+                  : `${reportData.expenseCount} expense${
+                      reportData.expenseCount !== 1 ? "s" : ""
                     } included`}
               </p>
             </div>
 
             <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
-                Net Profit Estimate
+                Accounting Net Profit
               </p>
 
               <h2
                 className={`mt-3 break-words text-3xl font-bold sm:text-4xl ${
-                  netProfit >= 0 ? "text-green-600" : "text-red-600"
+                  netProfitIsPositive ? "text-green-600" : "text-red-600"
                 }`}
               >
-                {isLoading ? "..." : formatCurrency(netProfit)}
+                {isLoading ? "..." : formatCurrency(reportData.netProfit)}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Gross profit minus expenses
+                Gross profit minus operating expenses
               </p>
             </div>
 
@@ -506,28 +526,30 @@ export default function ProfitReportPage() {
 
               <h2
                 className={`mt-3 break-words text-3xl font-bold sm:text-4xl ${
-                  netProfitMargin >= 0
+                  reportData.netProfitMargin >= 0
                     ? "text-emerald-600"
                     : "text-red-600"
                 }`}
               >
-                {isLoading ? "..." : `${netProfitMargin.toFixed(2)}%`}
+                {isLoading
+                  ? "..."
+                  : `${reportData.netProfitMargin.toFixed(2)}%`}
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Profit percentage on revenue
+                Accounting profit percentage on revenue
               </p>
             </div>
-          </div>
+          </section>
 
-          <div className="mt-5 grid grid-cols-1 gap-4 sm:mt-6 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
+          <section className="mt-5 grid grid-cols-1 gap-4 sm:mt-6 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
             <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 sm:p-6">
               <p className="font-semibold text-blue-800">
                 GST Collected on Sales
               </p>
 
               <p className="mt-2 text-3xl font-bold text-blue-600">
-                {isLoading ? "..." : formatCurrency(totalGst)}
+                {isLoading ? "..." : formatCurrency(reportData.totalGst)}
               </p>
 
               <p className="mt-2 text-sm text-blue-700">
@@ -541,27 +563,29 @@ export default function ProfitReportPage() {
               </p>
 
               <p className="mt-2 text-3xl font-bold text-green-600">
-                {isLoading ? "..." : `${grossMargin.toFixed(2)}%`}
+                {isLoading
+                  ? "..."
+                  : `${reportData.grossMargin.toFixed(2)}%`}
               </p>
 
               <p className="mt-2 text-sm text-green-700">
-                Margin before operating expenses
+                Margin after Cost of Goods Sold
               </p>
             </div>
 
-            <div className="rounded-3xl border border-orange-100 bg-orange-50 p-5 sm:p-6">
-              <p className="font-semibold text-orange-800">
-                Calculation Note
+            <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-5 sm:p-6">
+              <p className="font-semibold text-emerald-800">
+                Calculation Source
               </p>
 
-              <p className="mt-2 text-sm leading-6 text-orange-700">
-                Net profit includes saved expenses. Product cost is estimated
-                from each product&apos;s current purchase price.
+              <p className="mt-2 text-sm leading-6 text-emerald-700">
+                Revenue, COGS, expenses and net profit are calculated from
+                posted double-entry accounting vouchers.
               </p>
             </div>
-          </div>
+          </section>
 
-          <div className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:mt-8 sm:p-6">
+          <section className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:mt-8 sm:p-6">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <input
                 type="date"
@@ -580,10 +604,10 @@ export default function ProfitReportPage() {
               <div className="rounded-xl border border-green-100 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">
                 {isLoading
                   ? "Loading report..."
-                  : `${profitRows.length} Invoice${
-                      profitRows.length !== 1 ? "s" : ""
-                    } • ${filteredExpenses.length} Expense${
-                      filteredExpenses.length !== 1 ? "s" : ""
+                  : `${reportData.invoiceCount} Invoice${
+                      reportData.invoiceCount !== 1 ? "s" : ""
+                    } • ${reportData.expenseCount} Expense${
+                      reportData.expenseCount !== 1 ? "s" : ""
                     }`}
               </div>
 
@@ -595,28 +619,30 @@ export default function ProfitReportPage() {
                 Reset Filters
               </button>
             </div>
-          </div>
+          </section>
 
-          <div className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8">
+          <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8">
             <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
               <div>
                 <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-                  Invoice-wise Profit Estimate
+                  Invoice-wise COGS Profit
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-600 sm:text-base">
-                  Sales revenue and estimated cost for each saved invoice.
+                  Sales revenue, COGS snapshot and gross profit for each saved
+                  invoice.
                 </p>
               </div>
 
               <div
                 className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                  netProfit >= 0
+                  netProfitIsPositive
                     ? "bg-green-50 text-green-700"
                     : "bg-red-50 text-red-700"
                 }`}
               >
-                Net Profit: {isLoading ? "..." : formatCurrency(netProfit)}
+                Net Profit:{" "}
+                {isLoading ? "..." : formatCurrency(reportData.netProfit)}
               </div>
             </div>
 
@@ -625,7 +651,7 @@ export default function ProfitReportPage() {
                 <p className="py-10 text-center text-sm text-slate-500">
                   Loading report data from the cloud database...
                 </p>
-              ) : profitRows.length === 0 ? (
+              ) : reportData.profitRows.length === 0 ? (
                 <div className="py-10 text-center text-slate-500">
                   <p className="text-lg font-semibold text-slate-700">
                     No sales invoices found
@@ -637,11 +663,11 @@ export default function ProfitReportPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {profitRows.map((row) => {
-                    const margin =
-                      row.netSales > 0
-                        ? (row.grossProfit / row.netSales) * 100
-                        : 0;
+                  {reportData.profitRows.map((row) => {
+                    const margin = calculateMargin(
+                      row.grossProfit,
+                      row.netSales
+                    );
 
                     return (
                       <article
@@ -690,12 +716,18 @@ export default function ProfitReportPage() {
 
                           <div className="rounded-xl bg-white p-3">
                             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                              Estimated Cost
+                              COGS
                             </p>
 
                             <p className="mt-1 break-words font-bold text-purple-700">
-                              {formatCurrency(row.estimatedCost)}
+                              {formatCurrency(row.cogsAmount)}
                             </p>
+
+                            {!row.hasCogsSnapshot && (
+                              <p className="mt-1 text-xs font-medium text-amber-600">
+                                Legacy invoice
+                              </p>
+                            )}
                           </div>
                         </div>
 
@@ -754,7 +786,7 @@ export default function ProfitReportPage() {
                     </th>
 
                     <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                      Estimated Cost
+                      COGS
                     </th>
 
                     <th className="px-6 py-4 text-sm font-bold text-slate-700">
@@ -777,7 +809,7 @@ export default function ProfitReportPage() {
                         Loading report data from the cloud database...
                       </td>
                     </tr>
-                  ) : profitRows.length === 0 ? (
+                  ) : reportData.profitRows.length === 0 ? (
                     <tr>
                       <td
                         colSpan={7}
@@ -793,11 +825,11 @@ export default function ProfitReportPage() {
                       </td>
                     </tr>
                   ) : (
-                    profitRows.map((row) => {
-                      const margin =
-                        row.netSales > 0
-                          ? (row.grossProfit / row.netSales) * 100
-                          : 0;
+                    reportData.profitRows.map((row) => {
+                      const margin = calculateMargin(
+                        row.grossProfit,
+                        row.netSales
+                      );
 
                       return (
                         <tr
@@ -811,6 +843,12 @@ export default function ProfitReportPage() {
                             >
                               {row.invoiceNumber}
                             </Link>
+
+                            {!row.hasCogsSnapshot && (
+                              <p className="mt-1 text-xs font-medium text-amber-600">
+                                Legacy invoice
+                              </p>
+                            )}
                           </td>
 
                           <td className="px-6 py-5 font-semibold text-slate-900">
@@ -826,7 +864,7 @@ export default function ProfitReportPage() {
                           </td>
 
                           <td className="px-6 py-5 font-semibold text-purple-700">
-                            {formatCurrency(row.estimatedCost)}
+                            {formatCurrency(row.cogsAmount)}
                           </td>
 
                           <td
@@ -857,7 +895,7 @@ export default function ProfitReportPage() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </section>
         </main>
       </div>
     </div>

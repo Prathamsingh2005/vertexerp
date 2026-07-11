@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 type AccountType = "Asset" | "Liability" | "Equity" | "Income" | "Expense";
 type VoucherType = "Journal" | "Contra";
 type VoucherStatus = "DRAFT" | "POSTED" | "VOID";
+type LockType = "FINANCIAL_YEAR" | "MONTHLY" | "CUSTOM";
 
 type ProfileRow = {
   active_company_id: string | null;
@@ -47,6 +48,18 @@ type EntryRow = {
 
 type VoucherWithEntries = VoucherRow & {
   entries: EntryRow[];
+};
+
+type PeriodLockRow = {
+  id: string;
+  lock_name: string;
+  lock_type: LockType;
+  locked_until_date: string;
+  reason: string;
+  is_active: boolean;
+  locked_at: string;
+  unlocked_at: string | null;
+  unlocked_reason: string | null;
 };
 
 type AccountForm = {
@@ -126,6 +139,12 @@ function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function getCurrentFinancialYearEnd() {
+  const today = new Date();
+  const year = today.getMonth() + 1 >= 4 ? today.getFullYear() + 1 : today.getFullYear();
+  return `${year}-03-31`;
+}
+
 function getTotals(lines: VoucherLine[]) {
   return lines.reduce(
     (totals, line) => ({
@@ -140,17 +159,24 @@ function isProtectedAccount(account: ChartAccountRow) {
   return !!account.system_key && protectedSystemKeys.has(account.system_key);
 }
 
+function getAccountLabel(account: ChartAccountRow) {
+  return `${account.code} — ${account.name}`;
+}
+
 export default function AccountingManager() {
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<ChartAccountRow[]>([]);
   const [vouchers, setVouchers] = useState<VoucherWithEntries[]>([]);
+  const [periodLocks, setPeriodLocks] = useState<PeriodLockRow[]>([]);
 
-  const [activeTab, setActiveTab] = useState<"vouchers" | "accounts" | "history">("vouchers");
+  const [activeTab, setActiveTab] = useState<"vouchers" | "accounts" | "locks" | "history">("vouchers");
   const [message, setMessage] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [isSavingVoucher, setIsSavingVoucher] = useState(false);
+  const [isSavingLock, setIsSavingLock] = useState(false);
 
   const [accountForm, setAccountForm] = useState<AccountForm>(emptyAccountForm);
   const [editingAccount, setEditingAccount] = useState<ChartAccountRow | null>(null);
@@ -164,6 +190,11 @@ export default function AccountingManager() {
     createEmptyLine(),
   ]);
   const [editingVoucher, setEditingVoucher] = useState<VoucherWithEntries | null>(null);
+
+  const [lockName, setLockName] = useState("");
+  const [lockType, setLockType] = useState<LockType>("FINANCIAL_YEAR");
+  const [lockedUntilDate, setLockedUntilDate] = useState(getCurrentFinancialYearEnd());
+  const [lockReason, setLockReason] = useState("");
 
   function showMessage(nextMessage: string) {
     setMessage(nextMessage);
@@ -188,6 +219,7 @@ export default function AccountingManager() {
         setActiveCompanyId(null);
         setAccounts([]);
         setVouchers([]);
+        setPeriodLocks([]);
         showMessage("Please sign in to manage accounting.");
         return;
       }
@@ -208,11 +240,12 @@ export default function AccountingManager() {
       if (!companyId) {
         setAccounts([]);
         setVouchers([]);
+        setPeriodLocks([]);
         showMessage("Select an active company from the Companies page first.");
         return;
       }
 
-      const [accountsResponse, vouchersResponse] = await Promise.all([
+      const [accountsResponse, vouchersResponse, locksResponse] = await Promise.all([
         supabase
           .from("chart_of_accounts")
           .select(
@@ -229,6 +262,13 @@ export default function AccountingManager() {
           .eq("source_type", "manual")
           .order("voucher_date", { ascending: false })
           .order("created_at", { ascending: false }),
+        supabase
+          .from("accounting_period_locks")
+          .select(
+            "id, lock_name, lock_type, locked_until_date, reason, is_active, locked_at, unlocked_at, unlocked_reason"
+          )
+          .eq("company_id", companyId)
+          .order("created_at", { ascending: false }),
       ]);
 
       if (accountsResponse.error) {
@@ -237,6 +277,10 @@ export default function AccountingManager() {
 
       if (vouchersResponse.error) {
         throw vouchersResponse.error;
+      }
+
+      if (locksResponse.error) {
+        throw locksResponse.error;
       }
 
       const nextAccounts = (accountsResponse.data || []) as ChartAccountRow[];
@@ -276,9 +320,11 @@ export default function AccountingManager() {
           entries: entriesByVoucher.get(voucher.id) || [],
         }))
       );
+      setPeriodLocks((locksResponse.data || []) as PeriodLockRow[]);
     } catch (error) {
       setAccounts([]);
       setVouchers([]);
+      setPeriodLocks([]);
       showMessage(
         error instanceof Error
           ? error.message
@@ -303,11 +349,33 @@ export default function AccountingManager() {
     };
   }, []);
 
+  const accountById = useMemo(() => {
+    const nextMap = new Map<string, ChartAccountRow>();
+
+    accounts.forEach((account) => {
+      nextMap.set(account.id, account);
+    });
+
+    return nextMap;
+  }, [accounts]);
+
+  const activeLockedUntilDate = useMemo(() => {
+    const activeLocks = periodLocks.filter((lock) => lock.is_active);
+
+    if (activeLocks.length === 0) {
+      return null;
+    }
+
+    return activeLocks
+      .map((lock) => lock.locked_until_date)
+      .sort()
+      .reverse()[0];
+  }, [periodLocks]);
 
   const filteredAccounts = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
 
-    if (!query) {
+    if (!query || activeTab !== "accounts") {
       return accounts;
     }
 
@@ -323,12 +391,12 @@ export default function AccountingManager() {
         .toLowerCase()
         .includes(query)
     );
-  }, [accounts, searchTerm]);
+  }, [accounts, searchTerm, activeTab]);
 
   const filteredVouchers = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
 
-    if (!query) {
+    if (!query || activeTab !== "history") {
       return vouchers;
     }
 
@@ -343,7 +411,7 @@ export default function AccountingManager() {
         .toLowerCase()
         .includes(query)
     );
-  }, [vouchers, searchTerm]);
+  }, [vouchers, searchTerm, activeTab]);
 
   const postingAccounts = useMemo(() => {
     return accounts.filter((account) => {
@@ -374,6 +442,13 @@ export default function AccountingManager() {
     setNarration("");
     setVoucherLines([createEmptyLine(), createEmptyLine()]);
     setEditingVoucher(null);
+  }
+
+  function resetLockForm() {
+    setLockName("");
+    setLockType("FINANCIAL_YEAR");
+    setLockedUntilDate(getCurrentFinancialYearEnd());
+    setLockReason("");
   }
 
   function updateVoucherLine(index: number, field: keyof VoucherLine, value: string) {
@@ -654,6 +729,115 @@ export default function AccountingManager() {
     }
   }
 
+  async function createPeriodLock() {
+    if (!activeCompanyId) {
+      showMessage("Select an active company first.");
+      return;
+    }
+
+    if (!lockName.trim()) {
+      showMessage("Lock name is required.");
+      return;
+    }
+
+    if (!lockedUntilDate) {
+      showMessage("Locked until date is required.");
+      return;
+    }
+
+    if (!lockReason.trim()) {
+      showMessage("Lock reason is required.");
+      return;
+    }
+
+    setIsSavingLock(true);
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase.rpc("create_accounting_period_lock", {
+        p_company_id: activeCompanyId,
+        p_lock_name: lockName.trim(),
+        p_lock_type: lockType,
+        p_locked_until_date: lockedUntilDate,
+        p_reason: lockReason.trim(),
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      showMessage("Accounting period locked successfully.");
+      resetLockForm();
+      await loadAccountingData();
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : "Period could not be locked.");
+    } finally {
+      setIsSavingLock(false);
+    }
+  }
+
+  async function unlockPeriodLock(lock: PeriodLockRow) {
+    const reason = window.prompt(`Enter unlock reason for ${lock.lock_name}:`);
+
+    if (!reason?.trim()) {
+      return;
+    }
+
+    setIsSavingLock(true);
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase.rpc("deactivate_accounting_period_lock", {
+        p_lock_id: lock.id,
+        p_unlock_reason: reason.trim(),
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      showMessage("Accounting period lock deactivated.");
+      await loadAccountingData();
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : "Period lock could not be deactivated.");
+    } finally {
+      setIsSavingLock(false);
+    }
+  }
+
+  function renderTabs() {
+    const tabs: { key: typeof activeTab; label: string }[] = [
+      { key: "vouchers", label: "Vouchers" },
+      { key: "accounts", label: "Chart of Accounts" },
+      { key: "locks", label: "Period Locks" },
+      { key: "history", label: "Voucher History" },
+    ];
+
+    return (
+      <div className="flex flex-wrap gap-2">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => {
+              setActiveTab(tab.key);
+              setSearchTerm("");
+            }}
+            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+              activeTab === tab.key
+                ? "bg-blue-600 text-white shadow-lg"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
@@ -663,46 +847,18 @@ export default function AccountingManager() {
               Accounting Control Center
             </h2>
             <p className="mt-1 text-sm text-slate-600 sm:text-base">
-              Manage custom accounts, post Journal vouchers, and record Contra entries.
+              Manage custom accounts, manual vouchers, contra transfers and finalized accounting periods.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab("vouchers")}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                activeTab === "vouchers"
-                  ? "bg-blue-600 text-white shadow-lg"
-                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-              }`}
-            >
-              Vouchers
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("accounts")}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                activeTab === "accounts"
-                  ? "bg-blue-600 text-white shadow-lg"
-                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-              }`}
-            >
-              Chart of Accounts
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("history")}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                activeTab === "history"
-                  ? "bg-blue-600 text-white shadow-lg"
-                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-              }`}
-            >
-              Voucher History
-            </button>
-          </div>
+          {renderTabs()}
         </div>
+
+        {activeLockedUntilDate && (
+          <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+            Active accounting lock: transactions dated on or before {formatDate(activeLockedUntilDate)} are protected.
+          </div>
+        )}
 
         {message && (
           <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700">
@@ -737,9 +893,7 @@ export default function AccountingManager() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="mb-2 block font-semibold text-slate-800">
-                  Voucher Type
-                </label>
+                <label className="mb-2 block font-semibold text-slate-800">Voucher Type</label>
                 <select
                   value={voucherType}
                   onChange={(event) => handleVoucherTypeChange(event.target.value as VoucherType)}
@@ -752,9 +906,7 @@ export default function AccountingManager() {
               </div>
 
               <div>
-                <label className="mb-2 block font-semibold text-slate-800">
-                  Voucher Date
-                </label>
+                <label className="mb-2 block font-semibold text-slate-800">Voucher Date</label>
                 <input
                   type="date"
                   value={voucherDate}
@@ -764,9 +916,7 @@ export default function AccountingManager() {
               </div>
 
               <div>
-                <label className="mb-2 block font-semibold text-slate-800">
-                  Voucher Number
-                </label>
+                <label className="mb-2 block font-semibold text-slate-800">Voucher Number</label>
                 <input
                   value={voucherNumber}
                   onChange={(event) => setVoucherNumber(event.target.value)}
@@ -776,17 +926,11 @@ export default function AccountingManager() {
               </div>
 
               <div>
-                <label className="mb-2 block font-semibold text-slate-800">
-                  Narration
-                </label>
+                <label className="mb-2 block font-semibold text-slate-800">Narration</label>
                 <input
                   value={narration}
                   onChange={(event) => setNarration(event.target.value)}
-                  placeholder={
-                    voucherType === "Contra"
-                      ? "Cash deposited into bank"
-                      : "Owner investment or adjustment"
-                  }
+                  placeholder={voucherType === "Contra" ? "Cash deposited into bank" : "Owner investment or adjustment"}
                   className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
                 />
               </div>
@@ -818,9 +962,7 @@ export default function AccountingManager() {
 
                     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.35fr_0.65fr_0.65fr]">
                       <div>
-                        <label className="mb-2 block text-sm font-semibold text-slate-700">
-                          Account
-                        </label>
+                        <label className="mb-2 block text-sm font-semibold text-slate-700">Account</label>
                         <select
                           value={line.accountId}
                           onChange={(event) => updateVoucherLine(index, "accountId", event.target.value)}
@@ -829,16 +971,14 @@ export default function AccountingManager() {
                           <option value="">Select account</option>
                           {postingAccounts.map((account) => (
                             <option key={account.id} value={account.id}>
-                              {account.code} — {account.name}
+                              {getAccountLabel(account)}
                             </option>
                           ))}
                         </select>
                       </div>
 
                       <div>
-                        <label className="mb-2 block text-sm font-semibold text-slate-700">
-                          Debit
-                        </label>
+                        <label className="mb-2 block text-sm font-semibold text-slate-700">Debit</label>
                         <input
                           type="number"
                           min="0"
@@ -851,9 +991,7 @@ export default function AccountingManager() {
                       </div>
 
                       <div>
-                        <label className="mb-2 block text-sm font-semibold text-slate-700">
-                          Credit
-                        </label>
+                        <label className="mb-2 block text-sm font-semibold text-slate-700">Credit</label>
                         <input
                           type="number"
                           min="0"
@@ -867,9 +1005,7 @@ export default function AccountingManager() {
                     </div>
 
                     <div className="mt-4">
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Line Description
-                      </label>
+                      <label className="mb-2 block text-sm font-semibold text-slate-700">Line Description</label>
                       <input
                         value={line.description}
                         onChange={(event) => updateVoucherLine(index, "description", event.target.value)}
@@ -921,11 +1057,7 @@ export default function AccountingManager() {
               disabled={isSavingVoucher || isLoading}
               className="mt-5 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isSavingVoucher
-                ? "Saving..."
-                : editingVoucher
-                  ? "Save Voucher Changes"
-                  : "Post Voucher"}
+              {isSavingVoucher ? "Saving..." : editingVoucher ? "Save Voucher Changes" : "Post Voucher"}
             </button>
           </div>
 
@@ -1043,7 +1175,9 @@ export default function AccountingManager() {
                   <input
                     type="checkbox"
                     checked={accountForm.isActive}
-                    onChange={(event) => setAccountForm((current) => ({ ...current, isActive: event.target.checked }))}
+                    onChange={(event) =>
+                      setAccountForm((current) => ({ ...current, isActive: event.target.checked }))
+                    }
                     className="h-4 w-4 rounded border-slate-300"
                   />
                   <span className="font-semibold text-slate-700">Account is active</span>
@@ -1056,11 +1190,7 @@ export default function AccountingManager() {
                 disabled={isSavingAccount || isLoading}
                 className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isSavingAccount
-                  ? "Saving..."
-                  : editingAccount
-                    ? "Save Account Changes"
-                    : "Create Account"}
+                {isSavingAccount ? "Saving..." : editingAccount ? "Save Account Changes" : "Create Account"}
               </button>
             </div>
           </div>
@@ -1068,6 +1198,10 @@ export default function AccountingManager() {
           <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-lg">
             <div className="border-b border-slate-200 p-4 sm:p-6">
               <h3 className="text-xl font-bold text-slate-900">Chart of Accounts</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                System accounts are protected. Custom accounts can be edited.
+              </p>
+
               <input
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
@@ -1088,13 +1222,23 @@ export default function AccountingManager() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate font-bold text-slate-900">{account.name}</p>
-                          <p className="mt-1 text-sm text-slate-500">{account.code} · {account.account_type}</p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            {account.code} · {account.account_type}
+                          </p>
                         </div>
-                        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${account.is_system ? "bg-slate-200 text-slate-700" : "bg-blue-100 text-blue-700"}`}>
+                        <span
+                          className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+                            account.is_system ? "bg-slate-200 text-slate-700" : "bg-blue-100 text-blue-700"
+                          }`}
+                        >
                           {account.is_system ? "System" : "Custom"}
                         </span>
                       </div>
-                      <p className="mt-3 text-sm text-slate-600">{account.account_group} · {account.normal_balance}</p>
+
+                      <p className="mt-3 text-sm text-slate-600">
+                        {account.account_group} · {account.normal_balance}
+                      </p>
+
                       <button
                         type="button"
                         onClick={() => startEditAccount(account)}
@@ -1122,20 +1266,38 @@ export default function AccountingManager() {
                 </thead>
                 <tbody>
                   {isLoading ? (
-                    <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-500">Loading accounts...</td></tr>
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                        Loading accounts...
+                      </td>
+                    </tr>
                   ) : filteredAccounts.length === 0 ? (
-                    <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-500">No accounts found.</td></tr>
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                        No accounts found.
+                      </td>
+                    </tr>
                   ) : (
                     filteredAccounts.map((account) => (
                       <tr key={account.id} className="border-b border-slate-100 transition hover:bg-blue-50">
                         <td className="px-6 py-5">
                           <p className="font-bold text-slate-900">{account.name}</p>
-                          <p className="mt-1 text-xs text-slate-500">{account.code} · {account.normal_balance}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {account.code} · {account.normal_balance}
+                          </p>
                         </td>
                         <td className="px-6 py-5 text-slate-700">{account.account_type}</td>
                         <td className="px-6 py-5 text-slate-700">{account.account_group}</td>
                         <td className="px-6 py-5">
-                          <span className={`rounded-full px-3 py-1 text-xs font-bold ${account.is_system ? "bg-slate-100 text-slate-700" : account.is_active ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-bold ${
+                              account.is_system
+                                ? "bg-slate-100 text-slate-700"
+                                : account.is_active
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-red-100 text-red-700"
+                            }`}
+                          >
                             {account.is_system ? "System" : account.is_active ? "Active" : "Inactive"}
                           </span>
                         </td>
@@ -1159,11 +1321,227 @@ export default function AccountingManager() {
         </section>
       )}
 
+      {activeTab === "locks" && (
+        <section className="grid grid-cols-1 gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+          <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
+            <h3 className="text-xl font-bold text-slate-900">Create Period Lock</h3>
+            <p className="mt-1 text-sm text-slate-600">
+              Lock finalized periods to prevent backdated transaction changes.
+            </p>
+
+            <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              After locking, transactions dated on or before the locked date cannot be created, edited, deleted or voided.
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <div>
+                <label className="mb-2 block font-semibold text-slate-800">Lock Name</label>
+                <input
+                  value={lockName}
+                  onChange={(event) => setLockName(event.target.value)}
+                  placeholder="FY 2025-26 Final Lock"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block font-semibold text-slate-800">Lock Type</label>
+                <select
+                  value={lockType}
+                  onChange={(event) => setLockType(event.target.value as LockType)}
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                >
+                  <option value="FINANCIAL_YEAR">Financial Year</option>
+                  <option value="MONTHLY">Monthly</option>
+                  <option value="CUSTOM">Custom</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block font-semibold text-slate-800">Locked Until Date</label>
+                <input
+                  type="date"
+                  value={lockedUntilDate}
+                  onChange={(event) => setLockedUntilDate(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block font-semibold text-slate-800">Reason</label>
+                <textarea
+                  value={lockReason}
+                  onChange={(event) => setLockReason(event.target.value)}
+                  rows={3}
+                  placeholder="Books finalized and reviewed"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={createPeriodLock}
+                disabled={isSavingLock || isLoading}
+                className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSavingLock ? "Saving..." : "Lock Accounting Period"}
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-lg">
+            <div className="border-b border-slate-200 p-4 sm:p-6">
+              <h3 className="text-xl font-bold text-slate-900">Period Lock History</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                Active locks protect finalized accounting periods.
+              </p>
+
+              <div
+                className={`mt-4 rounded-2xl border px-4 py-4 ${
+                  activeLockedUntilDate
+                    ? "border-amber-200 bg-amber-50 text-amber-800"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                }`}
+              >
+                <p className="font-bold">
+                  {activeLockedUntilDate ? "Period lock is active" : "No active period lock"}
+                </p>
+                <p className="mt-1 text-sm">
+                  {activeLockedUntilDate
+                    ? `Protected until ${formatDate(activeLockedUntilDate)}.`
+                    : "Transactions are currently open for all dates."}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 md:hidden">
+              {isLoading ? (
+                <p className="py-10 text-center text-sm text-slate-500">Loading period locks...</p>
+              ) : periodLocks.length === 0 ? (
+                <p className="py-10 text-center text-sm text-slate-500">No period locks created yet.</p>
+              ) : (
+                <div className="space-y-4">
+                  {periodLocks.map((lock) => (
+                    <article key={lock.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-bold text-slate-900">{lock.lock_name}</p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            {lock.lock_type} · Until {formatDate(lock.locked_until_date)}
+                          </p>
+                        </div>
+                        <span
+                          className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+                            lock.is_active ? "bg-amber-100 text-amber-700" : "bg-slate-200 text-slate-700"
+                          }`}
+                        >
+                          {lock.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </div>
+
+                      <p className="mt-3 text-sm text-slate-700">{lock.reason}</p>
+
+                      {lock.unlocked_reason && (
+                        <p className="mt-3 rounded-xl bg-white px-3 py-2 text-sm text-slate-600">
+                          Unlock reason: {lock.unlocked_reason}
+                        </p>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => unlockPeriodLock(lock)}
+                        disabled={!lock.is_active || isSavingLock}
+                        className="mt-4 w-full rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Unlock
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[920px]">
+                <thead className="bg-slate-50">
+                  <tr className="border-b border-slate-200 text-left">
+                    <th className="px-6 py-4 text-sm font-bold text-slate-700">Lock</th>
+                    <th className="px-6 py-4 text-sm font-bold text-slate-700">Locked Until</th>
+                    <th className="px-6 py-4 text-sm font-bold text-slate-700">Reason</th>
+                    <th className="px-6 py-4 text-sm font-bold text-slate-700">Status</th>
+                    <th className="px-6 py-4 text-right text-sm font-bold text-slate-700">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                        Loading period locks...
+                      </td>
+                    </tr>
+                  ) : periodLocks.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                        No period locks created yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    periodLocks.map((lock) => (
+                      <tr key={lock.id} className="border-b border-slate-100 transition hover:bg-blue-50">
+                        <td className="px-6 py-5">
+                          <p className="font-bold text-slate-900">{lock.lock_name}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {lock.lock_type} · Created {formatDate(lock.locked_at.slice(0, 10))}
+                          </p>
+                        </td>
+                        <td className="px-6 py-5 font-semibold text-slate-900">
+                          {formatDate(lock.locked_until_date)}
+                        </td>
+                        <td className="px-6 py-5 text-slate-700">
+                          <p>{lock.reason}</p>
+                          {lock.unlocked_reason && (
+                            <p className="mt-1 text-xs text-slate-500">
+                              Unlock: {lock.unlocked_reason}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-6 py-5">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-bold ${
+                              lock.is_active ? "bg-amber-100 text-amber-700" : "bg-slate-200 text-slate-700"
+                            }`}
+                          >
+                            {lock.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                        <td className="px-6 py-5 text-right">
+                          <button
+                            type="button"
+                            onClick={() => unlockPeriodLock(lock)}
+                            disabled={!lock.is_active || isSavingLock}
+                            className="rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Unlock
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      )}
+
       {activeTab === "history" && (
         <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-lg">
           <div className="border-b border-slate-200 p-4 sm:p-6">
             <h3 className="text-xl font-bold text-slate-900">Manual Voucher History</h3>
-            <p className="mt-1 text-sm text-slate-600">Manual vouchers are edited or voided, never hard-deleted.</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Manual vouchers are edited or voided, never hard-deleted.
+            </p>
+
             <input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
@@ -1193,13 +1571,21 @@ export default function AccountingManager() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate font-bold text-slate-900">{voucher.voucher_number}</p>
-                          <p className="mt-1 text-sm text-slate-500">{formatDate(voucher.voucher_date)} · {voucher.voucher_type}</p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            {formatDate(voucher.voucher_date)} · {voucher.voucher_type}
+                          </p>
                         </div>
-                        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${voucher.status === "POSTED" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"}`}>
+                        <span
+                          className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+                            voucher.status === "POSTED" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"
+                          }`}
+                        >
                           {voucher.status}
                         </span>
                       </div>
+
                       <p className="mt-3 text-sm text-slate-700">{voucher.narration || "—"}</p>
+
                       <div className="mt-4 grid grid-cols-2 gap-3">
                         <div className="rounded-xl bg-white p-3">
                           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Debit</p>
@@ -1210,6 +1596,7 @@ export default function AccountingManager() {
                           <p className="font-bold text-slate-900">{formatCurrency(totals.credit)}</p>
                         </div>
                       </div>
+
                       <div className="mt-4 flex gap-2">
                         <button
                           type="button"
@@ -1222,7 +1609,7 @@ export default function AccountingManager() {
                         <button
                           type="button"
                           onClick={() => voidVoucher(voucher)}
-                          disabled={voucher.status !== "POSTED" || isSavingVoucher}
+                          disabled={voucher.status !== "POSTED"}
                           className="flex-1 rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Void
@@ -1249,9 +1636,17 @@ export default function AccountingManager() {
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-500">Loading vouchers...</td></tr>
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                      Loading vouchers...
+                    </td>
+                  </tr>
                 ) : filteredVouchers.length === 0 ? (
-                  <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-500">No manual vouchers found.</td></tr>
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                      No manual vouchers found.
+                    </td>
+                  </tr>
                 ) : (
                   filteredVouchers.map((voucher) => {
                     const totals = voucher.entries.reduce(
@@ -1266,13 +1661,23 @@ export default function AccountingManager() {
                       <tr key={voucher.id} className="border-b border-slate-100 transition hover:bg-blue-50">
                         <td className="px-6 py-5">
                           <p className="font-bold text-slate-900">{voucher.voucher_number}</p>
-                          <p className="mt-1 text-xs text-slate-500">{formatDate(voucher.voucher_date)} · {voucher.voucher_type}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {formatDate(voucher.voucher_date)} · {voucher.voucher_type}
+                          </p>
                         </td>
                         <td className="px-6 py-5 text-slate-700">{voucher.narration || "—"}</td>
-                        <td className="px-6 py-5 text-right font-semibold text-slate-900">{formatCurrency(totals.debit)}</td>
-                        <td className="px-6 py-5 text-right font-semibold text-slate-900">{formatCurrency(totals.credit)}</td>
+                        <td className="px-6 py-5 text-right font-semibold text-slate-900">
+                          {formatCurrency(totals.debit)}
+                        </td>
+                        <td className="px-6 py-5 text-right font-semibold text-slate-900">
+                          {formatCurrency(totals.credit)}
+                        </td>
                         <td className="px-6 py-5">
-                          <span className={`rounded-full px-3 py-1 text-xs font-bold ${voucher.status === "POSTED" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"}`}>
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-bold ${
+                              voucher.status === "POSTED" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"
+                            }`}
+                          >
                             {voucher.status}
                           </span>
                         </td>
@@ -1289,7 +1694,7 @@ export default function AccountingManager() {
                             <button
                               type="button"
                               onClick={() => voidVoucher(voucher)}
-                              disabled={voucher.status !== "POSTED" || isSavingVoucher}
+                              disabled={voucher.status !== "POSTED"}
                               className="rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Void
@@ -1302,25 +1707,6 @@ export default function AccountingManager() {
                 )}
               </tbody>
             </table>
-          </div>
-        </section>
-      )}
-
-      {activeTab === "vouchers" && (
-        <section className="rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
-          <h3 className="text-lg font-bold text-slate-900">Available Posting Accounts</h3>
-          <p className="mt-1 text-sm text-slate-600">
-            {voucherType === "Contra"
-              ? "Only Cash in Hand and Bank Account are available for Contra vouchers."
-              : "Protected operational accounts are hidden from manual posting."}
-          </p>
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {postingAccounts.map((account) => (
-              <div key={account.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="font-bold text-slate-900">{account.name}</p>
-                <p className="mt-1 text-sm text-slate-500">{account.code} · {account.account_type}</p>
-              </div>
-            ))}
           </div>
         </section>
       )}

@@ -22,6 +22,7 @@ type ProductRow = {
   name: string;
   quantity: number | string | null;
   purchase_price: number | string | null;
+  inventory_value: number | string | null;
   low_stock_alert: number | string | null;
 };
 
@@ -74,6 +75,20 @@ type ProfileRow = {
   active_company_id: string | null;
 };
 
+type ProfitLossSummaryRow = {
+  total_income: number | string | null;
+  total_expense: number | string | null;
+  net_profit: number | string | null;
+};
+
+type ProfitLossAccountRow = {
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  account_type: "Income" | "Expense";
+  amount: number | string | null;
+};
+
 type Transaction = {
   id: string;
   targetId: string;
@@ -89,7 +104,7 @@ type DashboardData = {
   monthlyRevenue: number;
   monthlyPurchase: number;
   monthlyExpenses: number;
-  monthlyEstimatedCost: number;
+  monthlyCogs: number;
   monthlyNetProfit: number;
   stockValue: number;
   lowStockCount: number;
@@ -101,7 +116,7 @@ const initialDashboardData: DashboardData = {
   monthlyRevenue: 0,
   monthlyPurchase: 0,
   monthlyExpenses: 0,
-  monthlyEstimatedCost: 0,
+  monthlyCogs: 0,
   monthlyNetProfit: 0,
   stockValue: 0,
   lowStockCount: 0,
@@ -139,6 +154,32 @@ function isCurrentMonth(dateValue: string) {
   return (
     date.getMonth() === today.getMonth() &&
     date.getFullYear() === today.getFullYear()
+  );
+}
+
+function formatDateForQuery(date: Date) {
+  const timezoneSafeDate = new Date(
+    date.getTime() - date.getTimezoneOffset() * 60000
+  );
+
+  return timezoneSafeDate.toISOString().slice(0, 10);
+}
+
+function getCurrentMonthRange() {
+  const today = new Date();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+  return {
+    monthStartDate: formatDateForQuery(monthStart),
+    monthEndDate: formatDateForQuery(monthEnd),
+  };
+}
+
+function isCostOfGoodsSoldAccount(account: ProfitLossAccountRow) {
+  return (
+    account.account_code === "5000" ||
+    account.account_name.trim().toLowerCase() === "cost of goods sold"
   );
 }
 
@@ -218,15 +259,19 @@ export default function DashboardOverview() {
         return;
       }
 
+      const { monthStartDate, monthEndDate } = getCurrentMonthRange();
+
       const [
         productsResponse,
         salesResponse,
         purchasesResponse,
         expensesResponse,
+        profitLossSummaryResponse,
+        profitLossAccountsResponse,
       ] = await Promise.all([
         supabase
           .from("products")
-          .select("id, name, quantity, purchase_price, low_stock_alert")
+          .select("id, name, quantity, purchase_price, inventory_value, low_stock_alert")
           .eq("company_id", activeCompanyId),
         supabase
           .from("sales")
@@ -276,6 +321,16 @@ export default function DashboardOverview() {
             "id, expense_date, category, amount, payment_mode, description, created_at"
           )
           .eq("company_id", activeCompanyId),
+        supabase.rpc("get_profit_loss_summary", {
+          p_company_id: activeCompanyId,
+          p_from_date: monthStartDate,
+          p_to_date: monthEndDate,
+        }),
+        supabase.rpc("get_profit_loss_accounts", {
+          p_company_id: activeCompanyId,
+          p_from_date: monthStartDate,
+          p_to_date: monthEndDate,
+        }),
       ]);
 
       if (productsResponse.error) {
@@ -294,58 +349,48 @@ export default function DashboardOverview() {
         throw expensesResponse.error;
       }
 
+      if (profitLossSummaryResponse.error) {
+        throw profitLossSummaryResponse.error;
+      }
+
+      if (profitLossAccountsResponse.error) {
+        throw profitLossAccountsResponse.error;
+      }
+
       const products = (productsResponse.data || []) as ProductRow[];
       const sales = (salesResponse.data || []) as unknown as SaleRow[];
       const purchases =
         (purchasesResponse.data || []) as unknown as PurchaseRow[];
       const expenses = (expensesResponse.data || []) as ExpenseRow[];
 
-      const productCostById = new Map<string, number>();
+      const profitLossSummary = (
+        (profitLossSummaryResponse.data || []) as ProfitLossSummaryRow[]
+      )[0];
 
-      products.forEach((product) => {
-        productCostById.set(product.id, toNumber(product.purchase_price));
-      });
+      const profitLossAccounts =
+        (profitLossAccountsResponse.data || []) as ProfitLossAccountRow[];
 
-      const currentMonthSales = sales.filter((sale) =>
-        isCurrentMonth(sale.invoice_date)
+      const monthlyRevenue = toNumber(profitLossSummary?.total_income);
+
+      const monthlyCogs = profitLossAccounts
+        .filter(
+          (account) =>
+            account.account_type === "Expense" &&
+            isCostOfGoodsSoldAccount(account)
+        )
+        .reduce((total, account) => total + toNumber(account.amount), 0);
+
+      const monthlyAccountingExpenses = toNumber(
+        profitLossSummary?.total_expense
+      );
+
+      const monthlyExpenses = Math.max(
+        0,
+        monthlyAccountingExpenses - monthlyCogs
       );
 
       const currentMonthPurchases = purchases.filter((purchase) =>
         isCurrentMonth(purchase.purchase_date)
-      );
-
-      const currentMonthExpenses = expenses.filter((expense) =>
-        isCurrentMonth(expense.expense_date)
-      );
-
-      const monthlyRevenue = currentMonthSales.reduce(
-        (total, sale) =>
-          total +
-          Math.max(
-            0,
-            toNumber(sale.subtotal) - toNumber(sale.discount_total)
-          ),
-        0
-      );
-
-      const monthlyEstimatedCost = currentMonthSales.reduce(
-        (salesTotal, sale) => {
-          const invoiceProductCost = (sale.sale_items || []).reduce(
-            (itemsTotal, item) => {
-              const unitPurchasePrice =
-                productCostById.get(item.product_id || "") || 0;
-
-              return (
-                itemsTotal +
-                toNumber(item.quantity) * unitPurchasePrice
-              );
-            },
-            0
-          );
-
-          return salesTotal + invoiceProductCost;
-        },
-        0
       );
 
       const monthlyPurchase = currentMonthPurchases.reduce(
@@ -353,15 +398,8 @@ export default function DashboardOverview() {
         0
       );
 
-      const monthlyExpenses = currentMonthExpenses.reduce(
-        (total, expense) => total + toNumber(expense.amount),
-        0
-      );
-
       const stockValue = products.reduce(
-        (total, product) =>
-          total +
-          toNumber(product.quantity) * toNumber(product.purchase_price),
+        (total, product) => total + toNumber(product.inventory_value),
         0
       );
 
@@ -431,9 +469,8 @@ export default function DashboardOverview() {
         monthlyRevenue,
         monthlyPurchase,
         monthlyExpenses,
-        monthlyEstimatedCost,
-        monthlyNetProfit:
-          monthlyRevenue - monthlyEstimatedCost - monthlyExpenses,
+        monthlyCogs,
+        monthlyNetProfit: toNumber(profitLossSummary?.net_profit),
         stockValue,
         lowStockCount,
         recentTransactions,
@@ -506,7 +543,7 @@ export default function DashboardOverview() {
               </h2>
 
               <p className="mt-3 max-w-xl leading-7 text-slate-600">
-                Track revenue, operating expenses, inventory and estimated
+                Track revenue, operating expenses, inventory and accounting
                 monthly net profit from one clean workspace.
               </p>
             </div>
@@ -541,12 +578,12 @@ export default function DashboardOverview() {
               </Link>
 
               <Link
-                href="/reports/profit"
+                href="/reports"
                 className="min-w-0 rounded-2xl border border-emerald-200 bg-white/90 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md"
               >
                 <div className="flex items-center gap-2 text-slate-900">
                   <TrendingUp className="h-4 w-4 text-emerald-600" />
-                  <span className="text-sm font-semibold">View P&amp;L</span>
+                  <span className="text-sm font-semibold">View Reports</span>
                 </div>
 
                 <p className="mt-2 text-xs text-slate-500">
@@ -579,7 +616,7 @@ export default function DashboardOverview() {
 
             <div className="rounded-2xl border border-white bg-white/70 px-4 py-4 shadow-sm">
               <p className="text-sm font-medium text-slate-500">
-                Estimated Net Profit
+                Accounting Net Profit
               </p>
 
               <p
@@ -618,7 +655,7 @@ export default function DashboardOverview() {
           </p>
 
           <p className="mt-3 text-sm text-slate-500">
-            Revenue excluding GST from saved invoices.
+            Revenue from posted accounting vouchers.
           </p>
         </div>
 
@@ -669,7 +706,7 @@ export default function DashboardOverview() {
                 color: netProfitIsPositive ? "#047857" : "#b91c1c",
               }}
             >
-              Estimated
+              Accounting
             </span>
           </div>
 
@@ -687,7 +724,7 @@ export default function DashboardOverview() {
           </p>
 
           <p className="mt-3 text-sm text-slate-500">
-            Revenue minus product cost and operating expenses.
+            Revenue minus COGS and accounting expenses.
           </p>
         </div>
 
@@ -926,7 +963,7 @@ export default function DashboardOverview() {
               </p>
 
               <h2 className="mt-2 text-2xl font-bold text-slate-900">
-                Monthly Summary
+                Accounting Summary
               </h2>
             </div>
 
@@ -954,12 +991,12 @@ export default function DashboardOverview() {
 
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <span className="text-sm font-medium text-slate-600">
-                Estimated Product Cost
+                Cost of Goods Sold
               </span>
 
               <span className="font-bold text-purple-700">
                 {loadingValue(
-                  formatCurrency(dashboardData.monthlyEstimatedCost)
+                  formatCurrency(dashboardData.monthlyCogs)
                 )}
               </span>
             </div>
@@ -976,7 +1013,7 @@ export default function DashboardOverview() {
 
             <div className="rounded-2xl bg-slate-900 p-5 text-white">
               <p className="text-sm font-medium text-slate-300">
-                Estimated Net Profit
+                Accounting Net Profit
               </p>
 
               <p
@@ -991,7 +1028,7 @@ export default function DashboardOverview() {
               </p>
 
               <p className="mt-2 text-xs leading-5 text-slate-400">
-                Based on current product purchase prices and saved expenses.
+                Based on posted accounting vouchers and COGS snapshots.
               </p>
             </div>
           </div>
@@ -1018,16 +1055,16 @@ export default function DashboardOverview() {
               className="mt-2 text-sm leading-6"
               style={{ color: "#1d4ed8" }}
             >
-              Current stock value based on available quantity and purchase
-              prices.
+              Current stock value based on weighted-average inventory
+              value.
             </p>
           </div>
 
           <Link
-            href="/reports/profit"
+            href="/reports"
             className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 px-5 py-3 font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 sm:mt-6"
           >
-            Open Profit &amp; Loss Report
+            Open Accounting Reports
             <ArrowUpRight className="h-4 w-4" />
           </Link>
         </aside>
