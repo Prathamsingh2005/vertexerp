@@ -16,21 +16,26 @@ function redirectWithSessionCookies(
 
 export async function proxy(request: NextRequest) {
   const { response, user } = await updateSession(request);
-  const { pathname } = request.nextUrl;
+  const { pathname, search } = request.nextUrl;
 
   const isAuthRoute =
     pathname === "/auth" || pathname.startsWith("/auth/");
 
-  if (!user && !isAuthRoute) {
-    return redirectWithSessionCookies(
-      new URL("/auth", request.url),
-      response
-    );
+  const isPublicRoute = pathname === "/" || isAuthRoute;
+
+  if (!user && !isPublicRoute) {
+    const authUrl = new URL("/auth", request.url);
+    authUrl.searchParams.set("next", `${pathname}${search}`);
+
+    return redirectWithSessionCookies(authUrl, response);
   }
 
-  if (user && pathname === "/auth") {
+  if (
+    user &&
+    (pathname === "/" || pathname === "/auth")
+  ) {
     return redirectWithSessionCookies(
-      new URL("/", request.url),
+      new URL("/dashboard", request.url),
       response
     );
   }

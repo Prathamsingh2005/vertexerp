@@ -29,7 +29,7 @@ type NavigationItem = {
 };
 
 const navigationItems: NavigationItem[] = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/company", label: "Companies", icon: Building2 },
   { href: "/ledger", label: "Ledgers", icon: BookOpenText },
   { href: "/inventory", label: "Inventory", icon: Boxes },
@@ -142,7 +142,11 @@ function NavLinks({ pathname, onNavigate }: NavLinksProps) {
 
 function Brand({ onClick }: { onClick?: () => void }) {
   return (
-    <Link href="/" onClick={onClick} className="flex items-center gap-3">
+    <Link
+  href="/dashboard"
+  onClick={onClick}
+  className="flex items-center gap-3"
+>
       <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-xl font-black text-white shadow-lg shadow-blue-950/50">
         V
       </div>
