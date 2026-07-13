@@ -1,15 +1,25 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { createClient } from "@/lib/supabase/client";
 
 type CompanyForm = {
   name: string;
+  legalName: string;
+  tradeName: string;
   gstNumber: string;
   panNumber: string;
   email: string;
   phone: string;
   city: string;
+  state: string;
+  stateCode: string;
   address: string;
 };
 
@@ -21,41 +31,123 @@ type Company = CompanyForm & {
 type CompanyRow = {
   id: string;
   name: string;
+  legal_name: string | null;
+  trade_name: string | null;
   gst_number: string | null;
   pan_number: string | null;
   email: string | null;
   phone: string | null;
   city: string | null;
+  state: string | null;
+  state_code: string | null;
   address: string | null;
   created_at: string;
+};
+
+type GstReadiness = {
+  company_state_ready: boolean;
+  ledgers_missing_state_code: number | string | null;
+  products_missing_hsn_sac: number | string | null;
+  sales_unclassified: number | string | null;
+  purchases_unclassified: number | string | null;
+  credit_notes_unclassified: number | string | null;
+  debit_notes_unclassified: number | string | null;
 };
 
 type CompanyManagerProps = {
   searchQuery?: string;
 };
 
+const INDIA_STATES = [
+  { code: "01", name: "Jammu and Kashmir" },
+  { code: "02", name: "Himachal Pradesh" },
+  { code: "03", name: "Punjab" },
+  { code: "04", name: "Chandigarh" },
+  { code: "05", name: "Uttarakhand" },
+  { code: "06", name: "Haryana" },
+  { code: "07", name: "Delhi" },
+  { code: "08", name: "Rajasthan" },
+  { code: "09", name: "Uttar Pradesh" },
+  { code: "10", name: "Bihar" },
+  { code: "11", name: "Sikkim" },
+  { code: "12", name: "Arunachal Pradesh" },
+  { code: "13", name: "Nagaland" },
+  { code: "14", name: "Manipur" },
+  { code: "15", name: "Mizoram" },
+  { code: "16", name: "Tripura" },
+  { code: "17", name: "Meghalaya" },
+  { code: "18", name: "Assam" },
+  { code: "19", name: "West Bengal" },
+  { code: "20", name: "Jharkhand" },
+  { code: "21", name: "Odisha" },
+  { code: "22", name: "Chhattisgarh" },
+  { code: "23", name: "Madhya Pradesh" },
+  { code: "24", name: "Gujarat" },
+  {
+    code: "26",
+    name: "Dadra and Nagar Haveli and Daman and Diu",
+  },
+  { code: "27", name: "Maharashtra" },
+  { code: "29", name: "Karnataka" },
+  { code: "30", name: "Goa" },
+  { code: "31", name: "Lakshadweep" },
+  { code: "32", name: "Kerala" },
+  { code: "33", name: "Tamil Nadu" },
+  { code: "34", name: "Puducherry" },
+  { code: "35", name: "Andaman and Nicobar Islands" },
+  { code: "36", name: "Telangana" },
+  { code: "37", name: "Andhra Pradesh" },
+  { code: "38", name: "Ladakh" },
+] as const;
+
 const EMPTY_FORM: CompanyForm = {
   name: "",
+  legalName: "",
+  tradeName: "",
   gstNumber: "",
   panNumber: "",
   email: "",
   phone: "",
   city: "",
+  state: "",
+  stateCode: "",
   address: "",
 };
+
+const COMPANY_SELECT =
+  "id, name, legal_name, trade_name, gst_number, pan_number, email, phone, city, state, state_code, address, created_at";
+
+function toNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 function mapCompany(row: CompanyRow): Company {
   return {
     id: row.id,
     name: row.name ?? "",
+    legalName: row.legal_name ?? "",
+    tradeName: row.trade_name ?? "",
     gstNumber: row.gst_number ?? "",
     panNumber: row.pan_number ?? "",
     email: row.email ?? "",
     phone: row.phone ?? "",
     city: row.city ?? "",
+    state: row.state ?? "",
+    stateCode: row.state_code ?? "",
     address: row.address ?? "",
     createdAt: row.created_at,
   };
+}
+
+function isValidGstin(value: string) {
+  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(
+    value
+  );
+}
+
+function isValidPan(value: string) {
+  return /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(value);
 }
 
 export default function CompanyManager({
@@ -64,6 +156,12 @@ export default function CompanyManager({
   const [companies, setCompanies] = useState<Company[]>([]);
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [form, setForm] = useState<CompanyForm>(EMPTY_FORM);
+  const [editingCompanyId, setEditingCompanyId] = useState<string | null>(
+    null
+  );
+  const [gstReadiness, setGstReadiness] = useState<GstReadiness | null>(
+    null
+  );
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -71,12 +169,17 @@ export default function CompanyManager({
 
   function showMessage(text: string) {
     setMessage(text);
-    window.setTimeout(() => setMessage(""), 4000);
+    window.setTimeout(() => setMessage(""), 4500);
   }
 
   function notifyCompanyChange() {
     window.dispatchEvent(new Event("smarterp-companies-updated"));
     window.dispatchEvent(new Event("vertexerp-active-company-updated"));
+  }
+
+  function resetForm() {
+    setForm(EMPTY_FORM);
+    setEditingCompanyId(null);
   }
 
   async function getSignedInUser() {
@@ -93,6 +196,33 @@ export default function CompanyManager({
     return { supabase, user };
   }
 
+  async function loadGstReadiness(companyId: string | null) {
+    if (!companyId) {
+      setGstReadiness(null);
+      return;
+    }
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc(
+        "get_gst_data_readiness",
+        {
+          p_company_id: companyId,
+        }
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      setGstReadiness(
+        ((data || [])[0] as GstReadiness | undefined) || null
+      );
+    } catch {
+      setGstReadiness(null);
+    }
+  }
+
   async function loadCompanies() {
     setIsLoading(true);
 
@@ -102,9 +232,7 @@ export default function CompanyManager({
       const [companyResponse, profileResponse] = await Promise.all([
         supabase
           .from("companies")
-          .select(
-            "id, name, gst_number, pan_number, email, phone, city, address, created_at"
-          )
+          .select(COMPANY_SELECT)
           .eq("owner_id", user.id)
           .order("created_at", { ascending: false }),
         supabase
@@ -122,13 +250,35 @@ export default function CompanyManager({
         throw profileResponse.error;
       }
 
-      setCompanies((companyResponse.data ?? []).map(mapCompany));
-      setActiveCompanyId(profileResponse.data?.active_company_id ?? null);
+      const loadedCompanies = (
+        (companyResponse.data || []) as CompanyRow[]
+      ).map(mapCompany);
+
+      const companyIds = new Set(
+        loadedCompanies.map((company) => company.id)
+      );
+
+      const profileActiveCompanyId =
+        profileResponse.data?.active_company_id || null;
+
+      const nextActiveCompanyId =
+        profileActiveCompanyId &&
+        companyIds.has(profileActiveCompanyId)
+          ? profileActiveCompanyId
+          : null;
+
+      setCompanies(loadedCompanies);
+      setActiveCompanyId(nextActiveCompanyId);
+
+      await loadGstReadiness(nextActiveCompanyId);
     } catch (error) {
       setCompanies([]);
       setActiveCompanyId(null);
+      setGstReadiness(null);
       showMessage(
-        error instanceof Error ? error.message : "Companies could not be loaded."
+        error instanceof Error
+          ? error.message
+          : "Companies could not be loaded."
       );
     } finally {
       setIsLoading(false);
@@ -140,7 +290,10 @@ export default function CompanyManager({
   }, []);
 
   const activeCompany = useMemo(
-    () => companies.find((company) => company.id === activeCompanyId) ?? null,
+    () =>
+      companies.find(
+        (company) => company.id === activeCompanyId
+      ) ?? null,
     [companies, activeCompanyId]
   );
 
@@ -154,17 +307,36 @@ export default function CompanyManager({
     return companies.filter((company) =>
       [
         company.name,
+        company.legalName,
+        company.tradeName,
         company.gstNumber,
         company.panNumber,
         company.email,
         company.phone,
         company.city,
+        company.state,
+        company.stateCode,
       ]
         .join(" ")
         .toLowerCase()
         .includes(query)
     );
   }, [companies, searchQuery]);
+
+  const gstPendingCount = useMemo(() => {
+    if (!gstReadiness) {
+      return 0;
+    }
+
+    return (
+      toNumber(gstReadiness.ledgers_missing_state_code) +
+      toNumber(gstReadiness.products_missing_hsn_sac) +
+      toNumber(gstReadiness.sales_unclassified) +
+      toNumber(gstReadiness.purchases_unclassified) +
+      toNumber(gstReadiness.credit_notes_unclassified) +
+      toNumber(gstReadiness.debit_notes_unclassified)
+    );
+  }, [gstReadiness]);
 
   async function setActiveCompany(companyId: string | null) {
     const { supabase, user } = await getSignedInUser();
@@ -179,18 +351,90 @@ export default function CompanyManager({
     }
 
     setActiveCompanyId(companyId);
+    await loadGstReadiness(companyId);
     notifyCompanyChange();
+  }
+
+  function handleStateChange(stateCode: string) {
+    const selectedState = INDIA_STATES.find(
+      (state) => state.code === stateCode
+    );
+
+    setForm((current) => ({
+      ...current,
+      state: selectedState?.name || "",
+      stateCode: selectedState?.code || "",
+    }));
+  }
+
+  function handleGstNumberChange(value: string) {
+    const gstNumber = value.toUpperCase().replace(/\s+/g, "");
+    const possibleStateCode = gstNumber.slice(0, 2);
+
+    const matchingState = INDIA_STATES.find(
+      (state) => state.code === possibleStateCode
+    );
+
+    setForm((current) => ({
+      ...current,
+      gstNumber,
+      state:
+        !current.stateCode && matchingState
+          ? matchingState.name
+          : current.state,
+      stateCode:
+        !current.stateCode && matchingState
+          ? matchingState.code
+          : current.stateCode,
+    }));
+  }
+
+  function validateForm() {
+    if (!form.name.trim()) {
+      return "Please enter a company name.";
+    }
+
+    if (!form.stateCode || !form.state) {
+      return "Please select the company state.";
+    }
+
+    if (!/^[0-9]{2}$/.test(form.stateCode)) {
+      return "Company State Code must contain exactly 2 digits.";
+    }
+
+    const gstNumber = form.gstNumber.trim().toUpperCase();
+
+    if (gstNumber && !isValidGstin(gstNumber)) {
+      return "Please enter a valid 15-character GSTIN.";
+    }
+
+    if (
+      gstNumber &&
+      gstNumber.slice(0, 2) !== form.stateCode
+    ) {
+      return "GSTIN State Code must match the selected company state.";
+    }
+
+    const panNumber = form.panNumber.trim().toUpperCase();
+
+    if (panNumber && !isValidPan(panNumber)) {
+      return "Please enter a valid 10-character PAN Number.";
+    }
+
+    return null;
   }
 
   async function saveCompany(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!form.name.trim()) {
-      showMessage("Please enter a company name.");
+    const validationMessage = validateForm();
+
+    if (validationMessage) {
+      showMessage(validationMessage);
       return;
     }
 
-    if (companies.length >= 5) {
+    if (!editingCompanyId && companies.length >= 5) {
       showMessage("You can create a maximum of 5 companies.");
       return;
     }
@@ -200,52 +444,138 @@ export default function CompanyManager({
     try {
       const { supabase, user } = await getSignedInUser();
 
-      const { data, error } = await supabase
-        .from("companies")
-        .insert({
-          owner_id: user.id,
-          name: form.name.trim(),
-          gst_number: form.gstNumber.trim().toUpperCase() || null,
-          pan_number: form.panNumber.trim().toUpperCase() || null,
-          email: form.email.trim() || null,
-          phone: form.phone.trim() || null,
-          city: form.city.trim() || null,
-          address: form.address.trim() || null,
-        })
-        .select(
-          "id, name, gst_number, pan_number, email, phone, city, address, created_at"
-        )
-        .single();
+      const payload = {
+        name: form.name.trim(),
+        legal_name:
+          form.legalName.trim() || form.name.trim(),
+        trade_name:
+          form.tradeName.trim() || form.name.trim(),
+        gst_number:
+          form.gstNumber.trim().toUpperCase() || null,
+        pan_number:
+          form.panNumber.trim().toUpperCase() || null,
+        email: form.email.trim() || null,
+        phone: form.phone.trim() || null,
+        city: form.city.trim() || null,
+        state: form.state,
+        state_code: form.stateCode,
+        address: form.address.trim() || null,
+      };
 
-      if (error) {
-        throw error;
+      let savedRow: CompanyRow;
+
+      if (editingCompanyId) {
+        const { data, error } = await supabase
+          .from("companies")
+          .update(payload)
+          .eq("id", editingCompanyId)
+          .eq("owner_id", user.id)
+          .select(COMPANY_SELECT)
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        savedRow = data as CompanyRow;
+      } else {
+        const { data, error } = await supabase
+          .from("companies")
+          .insert({
+            owner_id: user.id,
+            ...payload,
+          })
+          .select(COMPANY_SELECT)
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        savedRow = data as CompanyRow;
       }
 
-      const savedCompany = mapCompany(data);
-      setCompanies((current) => [savedCompany, ...current]);
-      setForm(EMPTY_FORM);
+      const savedCompany = mapCompany(savedRow);
+
+      if (editingCompanyId) {
+        setCompanies((current) =>
+          current.map((company) =>
+            company.id === savedCompany.id
+              ? savedCompany
+              : company
+          )
+        );
+      } else {
+        setCompanies((current) => [
+          savedCompany,
+          ...current,
+        ]);
+      }
+
+      const wasEditing = Boolean(editingCompanyId);
+      resetForm();
 
       if (!activeCompanyId) {
         await setActiveCompany(savedCompany.id);
         showMessage(
           `Company saved. ${savedCompany.name} is now your active company.`
         );
-      } else {
-        notifyCompanyChange();
-        showMessage("Company saved to the cloud successfully.");
+        return;
       }
+
+      if (savedCompany.id === activeCompanyId) {
+        await loadGstReadiness(activeCompanyId);
+      }
+
+      notifyCompanyChange();
+      showMessage(
+        wasEditing
+          ? "Company and GST details updated successfully."
+          : "Company saved to the cloud successfully."
+      );
     } catch (error) {
       showMessage(
-        error instanceof Error ? error.message : "Company could not be saved."
+        error instanceof Error
+          ? error.message
+          : "Company could not be saved."
       );
     } finally {
       setIsSaving(false);
     }
   }
 
+  function startEditCompany(company: Company) {
+    setEditingCompanyId(company.id);
+    setForm({
+      name: company.name,
+      legalName: company.legalName,
+      tradeName: company.tradeName,
+      gstNumber: company.gstNumber,
+      panNumber: company.panNumber,
+      email: company.email,
+      phone: company.phone,
+      city: company.city,
+      state: company.state,
+      stateCode: company.stateCode,
+      address: company.address,
+    });
+    setMessage("");
+
+    window.setTimeout(() => {
+      document
+        .getElementById("company-form")
+        ?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+    }, 50);
+  }
+
   async function handleSetActive(company: Company) {
     if (company.id === activeCompanyId) {
-      showMessage(`${company.name} is already the active company.`);
+      showMessage(
+        `${company.name} is already the active company.`
+      );
       return;
     }
 
@@ -253,7 +583,9 @@ export default function CompanyManager({
 
     try {
       await setActiveCompany(company.id);
-      showMessage(`${company.name} is now the active company.`);
+      showMessage(
+        `${company.name} is now the active company.`
+      );
     } catch (error) {
       showMessage(
         error instanceof Error
@@ -286,11 +618,20 @@ export default function CompanyManager({
         throw error;
       }
 
-      const remainingCompanies = companies.filter((item) => item.id !== company.id);
+      const remainingCompanies = companies.filter(
+        (item) => item.id !== company.id
+      );
+
       setCompanies(remainingCompanies);
 
+      if (editingCompanyId === company.id) {
+        resetForm();
+      }
+
       if (company.id === activeCompanyId) {
-        await setActiveCompany(remainingCompanies[0]?.id ?? null);
+        await setActiveCompany(
+          remainingCompanies[0]?.id ?? null
+        );
       } else {
         notifyCompanyChange();
       }
@@ -298,7 +639,9 @@ export default function CompanyManager({
       showMessage("Company deleted successfully.");
     } catch (error) {
       showMessage(
-        error instanceof Error ? error.message : "Company could not be deleted."
+        error instanceof Error
+          ? error.message
+          : "Company could not be deleted."
       );
     }
   }
@@ -306,17 +649,134 @@ export default function CompanyManager({
   return (
     <>
       <section className="mt-6 rounded-3xl border border-blue-100 bg-blue-50 p-4 sm:mt-8 sm:p-5">
-        <p className="text-sm font-bold text-blue-800">Active Company</p>
-        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="break-words text-lg font-bold text-slate-900 sm:text-xl">
-            {isLoading
-              ? "Loading active company..."
-              : activeCompany?.name || "No active company selected"}
-          </p>
-          <span className="w-fit rounded-full bg-white px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
-            {activeCompany ? "Ready for transactions" : "Select a company below"}
-          </span>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="text-sm font-bold text-blue-800">
+              Active Company
+            </p>
+
+            <p className="mt-2 break-words text-lg font-bold text-slate-900 sm:text-xl">
+              {isLoading
+                ? "Loading active company..."
+                : activeCompany?.name ||
+                  "No active company selected"}
+            </p>
+
+            {activeCompany && (
+              <p className="mt-1 text-sm text-slate-600">
+                {activeCompany.state || "State not configured"}
+                {activeCompany.stateCode
+                  ? ` · State Code ${activeCompany.stateCode}`
+                  : ""}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <span className="w-fit rounded-full bg-white px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
+              {activeCompany
+                ? "Ready for transactions"
+                : "Select a company below"}
+            </span>
+
+            {activeCompany && gstReadiness && (
+              <span
+                className={`w-fit rounded-full px-3 py-1.5 text-xs font-bold shadow-sm ${
+                  gstReadiness.company_state_ready &&
+                  gstPendingCount === 0
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                {gstReadiness.company_state_ready &&
+                gstPendingCount === 0
+                  ? "GST Data Ready"
+                  : `${gstPendingCount} GST Records Pending`}
+              </span>
+            )}
+          </div>
         </div>
+
+        {activeCompany && gstReadiness && (
+          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <ReadinessCard
+              label="Company State"
+              value={
+                gstReadiness.company_state_ready ? "Ready" : "Missing"
+              }
+              ready={gstReadiness.company_state_ready}
+            />
+            <ReadinessCard
+              label="Party States"
+              value={String(
+                toNumber(
+                  gstReadiness.ledgers_missing_state_code
+                )
+              )}
+              ready={
+                toNumber(
+                  gstReadiness.ledgers_missing_state_code
+                ) === 0
+              }
+            />
+            <ReadinessCard
+              label="Product HSN/SAC"
+              value={String(
+                toNumber(
+                  gstReadiness.products_missing_hsn_sac
+                )
+              )}
+              ready={
+                toNumber(
+                  gstReadiness.products_missing_hsn_sac
+                ) === 0
+              }
+            />
+            <ReadinessCard
+              label="Sales Pending"
+              value={String(
+                toNumber(gstReadiness.sales_unclassified)
+              )}
+              ready={
+                toNumber(gstReadiness.sales_unclassified) ===
+                0
+              }
+            />
+            <ReadinessCard
+              label="Purchase Pending"
+              value={String(
+                toNumber(
+                  gstReadiness.purchases_unclassified
+                )
+              )}
+              ready={
+                toNumber(
+                  gstReadiness.purchases_unclassified
+                ) === 0
+              }
+            />
+            <ReadinessCard
+              label="Returns Pending"
+              value={String(
+                toNumber(
+                  gstReadiness.credit_notes_unclassified
+                ) +
+                  toNumber(
+                    gstReadiness.debit_notes_unclassified
+                  )
+              )}
+              ready={
+                toNumber(
+                  gstReadiness.credit_notes_unclassified
+                ) +
+                  toNumber(
+                    gstReadiness.debit_notes_unclassified
+                  ) ===
+                0
+              }
+            />
+          </div>
+        )}
       </section>
 
       <form
@@ -326,13 +786,22 @@ export default function CompanyManager({
       >
         <div className="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-6 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">Add New Company</h2>
+            <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+              {editingCompanyId
+                ? "Edit Company & GST Setup"
+                : "Add New Company"}
+            </h2>
+
             <p className="mt-1 text-sm text-slate-600 sm:text-base">
-              Save company details securely to your VertexERP account.
+              Save legal identity, registered state and company
+              contact details securely.
             </p>
           </div>
+
           <div className="w-fit rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
-            Cloud Database
+            {editingCompanyId
+              ? "Updating Cloud Record"
+              : "Cloud Database"}
           </div>
         </div>
 
@@ -342,54 +811,139 @@ export default function CompanyManager({
           </div>
         )}
 
+        <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          Company State is required for automatic CGST/SGST or
+          IGST classification. GSTIN is optional, but when entered,
+          its first two digits must match the selected State Code.
+        </div>
+
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
           <Field
             label="Company Name *"
             value={form.name}
-            placeholder="Enter company name"
-            onChange={(value) => setForm({ ...form, name: value })}
+            placeholder="Vertex Traders"
+            onChange={(value) =>
+              setForm((current) => ({
+                ...current,
+                name: value,
+              }))
+            }
           />
+
+          <Field
+            label="Legal Name"
+            value={form.legalName}
+            placeholder="Name registered with GST/PAN"
+            onChange={(value) =>
+              setForm((current) => ({
+                ...current,
+                legalName: value,
+              }))
+            }
+          />
+
+          <Field
+            label="Trade Name"
+            value={form.tradeName}
+            placeholder="Customer-facing business name"
+            onChange={(value) =>
+              setForm((current) => ({
+                ...current,
+                tradeName: value,
+              }))
+            }
+          />
+
           <Field
             label="GST Number"
             value={form.gstNumber}
             placeholder="Example: 09ABCDE1234F1Z5"
-            onChange={(value) => setForm({ ...form, gstNumber: value })}
+            maxLength={15}
+            onChange={handleGstNumberChange}
           />
+
           <Field
             label="PAN Number"
             value={form.panNumber}
             placeholder="Example: ABCDE1234F"
-            onChange={(value) => setForm({ ...form, panNumber: value })}
+            maxLength={10}
+            onChange={(value) =>
+              setForm((current) => ({
+                ...current,
+                panNumber: value
+                  .toUpperCase()
+                  .replace(/\s+/g, ""),
+              }))
+            }
           />
+
+          <StateField
+            value={form.stateCode}
+            onChange={handleStateChange}
+          />
+
+          <Field
+            label="State Code"
+            value={form.stateCode}
+            placeholder="Auto-filled"
+            readOnly
+            onChange={() => undefined}
+          />
+
           <Field
             label="Email Address"
             type="email"
             value={form.email}
             placeholder="Enter company email"
-            onChange={(value) => setForm({ ...form, email: value })}
+            onChange={(value) =>
+              setForm((current) => ({
+                ...current,
+                email: value,
+              }))
+            }
           />
+
           <Field
             label="Phone Number"
             type="tel"
             value={form.phone}
             placeholder="Enter phone number"
-            onChange={(value) => setForm({ ...form, phone: value })}
+            onChange={(value) =>
+              setForm((current) => ({
+                ...current,
+                phone: value,
+              }))
+            }
           />
+
           <Field
             label="City"
             value={form.city}
             placeholder="Enter city name"
-            onChange={(value) => setForm({ ...form, city: value })}
+            onChange={(value) =>
+              setForm((current) => ({
+                ...current,
+                city: value,
+              }))
+            }
           />
         </div>
 
         <div className="mt-5 sm:mt-6">
-          <label className="mb-2 block font-semibold text-slate-800">Company Address</label>
+          <label className="mb-2 block font-semibold text-slate-800">
+            Company Address
+          </label>
+
           <textarea
             rows={4}
             value={form.address}
-            onChange={(event) => setForm({ ...form, address: event.target.value })}
-            placeholder="Enter complete company address"
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                address: event.target.value,
+              }))
+            }
+            placeholder="Enter complete registered company address"
             className="w-full resize-none rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
           />
         </div>
@@ -400,17 +954,22 @@ export default function CompanyManager({
             disabled={isSaving || isLoading}
             className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-7"
           >
-            {isSaving ? "Saving..." : "Save Company"}
+            {isSaving
+              ? "Saving..."
+              : editingCompanyId
+                ? "Update Company"
+                : "Save Company"}
           </button>
+
           <button
             type="button"
             onClick={() => {
-              setForm(EMPTY_FORM);
+              resetForm();
               setMessage("");
             }}
             className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto sm:px-7"
           >
-            Reset
+            {editingCompanyId ? "Cancel Edit" : "Reset"}
           </button>
         </div>
       </form>
@@ -418,9 +977,16 @@ export default function CompanyManager({
       <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8 lg:mt-10">
         <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
           <div>
-            <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">Company List</h2>
-            <p className="mt-1 text-sm text-slate-600 sm:text-base">Companies saved in your VertexERP cloud account.</p>
+            <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+              Company List
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-600 sm:text-base">
+              Edit existing companies to complete their GST
+              identity and registered state.
+            </p>
           </div>
+
           <div className="rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
             Total Companies: {companies.length} / 5
           </div>
@@ -448,7 +1014,10 @@ export default function CompanyManager({
           ) : (
             <div className="space-y-4">
               {filteredCompanies.map((company) => {
-                const isActive = company.id === activeCompanyId;
+                const isActive =
+                  company.id === activeCompanyId;
+                const stateReady =
+                  /^[0-9]{2}$/.test(company.stateCode);
 
                 return (
                   <article
@@ -462,7 +1031,9 @@ export default function CompanyManager({
                         </p>
 
                         <p className="mt-1 truncate text-sm text-slate-500">
-                          {company.email || "No email added"}
+                          {company.legalName ||
+                            company.email ||
+                            "No legal name added"}
                         </p>
                       </div>
 
@@ -478,41 +1049,35 @@ export default function CompanyManager({
                     </div>
 
                     <div className="mt-4 grid grid-cols-2 gap-3">
-                      <div className="rounded-xl bg-white p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          GST Number
-                        </p>
-                        <p className="mt-1 break-words font-semibold text-slate-800">
-                          {company.gstNumber || "—"}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl bg-white p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          City
-                        </p>
-                        <p className="mt-1 break-words font-semibold text-slate-800">
-                          {company.city || "—"}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl bg-white p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Phone
-                        </p>
-                        <p className="mt-1 break-words font-semibold text-slate-800">
-                          {company.phone || "—"}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl bg-white p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          PAN Number
-                        </p>
-                        <p className="mt-1 break-words font-semibold text-slate-800">
-                          {company.panNumber || "—"}
-                        </p>
-                      </div>
+                      <InfoBox
+                        label="GST Number"
+                        value={company.gstNumber || "—"}
+                      />
+                      <InfoBox
+                        label="State"
+                        value={
+                          company.state
+                            ? `${company.state} (${company.stateCode || "—"})`
+                            : "—"
+                        }
+                      />
+                      <InfoBox
+                        label="City"
+                        value={company.city || "—"}
+                      />
+                      <InfoBox
+                        label="GST Setup"
+                        value={
+                          stateReady
+                            ? "State Ready"
+                            : "State Missing"
+                        }
+                        valueClassName={
+                          stateReady
+                            ? "text-emerald-700"
+                            : "text-amber-700"
+                        }
+                      />
                     </div>
 
                     {company.address && (
@@ -530,8 +1095,22 @@ export default function CompanyManager({
                     <div className="mt-4 grid grid-cols-2 gap-3">
                       <button
                         type="button"
-                        disabled={isUpdatingActive || isActive}
-                        onClick={() => handleSetActive(company)}
+                        onClick={() =>
+                          startEditCompany(company)
+                        }
+                        className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-sm font-bold text-violet-700 transition hover:bg-violet-100"
+                      >
+                        Edit
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={
+                          isUpdatingActive || isActive
+                        }
+                        onClick={() =>
+                          handleSetActive(company)
+                        }
                         className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-bold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                       >
                         {isActive ? "Selected" : "Set Active"}
@@ -539,8 +1118,10 @@ export default function CompanyManager({
 
                       <button
                         type="button"
-                        onClick={() => deleteCompany(company)}
-                        className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                        onClick={() =>
+                          deleteCompany(company)
+                        }
+                        className="col-span-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
                       >
                         Delete
                       </button>
@@ -553,22 +1134,28 @@ export default function CompanyManager({
         </div>
 
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[1150px]">
+          <table className="w-full min-w-[1350px]">
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-200 text-left">
                 <Header>Company</Header>
+                <Header>Legal / Trade Name</Header>
                 <Header>GST Number</Header>
+                <Header>Registered State</Header>
                 <Header>Phone</Header>
-                <Header>City</Header>
                 <Header>Status</Header>
                 <Header>Action</Header>
               </tr>
             </thead>
+
             <tbody>
               {isLoading ? (
-                <EmptyRow text="Loading companies from the cloud..." />
+                <EmptyRow
+                  colSpan={7}
+                  text="Loading companies from the cloud..."
+                />
               ) : filteredCompanies.length === 0 ? (
                 <EmptyRow
+                  colSpan={7}
                   text={
                     companies.length === 0
                       ? "No companies added yet. Add your first company using the form above."
@@ -577,34 +1164,109 @@ export default function CompanyManager({
                 />
               ) : (
                 filteredCompanies.map((company) => {
-                  const isActive = company.id === activeCompanyId;
+                  const isActive =
+                    company.id === activeCompanyId;
+                  const stateReady =
+                    /^[0-9]{2}$/.test(company.stateCode);
+
                   return (
-                    <tr key={company.id} className="border-b border-slate-100 transition hover:bg-blue-50">
+                    <tr
+                      key={company.id}
+                      className="border-b border-slate-100 transition hover:bg-blue-50"
+                    >
                       <td className="px-6 py-5">
-                        <p className="font-bold text-slate-900">{company.name}</p>
-                        <p className="mt-1 text-sm text-slate-500">{company.email || "No email added"}</p>
+                        <p className="font-bold text-slate-900">
+                          {company.name}
+                        </p>
+
+                        <p className="mt-1 text-sm text-slate-500">
+                          {company.email ||
+                            "No email added"}
+                        </p>
                       </td>
-                      <td className="px-6 py-5 text-slate-700">{company.gstNumber || "—"}</td>
-                      <td className="px-6 py-5 text-slate-700">{company.phone || "—"}</td>
-                      <td className="px-6 py-5 text-slate-700">{company.city || "—"}</td>
+
                       <td className="px-6 py-5">
-                        <span className={isActive ? "rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700" : "rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600"}>
-                          {isActive ? "Active Company" : "Available"}
+                        <p className="font-semibold text-slate-800">
+                          {company.legalName || "—"}
+                        </p>
+
+                        <p className="mt-1 text-sm text-slate-500">
+                          {company.tradeName || "—"}
+                        </p>
+                      </td>
+
+                      <td className="px-6 py-5 text-slate-700">
+                        {company.gstNumber || "—"}
+                      </td>
+
+                      <td className="px-6 py-5">
+                        <p className="font-semibold text-slate-800">
+                          {company.state || "—"}
+                        </p>
+
+                        <p
+                          className={`mt-1 text-sm font-semibold ${
+                            stateReady
+                              ? "text-emerald-700"
+                              : "text-amber-700"
+                          }`}
+                        >
+                          {stateReady
+                            ? `State Code ${company.stateCode}`
+                            : "State setup pending"}
+                        </p>
+                      </td>
+
+                      <td className="px-6 py-5 text-slate-700">
+                        {company.phone || "—"}
+                      </td>
+
+                      <td className="px-6 py-5">
+                        <span
+                          className={
+                            isActive
+                              ? "rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700"
+                              : "rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600"
+                          }
+                        >
+                          {isActive
+                            ? "Active Company"
+                            : "Available"}
                         </span>
                       </td>
+
                       <td className="px-6 py-5">
                         <div className="flex items-center gap-4">
                           <button
                             type="button"
-                            disabled={isUpdatingActive || isActive}
-                            onClick={() => handleSetActive(company)}
-                            className="font-semibold text-blue-600 transition hover:text-blue-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                            onClick={() =>
+                              startEditCompany(company)
+                            }
+                            className="font-semibold text-violet-600 transition hover:text-violet-800"
                           >
-                            {isActive ? "Selected" : "Set Active"}
+                            Edit
                           </button>
+
                           <button
                             type="button"
-                            onClick={() => deleteCompany(company)}
+                            disabled={
+                              isUpdatingActive || isActive
+                            }
+                            onClick={() =>
+                              handleSetActive(company)
+                            }
+                            className="font-semibold text-blue-600 transition hover:text-blue-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                          >
+                            {isActive
+                              ? "Selected"
+                              : "Set Active"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              deleteCompany(company)
+                            }
                             className="font-semibold text-red-500 transition hover:text-red-700"
                           >
                             Delete
@@ -629,35 +1291,145 @@ function Field({
   placeholder,
   onChange,
   type = "text",
+  maxLength,
+  readOnly = false,
 }: {
   label: string;
   value: string;
   placeholder: string;
   onChange: (value: string) => void;
   type?: string;
+  maxLength?: number;
+  readOnly?: boolean;
 }) {
   return (
     <div>
-      <label className="mb-2 block font-semibold text-slate-800">{label}</label>
+      <label className="mb-2 block font-semibold text-slate-800">
+        {label}
+      </label>
+
       <input
         type={type}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        maxLength={maxLength}
+        readOnly={readOnly}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
         placeholder={placeholder}
-        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+        className={`w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none transition ${
+          readOnly
+            ? "cursor-not-allowed bg-slate-200 text-slate-600"
+            : "bg-slate-50 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+        }`}
       />
     </div>
   );
 }
 
-function Header({ children }: { children: React.ReactNode }) {
-  return <th className="px-6 py-4 text-sm font-bold text-slate-700">{children}</th>;
+function StateField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (stateCode: string) => void;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block font-semibold text-slate-800">
+        Registered State *
+      </label>
+
+      <select
+        value={value}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
+        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+      >
+        <option value="">Select state</option>
+
+        {INDIA_STATES.map((state) => (
+          <option key={state.code} value={state.code}>
+            {state.code} · {state.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
 }
 
-function EmptyRow({ text }: { text: string }) {
+function ReadinessCard({
+  label,
+  value,
+  ready,
+}: {
+  label: string;
+  value: string;
+  ready: boolean;
+}) {
+  return (
+    <div className="rounded-2xl bg-white p-3 shadow-sm">
+      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+
+      <p
+        className={`mt-1 text-lg font-black ${
+          ready ? "text-emerald-700" : "text-amber-700"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function InfoBox({
+  label,
+  value,
+  valueClassName = "text-slate-800",
+}: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className="rounded-xl bg-white p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+
+      <p
+        className={`mt-1 break-words font-semibold ${valueClassName}`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function Header({ children }: { children: ReactNode }) {
+  return (
+    <th className="px-6 py-4 text-sm font-bold text-slate-700">
+      {children}
+    </th>
+  );
+}
+
+function EmptyRow({
+  text,
+  colSpan,
+}: {
+  text: string;
+  colSpan: number;
+}) {
   return (
     <tr>
-      <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+      <td
+        colSpan={colSpan}
+        className="px-6 py-12 text-center text-slate-500"
+      >
         {text}
       </td>
     </tr>

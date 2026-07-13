@@ -1,26 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import ProductForm from "./ProductForm";
+import ProductForm, {
+  type EditableProduct,
+  type ProductInput,
+} from "./ProductForm";
 import ProductTable from "./ProductTable";
 import { createClient } from "@/lib/supabase/client";
 
-type ProductInput = {
-  name: string;
-  sku: string;
-  category: string;
-  unit: string;
-  purchasePrice: number;
-  sellingPrice: number;
-  quantity: number;
-  lowStockAlert: number;
-  gst: number;
-  description: string;
-};
-
-type Product = ProductInput & {
-  id: string;
-};
+type Product = EditableProduct;
 
 type ProductRow = {
   id: string;
@@ -33,6 +21,8 @@ type ProductRow = {
   quantity: number | string | null;
   low_stock_alert: number | string | null;
   gst_rate: number | string | null;
+  hsn_sac_code: string | null;
+  is_service: boolean | null;
   description: string | null;
 };
 
@@ -48,6 +38,9 @@ type InventoryManagerProps = {
   searchQuery: string;
 };
 
+const PRODUCT_SELECT =
+  "id, name, sku, category, unit, purchase_price, selling_price, quantity, low_stock_alert, gst_rate, hsn_sac_code, is_service, description";
+
 function mapProductRow(row: ProductRow): Product {
   return {
     id: row.id,
@@ -60,8 +53,14 @@ function mapProductRow(row: ProductRow): Product {
     quantity: Number(row.quantity || 0),
     lowStockAlert: Number(row.low_stock_alert || 0),
     gst: Number(row.gst_rate || 0),
+    hsnSacCode: row.hsn_sac_code || "",
+    isService: Boolean(row.is_service),
     description: row.description || "",
   };
+}
+
+function isValidHsnSac(value: string) {
+  return /^[0-9]{4,8}$/.test(value);
 }
 
 export default function InventoryManager({
@@ -70,19 +69,21 @@ export default function InventoryManager({
   const [products, setProducts] = useState<Product[]>([]);
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [activeCompanyName, setActiveCompanyName] = useState("");
+  const [editingProductId, setEditingProductId] = useState<string | null>(
+    null
+  );
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
 
   function showMessage(nextMessage: string) {
     setMessage(nextMessage);
-
-    window.setTimeout(() => {
-      setMessage("");
-    }, 4000);
+    window.setTimeout(() => setMessage(""), 4500);
   }
 
   function notifyProductUpdate() {
     window.dispatchEvent(new Event("vertexerp-products-updated"));
+    window.dispatchEvent(new Event("vertexerp-gst-data-updated"));
   }
 
   async function loadProducts() {
@@ -100,6 +101,7 @@ export default function InventoryManager({
         setProducts([]);
         setActiveCompanyId(null);
         setActiveCompanyName("");
+        setEditingProductId(null);
         showMessage("Please sign in before managing inventory.");
         return;
       }
@@ -118,6 +120,7 @@ export default function InventoryManager({
         (profile as ProfileRow | null)?.active_company_id || null;
 
       setActiveCompanyId(companyId);
+      setEditingProductId(null);
 
       if (!companyId) {
         setProducts([]);
@@ -129,9 +132,7 @@ export default function InventoryManager({
       const [productsResponse, companyResponse] = await Promise.all([
         supabase
           .from("products")
-          .select(
-            "id, name, sku, category, unit, purchase_price, selling_price, quantity, low_stock_alert, gst_rate, description"
-          )
+          .select(PRODUCT_SELECT)
           .eq("company_id", companyId)
           .order("created_at", { ascending: false }),
         supabase
@@ -152,15 +153,16 @@ export default function InventoryManager({
       const company = companyResponse.data as CompanyRow | null;
 
       setActiveCompanyName(company?.name || "");
-      setProducts((productsResponse.data || []).map(mapProductRow));
+      setProducts(
+        ((productsResponse.data || []) as ProductRow[]).map(mapProductRow)
+      );
     } catch (error) {
-      const errorMessage =
+      setProducts([]);
+      showMessage(
         error instanceof Error
           ? error.message
-          : "Products could not be loaded from the cloud database.";
-
-      setProducts([]);
-      showMessage(errorMessage);
+          : "Products could not be loaded from the cloud database."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -182,6 +184,12 @@ export default function InventoryManager({
     };
   }, []);
 
+  const editingProduct = useMemo(
+    () =>
+      products.find((product) => product.id === editingProductId) || null,
+    [products, editingProductId]
+  );
+
   const filteredProducts = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
 
@@ -195,6 +203,8 @@ export default function InventoryManager({
         product.sku,
         product.category,
         product.unit,
+        product.hsnSacCode,
+        product.isService ? "service sac" : "goods hsn",
       ]
         .join(" ")
         .toLowerCase();
@@ -203,40 +213,106 @@ export default function InventoryManager({
     });
   }, [products, searchQuery]);
 
-  async function addProduct(productInput: ProductInput) {
+  const hsnReadiness = useMemo(() => {
+    const missing = products.filter(
+      (product) => !isValidHsnSac(product.hsnSacCode)
+    ).length;
+
+    return {
+      ready: products.length - missing,
+      missing,
+    };
+  }, [products]);
+
+  function validateProduct(productInput: ProductInput) {
+    if (!productInput.name.trim()) {
+      return "Please enter a product name.";
+    }
+
+    if (!productInput.sku.trim()) {
+      return "Please enter a Product SKU / Code.";
+    }
+
+    if (!isValidHsnSac(productInput.hsnSacCode.trim())) {
+      return "HSN/SAC Code must contain 4 to 8 digits.";
+    }
+
+    if (productInput.gst < 0 || productInput.gst > 100) {
+      return "GST Percentage must be between 0 and 100.";
+    }
+
+    return null;
+  }
+
+  async function saveProduct(productInput: ProductInput) {
     if (!activeCompanyId) {
       showMessage("Select an active company before adding a product.");
-      return;
+      return false;
     }
 
-    const productName = productInput.name.trim();
+    const validationMessage = validateProduct(productInput);
 
-    if (!productName) {
-      showMessage("Please enter a product name.");
-      return;
+    if (validationMessage) {
+      showMessage(validationMessage);
+      return false;
     }
+
+    setIsSaving(true);
 
     try {
       const supabase = createClient();
+
+      const commonPayload = {
+        name: productInput.name.trim(),
+        category: productInput.category.trim() || null,
+        unit: productInput.unit.trim() || "Piece",
+        purchase_price: Number(productInput.purchasePrice || 0),
+        selling_price: Number(productInput.sellingPrice || 0),
+        low_stock_alert: Number(productInput.lowStockAlert || 0),
+        gst_rate: Number(productInput.gst || 0),
+        hsn_sac_code: productInput.hsnSacCode.trim(),
+        is_service: Boolean(productInput.isService),
+        description: productInput.description.trim() || null,
+      };
+
+      if (editingProductId) {
+        const { data, error } = await supabase
+          .from("products")
+          .update(commonPayload)
+          .eq("id", editingProductId)
+          .eq("company_id", activeCompanyId)
+          .select(PRODUCT_SELECT)
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        const updatedProduct = mapProductRow(data as ProductRow);
+
+        setProducts((currentProducts) =>
+          currentProducts.map((product) =>
+            product.id === updatedProduct.id ? updatedProduct : product
+          )
+        );
+
+        setEditingProductId(null);
+        notifyProductUpdate();
+        showMessage("Product and HSN/SAC details updated successfully.");
+        return true;
+      }
 
       const { data, error } = await supabase
         .from("products")
         .insert({
           company_id: activeCompanyId,
-          name: productName,
-          sku: productInput.sku.trim() || null,
-          category: productInput.category.trim() || null,
-          unit: productInput.unit.trim() || "Piece",
-          purchase_price: Number(productInput.purchasePrice || 0),
-          selling_price: Number(productInput.sellingPrice || 0),
-          quantity: Number(productInput.quantity || 0),
-          low_stock_alert: Number(productInput.lowStockAlert || 0),
-          gst_rate: Number(productInput.gst || 0),
-          description: productInput.description.trim() || null,
+          sku: productInput.sku.trim().toUpperCase(),
+          quantity: productInput.isService
+            ? 0
+            : Number(productInput.quantity || 0),
+          ...commonPayload,
         })
-        .select(
-          "id, name, sku, category, unit, purchase_price, selling_price, quantity, low_stock_alert, gst_rate, description"
-        )
+        .select(PRODUCT_SELECT)
         .single();
 
       if (error) {
@@ -244,43 +320,56 @@ export default function InventoryManager({
           showMessage(
             "This SKU already exists in the active company. Use a different SKU."
           );
-          return;
+          return false;
         }
 
         throw error;
       }
 
       setProducts((currentProducts) => [
-        mapProductRow(data),
+        mapProductRow(data as ProductRow),
         ...currentProducts,
       ]);
 
       notifyProductUpdate();
       showMessage("Product saved to the cloud database successfully.");
+      return true;
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Product could not be saved.";
-
-      showMessage(errorMessage);
+      showMessage(
+        error instanceof Error ? error.message : "Product could not be saved."
+      );
+      return false;
+    } finally {
+      setIsSaving(false);
     }
   }
 
+  function startEditProduct(product: Product) {
+    setEditingProductId(product.id);
+    setMessage("");
+
+    window.setTimeout(() => {
+      document.getElementById("product-form")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 50);
+  }
+
+  function cancelEditProduct() {
+    setEditingProductId(null);
+    setMessage("");
+  }
+
   async function deleteProduct(productId: string) {
-    const shouldDelete = window.confirm(
-      "Delete this product? Existing sales or purchase records will keep their item name, but this product will no longer be available for new transactions."
-    );
-
-    if (!shouldDelete) {
-      return;
-    }
-
     try {
       const supabase = createClient();
 
       const { error } = await supabase
         .from("products")
         .delete()
-        .eq("id", productId);
+        .eq("id", productId)
+        .eq("company_id", activeCompanyId);
 
       if (error) {
         throw error;
@@ -290,15 +379,18 @@ export default function InventoryManager({
         currentProducts.filter((product) => product.id !== productId)
       );
 
+      if (editingProductId === productId) {
+        setEditingProductId(null);
+      }
+
       notifyProductUpdate();
       showMessage("Product deleted successfully.");
     } catch (error) {
-      const errorMessage =
+      showMessage(
         error instanceof Error
           ? error.message
-          : "Product could not be deleted.";
-
-      showMessage(errorMessage);
+          : "Product could not be deleted."
+      );
     }
   }
 
@@ -306,6 +398,13 @@ export default function InventoryManager({
     productId: string,
     nextQuantity: number
   ) {
+    const product = products.find((item) => item.id === productId);
+
+    if (product?.isService) {
+      showMessage("Stock adjustment is not available for service items.");
+      return;
+    }
+
     const safeQuantity = Math.max(0, Number(nextQuantity) || 0);
 
     try {
@@ -315,9 +414,8 @@ export default function InventoryManager({
         .from("products")
         .update({ quantity: safeQuantity })
         .eq("id", productId)
-        .select(
-          "id, name, sku, category, unit, purchase_price, selling_price, quantity, low_stock_alert, gst_rate, description"
-        )
+        .eq("company_id", activeCompanyId)
+        .select(PRODUCT_SELECT)
         .single();
 
       if (error) {
@@ -325,40 +423,59 @@ export default function InventoryManager({
       }
 
       setProducts((currentProducts) =>
-        currentProducts.map((product) =>
-          product.id === productId ? mapProductRow(data) : product
+        currentProducts.map((currentProduct) =>
+          currentProduct.id === productId
+            ? mapProductRow(data as ProductRow)
+            : currentProduct
         )
       );
 
       notifyProductUpdate();
       showMessage("Product stock updated successfully.");
     } catch (error) {
-      const errorMessage =
+      showMessage(
         error instanceof Error
           ? error.message
-          : "Product stock could not be updated.";
-
-      showMessage(errorMessage);
+          : "Product stock could not be updated."
+      );
     }
   }
 
   return (
     <>
       <section className="mt-6 rounded-3xl border border-blue-100 bg-blue-50 p-4 sm:mt-8 sm:p-5">
-        <p className="text-sm font-bold text-blue-800">Active Company</p>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="text-sm font-bold text-blue-800">Active Company</p>
 
-        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="break-words text-lg font-bold text-slate-900 sm:text-xl">
-            {isLoading
-              ? "Loading company..."
-              : activeCompanyName || "No active company selected"}
-          </p>
+            <p className="mt-2 break-words text-lg font-bold text-slate-900 sm:text-xl">
+              {isLoading
+                ? "Loading company..."
+                : activeCompanyName || "No active company selected"}
+            </p>
+          </div>
 
-          <span className="w-fit rounded-full bg-white px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
-            {activeCompanyId
-              ? "Products are saved in cloud"
-              : "Select a company first"}
-          </span>
+          <div className="flex flex-wrap gap-2">
+            <span className="w-fit rounded-full bg-white px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
+              {activeCompanyId
+                ? "Products are saved in cloud"
+                : "Select a company first"}
+            </span>
+
+            {activeCompanyId && (
+              <span
+                className={`w-fit rounded-full px-3 py-1.5 text-xs font-bold shadow-sm ${
+                  hsnReadiness.missing === 0
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                {hsnReadiness.missing === 0
+                  ? `${hsnReadiness.ready} HSN/SAC Ready`
+                  : `${hsnReadiness.missing} HSN/SAC Pending`}
+              </span>
+            )}
+          </div>
         </div>
       </section>
 
@@ -375,7 +492,12 @@ export default function InventoryManager({
             : ""
         }
       >
-        <ProductForm onAddProduct={addProduct} />
+        <ProductForm
+          onSaveProduct={saveProduct}
+          editingProduct={editingProduct}
+          onCancelEdit={cancelEditProduct}
+          isSaving={isSaving}
+        />
       </div>
 
       {isLoading ? (
@@ -385,6 +507,7 @@ export default function InventoryManager({
       ) : (
         <ProductTable
           products={filteredProducts}
+          onEditProduct={startEditProduct}
           onDeleteProduct={deleteProduct}
           onUpdateStock={updateProductStock}
         />

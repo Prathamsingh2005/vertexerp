@@ -10,12 +10,18 @@ import { createClient } from "@/lib/supabase/client";
 type SaleItem = {
   productId: string;
   productName: string;
+  hsnSacCode: string;
   quantity: number;
   rate: number;
   gst: number;
   discount: number;
   baseAmount: number;
+  taxableAmount: number;
   gstAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  cessAmount: number;
   amount: number;
 };
 
@@ -27,17 +33,32 @@ type Invoice = {
   customerName: string;
   customerMobile: string;
   customerGst: string;
+  customerState: string;
+  customerStateCode: string;
+  placeOfSupply: string;
+  placeOfSupplyCode: string;
+  taxType: string;
+  subtotal: number;
+  discountTotal: number;
+  taxableTotal: number;
+  cgstTotal: number;
+  sgstTotal: number;
+  igstTotal: number;
+  cessTotal: number;
+  gstTotal: number;
   grandTotal: number;
   items: SaleItem[];
-  subtotal: number;
-  gstTotal: number;
-  discountTotal: number;
 };
 
 type Company = {
   id: string;
   name: string;
+  legalName: string;
+  tradeName: string;
   address: string;
+  city: string;
+  state: string;
+  stateCode: string;
   gstNumber: string;
   phone: string;
   email: string;
@@ -52,12 +73,19 @@ type CustomerRow = {
   name: string;
   mobile: string | null;
   gst_number: string | null;
+  state: string | null;
+  state_code: string | null;
 };
 
 type CompanyRow = {
   id: string;
   name: string;
+  legal_name: string | null;
+  trade_name: string | null;
   address: string | null;
+  city: string | null;
+  state: string | null;
+  state_code: string | null;
   gst_number: string | null;
   phone: string | null;
   email: string | null;
@@ -69,40 +97,123 @@ type SaleRow = {
   invoice_date: string;
   payment_mode: string;
   customer_id: string | null;
+  place_of_supply: string | null;
+  place_of_supply_code: string | null;
+  tax_type: string | null;
   subtotal: number | string | null;
   gst_total: number | string | null;
   discount_total: number | string | null;
+  cgst_total: number | string | null;
+  sgst_total: number | string | null;
+  igst_total: number | string | null;
+  cess_total: number | string | null;
   grand_total: number | string | null;
   customer: CustomerRow | CustomerRow[] | null;
   sale_items:
     | {
         product_id: string | null;
         product_name: string;
+        hsn_sac_code: string | null;
         quantity: number | string | null;
         rate: number | string | null;
         gst_rate: number | string | null;
         discount: number | string | null;
         base_amount: number | string | null;
+        taxable_amount: number | string | null;
         gst_amount: number | string | null;
+        cgst_amount: number | string | null;
+        sgst_amount: number | string | null;
+        igst_amount: number | string | null;
+        cess_amount: number | string | null;
         amount: number | string | null;
       }[]
     | null;
 };
 
+function toNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function formatCurrency(amount: number) {
-  return `₹${Number(amount || 0).toLocaleString("en-IN", {
+  return `₹${toNumber(amount).toLocaleString("en-IN", {
     maximumFractionDigits: 2,
   })}`;
+}
+
+function formatDate(value: string) {
+  if (!value) {
+    return "—";
+  }
+
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function getCustomer(
   customer: SaleRow["customer"]
 ): CustomerRow | null {
-  return Array.isArray(customer) ? customer[0] || null : customer;
+  return Array.isArray(customer)
+    ? customer[0] || null
+    : customer;
+}
+
+function getTaxTypeLabel(taxType: string) {
+  if (taxType === "INTRA_STATE") {
+    return "Intra-State Supply";
+  }
+
+  if (taxType === "INTER_STATE") {
+    return "Inter-State Supply";
+  }
+
+  if (taxType === "EXEMPT") {
+    return "Exempt / Nil GST Supply";
+  }
+
+  if (taxType === "ZERO_RATED") {
+    return "Zero-Rated Supply";
+  }
+
+  return "GST Classification Pending";
 }
 
 function mapInvoice(row: SaleRow): Invoice {
   const customer = getCustomer(row.customer);
+  const items = (row.sale_items || []).map((item) => ({
+    productId: item.product_id || "",
+    productName: item.product_name || "Product",
+    hsnSacCode: item.hsn_sac_code || "",
+    quantity: toNumber(item.quantity),
+    rate: toNumber(item.rate),
+    gst: toNumber(item.gst_rate),
+    discount: toNumber(item.discount),
+    baseAmount: toNumber(item.base_amount),
+    taxableAmount: toNumber(item.taxable_amount),
+    gstAmount: toNumber(item.gst_amount),
+    cgstAmount: toNumber(item.cgst_amount),
+    sgstAmount: toNumber(item.sgst_amount),
+    igstAmount: toNumber(item.igst_amount),
+    cessAmount: toNumber(item.cess_amount),
+    amount: toNumber(item.amount),
+  }));
+
+  const taxableTotal = items.reduce(
+    (total, item) =>
+      total +
+      (item.taxableAmount ||
+        Math.max(0, item.baseAmount - item.discount)),
+    0
+  );
 
   return {
     id: row.id,
@@ -112,21 +223,25 @@ function mapInvoice(row: SaleRow): Invoice {
     customerName: customer?.name || "Unknown Customer",
     customerMobile: customer?.mobile || "",
     customerGst: customer?.gst_number || "",
-    subtotal: Number(row.subtotal || 0),
-    gstTotal: Number(row.gst_total || 0),
-    discountTotal: Number(row.discount_total || 0),
-    grandTotal: Number(row.grand_total || 0),
-    items: (row.sale_items || []).map((item) => ({
-      productId: item.product_id || "",
-      productName: item.product_name || "Product",
-      quantity: Number(item.quantity || 0),
-      rate: Number(item.rate || 0),
-      gst: Number(item.gst_rate || 0),
-      discount: Number(item.discount || 0),
-      baseAmount: Number(item.base_amount || 0),
-      gstAmount: Number(item.gst_amount || 0),
-      amount: Number(item.amount || 0),
-    })),
+    customerState: customer?.state || "",
+    customerStateCode: customer?.state_code || "",
+    placeOfSupply:
+      row.place_of_supply || customer?.state || "",
+    placeOfSupplyCode:
+      row.place_of_supply_code ||
+      customer?.state_code ||
+      "",
+    taxType: row.tax_type || "UNCLASSIFIED",
+    subtotal: toNumber(row.subtotal),
+    discountTotal: toNumber(row.discount_total),
+    taxableTotal,
+    cgstTotal: toNumber(row.cgst_total),
+    sgstTotal: toNumber(row.sgst_total),
+    igstTotal: toNumber(row.igst_total),
+    cessTotal: toNumber(row.cess_total),
+    gstTotal: toNumber(row.gst_total),
+    grandTotal: toNumber(row.grand_total),
+    items,
   };
 }
 
@@ -134,7 +249,12 @@ function mapCompany(row: CompanyRow): Company {
   return {
     id: row.id,
     name: row.name || "Your Company Name",
+    legalName: row.legal_name || "",
+    tradeName: row.trade_name || "",
     address: row.address || "",
+    city: row.city || "",
+    state: row.state || "",
+    stateCode: row.state_code || "",
     gstNumber: row.gst_number || "",
     phone: row.phone || "",
     email: row.email || "",
@@ -150,8 +270,12 @@ export default function InvoicePreviewPage() {
         ? params.id[0]
         : "";
 
-  const [invoice, setInvoice] = useState<Invoice | null>(null);
-  const [company, setCompany] = useState<Company | null>(null);
+  const [invoice, setInvoice] = useState<Invoice | null>(
+    null
+  );
+  const [company, setCompany] = useState<Company | null>(
+    null
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -162,8 +286,6 @@ export default function InvoicePreviewPage() {
 
       try {
         if (!invoiceId) {
-          setInvoice(null);
-          setCompany(null);
           setErrorMessage("Invoice ID is missing.");
           return;
         }
@@ -176,76 +298,94 @@ export default function InvoicePreviewPage() {
         } = await supabase.auth.getUser();
 
         if (userError || !user) {
-          setInvoice(null);
-          setCompany(null);
-          setErrorMessage("Please sign in to view this invoice.");
+          setErrorMessage(
+            "Please sign in to view this invoice."
+          );
           return;
         }
 
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("active_company_id")
-          .eq("id", user.id)
-          .maybeSingle();
+        const { data: profile, error: profileError } =
+          await supabase
+            .from("profiles")
+            .select("active_company_id")
+            .eq("id", user.id)
+            .maybeSingle();
 
         if (profileError) {
           throw profileError;
         }
 
         const activeCompanyId =
-          (profile as ProfileRow | null)?.active_company_id || null;
+          (profile as ProfileRow | null)
+            ?.active_company_id || null;
 
         if (!activeCompanyId) {
-          setInvoice(null);
-          setCompany(null);
           setErrorMessage(
             "Select an active company from the Companies page first."
           );
           return;
         }
 
-        const [invoiceResponse, companyResponse] = await Promise.all([
-          supabase
-            .from("sales")
-            .select(
-              `
-                id,
-                invoice_number,
-                invoice_date,
-                payment_mode,
-                customer_id,
-                subtotal,
-                gst_total,
-                discount_total,
-                grand_total,
-                customer:ledgers!sales_customer_id_fkey(
+        const [invoiceResponse, companyResponse] =
+          await Promise.all([
+            supabase
+              .from("sales")
+              .select(
+                `
                   id,
-                  name,
-                  mobile,
-                  gst_number
-                ),
-                sale_items(
-                  product_id,
-                  product_name,
-                  quantity,
-                  rate,
-                  gst_rate,
-                  discount,
-                  base_amount,
-                  gst_amount,
-                  amount
-                )
-              `
-            )
-            .eq("id", invoiceId)
-            .eq("company_id", activeCompanyId)
-            .maybeSingle(),
-          supabase
-            .from("companies")
-            .select("id, name, address, gst_number, phone, email")
-            .eq("id", activeCompanyId)
-            .maybeSingle(),
-        ]);
+                  invoice_number,
+                  invoice_date,
+                  payment_mode,
+                  customer_id,
+                  place_of_supply,
+                  place_of_supply_code,
+                  tax_type,
+                  subtotal,
+                  gst_total,
+                  discount_total,
+                  cgst_total,
+                  sgst_total,
+                  igst_total,
+                  cess_total,
+                  grand_total,
+                  customer:ledgers!sales_customer_id_fkey(
+                    id,
+                    name,
+                    mobile,
+                    gst_number,
+                    state,
+                    state_code
+                  ),
+                  sale_items(
+                    product_id,
+                    product_name,
+                    hsn_sac_code,
+                    quantity,
+                    rate,
+                    gst_rate,
+                    discount,
+                    base_amount,
+                    taxable_amount,
+                    gst_amount,
+                    cgst_amount,
+                    sgst_amount,
+                    igst_amount,
+                    cess_amount,
+                    amount
+                  )
+                `
+              )
+              .eq("id", invoiceId)
+              .eq("company_id", activeCompanyId)
+              .maybeSingle(),
+            supabase
+              .from("companies")
+              .select(
+                "id, name, legal_name, trade_name, address, city, state, state_code, gst_number, phone, email"
+              )
+              .eq("id", activeCompanyId)
+              .maybeSingle(),
+          ]);
 
         if (invoiceResponse.error) {
           throw invoiceResponse.error;
@@ -256,18 +396,22 @@ export default function InvoicePreviewPage() {
         }
 
         if (!invoiceResponse.data) {
-          setInvoice(null);
-          setCompany(null);
           setErrorMessage(
-            "This invoice is unavailable for the currently active company."
+            "This invoice is unavailable for the active company."
           );
           return;
         }
 
-        setInvoice(mapInvoice(invoiceResponse.data as unknown as SaleRow));
+        setInvoice(
+          mapInvoice(
+            invoiceResponse.data as unknown as SaleRow
+          )
+        );
         setCompany(
           companyResponse.data
-            ? mapCompany(companyResponse.data as CompanyRow)
+            ? mapCompany(
+                companyResponse.data as CompanyRow
+              )
             : null
         );
       } catch (error) {
@@ -288,58 +432,45 @@ export default function InvoicePreviewPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen bg-slate-100">
-        <Sidebar />
-
-        <div className="min-w-0 flex-1">
-          <Navbar />
-
-          <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
-            <div className="rounded-3xl border border-slate-100 bg-white p-6 text-center shadow-xl sm:p-10">
-              <p className="text-lg font-semibold text-slate-700">
-                Loading invoice from the cloud database...
-              </p>
-            </div>
-          </main>
-        </div>
-      </div>
+      <PageShell>
+        <StatusCard text="Loading GST invoice from the cloud database..." />
+      </PageShell>
     );
   }
 
   if (!invoice) {
     return (
-      <div className="flex min-h-screen bg-slate-100">
-        <Sidebar />
+      <PageShell>
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-lg sm:p-10">
+          <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
+            Invoice Not Found
+          </h1>
 
-        <div className="min-w-0 flex-1">
-          <Navbar />
+          <p className="mt-3 text-slate-600">
+            {errorMessage ||
+              "This invoice may have been deleted or is unavailable."}
+          </p>
 
-          <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-lg sm:p-10">
-              <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
-                Invoice Not Found
-              </h1>
-
-              <p className="mt-3 text-slate-600">
-                {errorMessage ||
-                  "This invoice may have been deleted or is unavailable."}
-              </p>
-
-              <Link
-                href="/sales"
-                className="mt-6 inline-block rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700"
-              >
-                Back to Sales
-              </Link>
-            </div>
-          </main>
+          <Link
+            href="/sales"
+            className="mt-6 inline-block rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700"
+          >
+            Back to Sales
+          </Link>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   const isCreditPayment =
-    invoice.paymentMode.trim().toLowerCase() === "credit";
+    invoice.paymentMode.trim().toLowerCase() ===
+    "credit";
+
+  const hasGstSplit =
+    invoice.cgstTotal > 0 ||
+    invoice.sgstTotal > 0 ||
+    invoice.igstTotal > 0 ||
+    invoice.taxType === "EXEMPT";
 
   return (
     <>
@@ -347,7 +478,7 @@ export default function InvoicePreviewPage() {
         @media print {
           @page {
             size: A4 portrait;
-            margin: 12mm;
+            margin: 10mm;
           }
 
           html,
@@ -365,8 +496,8 @@ export default function InvoicePreviewPage() {
           .invoice-content-root,
           .invoice-main-content {
             display: block !important;
-            min-height: auto !important;
             width: 100% !important;
+            min-height: auto !important;
             background: white !important;
           }
 
@@ -389,12 +520,12 @@ export default function InvoicePreviewPage() {
 
           .invoice-table {
             min-width: 0 !important;
-            font-size: 10px !important;
+            font-size: 9px !important;
           }
 
           .invoice-table th,
           .invoice-table td {
-            padding: 7px !important;
+            padding: 6px !important;
           }
         }
       `}</style>
@@ -410,10 +541,10 @@ export default function InvoicePreviewPage() {
           </div>
 
           <main className="invoice-main-content p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
-            <div className="invoice-print-hide mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            <div className="invoice-print-hide mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between">
               <Link
                 href="/sales"
-                className="w-full rounded-xl border border-slate-300 bg-white px-6 py-3 text-center font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto"
+                className="rounded-xl border border-slate-300 bg-white px-6 py-3 text-center font-semibold text-slate-700 transition hover:bg-slate-100"
               >
                 ← Back to Sales
               </Link>
@@ -421,214 +552,233 @@ export default function InvoicePreviewPage() {
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="w-full rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 sm:w-auto"
+                className="rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700"
               >
-                Print Invoice
+                Print GST Invoice
               </button>
             </div>
 
-            <section className="invoice-card mx-auto max-w-4xl rounded-3xl border border-slate-200 bg-white p-4 shadow-xl sm:p-6 lg:p-8">
-              <div className="border-b border-slate-200 pb-5 sm:pb-6">
-                <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-                  {company?.name || "Your Company Name"}
-                </h2>
+            <section className="invoice-card mx-auto max-w-5xl rounded-3xl border border-slate-200 bg-white p-4 shadow-xl sm:p-6 lg:p-8">
+              <header className="border-b border-slate-200 pb-5 sm:pb-6">
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-600">
+                      Tax Invoice
+                    </p>
 
-                <p className="mt-2 text-slate-600">
-                  {company?.address || "Company address not available"}
-                </p>
+                    <h2 className="mt-2 text-2xl font-black text-slate-900">
+                      {company?.tradeName ||
+                        company?.name ||
+                        "Your Company Name"}
+                    </h2>
 
-                <div className="mt-3 space-y-1 text-sm text-slate-600">
-                  <p>
-                    <span className="font-semibold text-slate-700">
-                      GST Number:
-                    </span>{" "}
-                    {company?.gstNumber || "Not provided"}
-                  </p>
+                    {company?.legalName && (
+                      <p className="mt-1 font-semibold text-slate-700">
+                        Legal Name: {company.legalName}
+                      </p>
+                    )}
 
-                  <p>
-                    <span className="font-semibold text-slate-700">
-                      Phone:
-                    </span>{" "}
-                    {company?.phone || "Not provided"}
-                  </p>
+                    <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
+                      {[company?.address, company?.city]
+                        .filter(Boolean)
+                        .join(", ") ||
+                        "Company address not available"}
+                    </p>
 
-                  <p>
-                    <span className="font-semibold text-slate-700">
-                      Email:
-                    </span>{" "}
-                    {company?.email || "Not provided"}
-                  </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {[company?.state, company?.stateCode]
+                        .filter(Boolean)
+                        .join(" · ") ||
+                        "Company state not configured"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    <p>
+                      <strong>GSTIN:</strong>{" "}
+                      {company?.gstNumber || "Unregistered"}
+                    </p>
+                    <p className="mt-1">
+                      <strong>Phone:</strong>{" "}
+                      {company?.phone || "Not provided"}
+                    </p>
+                    <p className="mt-1">
+                      <strong>Email:</strong>{" "}
+                      {company?.email || "Not provided"}
+                    </p>
+                  </div>
                 </div>
+              </header>
+
+              <div className="grid grid-cols-1 gap-4 border-b border-slate-200 py-5 sm:grid-cols-2 lg:grid-cols-4">
+                <MetaBox
+                  label="Invoice Number"
+                  value={invoice.invoiceNumber}
+                />
+                <MetaBox
+                  label="Invoice Date"
+                  value={formatDate(invoice.date)}
+                />
+                <MetaBox
+                  label="Place of Supply"
+                  value={
+                    invoice.placeOfSupply
+                      ? `${invoice.placeOfSupply} (${invoice.placeOfSupplyCode || "—"})`
+                      : "Not classified"
+                  }
+                />
+                <MetaBox
+                  label="Supply Type"
+                  value={getTaxTypeLabel(
+                    invoice.taxType
+                  )}
+                  valueClassName={
+                    invoice.taxType === "UNCLASSIFIED"
+                      ? "text-amber-700"
+                      : "text-emerald-700"
+                  }
+                />
               </div>
 
-              <div className="flex flex-col gap-5 border-b border-slate-200 py-5 sm:gap-6 sm:py-6 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-sm font-bold tracking-[0.2em] text-blue-600">
-                    SALES INVOICE
-                  </p>
-
-                  <h1 className="mt-3 break-words text-2xl font-bold text-slate-900 sm:text-3xl">
-                    {invoice.invoiceNumber}
-                  </h1>
-
-                  <p className="mt-2 text-slate-600">
-                    Invoice Date: {invoice.date}
-                  </p>
+              {!hasGstSplit && (
+                <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                  This is a legacy invoice without CGST/SGST/IGST
+                  snapshots. Edit and save it only after confirming
+                  Company State, Customer State and product HSN data.
                 </div>
+              )}
 
-                <div className="w-full rounded-2xl bg-blue-50 px-5 py-4 print:border print:border-slate-200 print:bg-white sm:w-auto">
-                  <p className="text-sm font-semibold text-blue-700">
-                    Grand Total
+              <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Bill To
                   </p>
 
-                  <p className="mt-2 break-words text-2xl font-bold text-blue-600 sm:text-3xl">
-                    {formatCurrency(invoice.grandTotal)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-6 grid grid-cols-1 gap-6 sm:mt-8 sm:gap-8 md:grid-cols-2">
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-wider text-slate-500">
-                    Customer Details
-                  </p>
-
-                  <h2 className="mt-3 text-xl font-bold text-slate-900">
+                  <h3 className="mt-2 text-xl font-bold text-slate-900">
                     {invoice.customerName}
-                  </h2>
+                  </h3>
 
-                  <p className="mt-2 text-slate-600">
-                    Mobile: {invoice.customerMobile || "Not provided"}
+                  <p className="mt-2 text-sm text-slate-600">
+                    Mobile:{" "}
+                    {invoice.customerMobile ||
+                      "Not provided"}
                   </p>
 
-                  <p className="mt-1 text-slate-600">
-                    GST Number: {invoice.customerGst || "Not provided"}
+                  <p className="mt-1 text-sm text-slate-600">
+                    GSTIN:{" "}
+                    {invoice.customerGst ||
+                      "Unregistered customer"}
+                  </p>
+
+                  <p className="mt-1 text-sm text-slate-600">
+                    State:{" "}
+                    {invoice.customerState
+                      ? `${invoice.customerState} (${invoice.customerStateCode || "—"})`
+                      : "Not provided"}
                   </p>
                 </div>
 
-                <div className="md:text-right">
-                  <p className="text-sm font-bold uppercase tracking-wider text-slate-500">
-                    Payment Details
+                <div className="rounded-2xl border border-slate-200 p-4 md:text-right">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Payment
                   </p>
 
-                  <p className="mt-3 text-lg font-semibold text-slate-900">
+                  <p className="mt-2 text-lg font-bold text-slate-900">
                     {invoice.paymentMode}
                   </p>
 
-                  <p className="mt-2 text-slate-600">
+                  <p className="mt-2 text-sm text-slate-600">
                     Status:{" "}
                     <span
                       className={
                         isCreditPayment
                           ? "font-bold text-orange-600"
-                          : "font-bold text-green-600"
+                          : "font-bold text-emerald-600"
                       }
                     >
-                      {isCreditPayment ? "Pending" : "Paid"}
+                      {isCreditPayment
+                        ? "Pending"
+                        : "Paid"}
                     </span>
+                  </p>
+
+                  <p className="mt-3 text-3xl font-black text-blue-600">
+                    {formatCurrency(invoice.grandTotal)}
                   </p>
                 </div>
               </div>
 
               <div className="mt-6 space-y-4 md:hidden">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-slate-900">
-                    Invoice Items
-                  </h2>
-
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
-                    {invoice.items.length} Item
-                    {invoice.items.length !== 1 ? "s" : ""}
-                  </span>
-                </div>
-
                 {invoice.items.map((item, index) => (
                   <article
                     key={`${item.productId}-${index}`}
                     className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <p className="min-w-0 break-words text-base font-bold text-slate-900">
-                        {item.productName}
-                      </p>
+                      <div>
+                        <p className="font-bold text-slate-900">
+                          {item.productName}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          HSN: {item.hsnSacCode || "—"}
+                        </p>
+                      </div>
 
-                      <p className="shrink-0 text-lg font-bold text-blue-700">
+                      <p className="font-bold text-blue-700">
                         {formatCurrency(item.amount)}
                       </p>
                     </div>
 
                     <div className="mt-4 grid grid-cols-2 gap-3">
-                      <div className="rounded-xl bg-white p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Quantity
-                        </p>
-
-                        <p className="mt-1 font-semibold text-slate-800">
-                          {item.quantity}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl bg-white p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Rate
-                        </p>
-
-                        <p className="mt-1 break-words font-semibold text-slate-800">
-                          {formatCurrency(item.rate)}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl bg-white p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          GST
-                        </p>
-
-                        <p className="mt-1 font-semibold text-slate-800">
-                          {item.gst}%
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl bg-white p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Discount
-                        </p>
-
-                        <p className="mt-1 break-words font-semibold text-slate-800">
-                          {formatCurrency(item.discount)}
-                        </p>
-                      </div>
+                      <InfoBox
+                        label="Quantity"
+                        value={String(item.quantity)}
+                      />
+                      <InfoBox
+                        label="Rate"
+                        value={formatCurrency(item.rate)}
+                      />
+                      <InfoBox
+                        label="Taxable"
+                        value={formatCurrency(
+                          item.taxableAmount
+                        )}
+                      />
+                      <InfoBox
+                        label="GST"
+                        value={`${item.gst}% · ${formatCurrency(
+                          item.gstAmount
+                        )}`}
+                      />
                     </div>
                   </article>
                 ))}
               </div>
 
-              <div className="invoice-table-wrap mt-6 hidden overflow-x-auto border-y border-slate-200 md:block md:mt-8">
-                <table className="invoice-table w-full min-w-[750px]">
+              <div className="invoice-table-wrap mt-8 hidden overflow-x-auto border-y border-slate-200 md:block">
+                <table className="invoice-table w-full min-w-[1050px]">
                   <thead className="bg-slate-50">
                     <tr className="text-left">
-                      <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                        Product
-                      </th>
-
-                      <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                        Quantity
-                      </th>
-
-                      <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                        Rate
-                      </th>
-
-                      <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                        GST
-                      </th>
-
-                      <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                        Discount
-                      </th>
-
-                      <th className="px-5 py-4 text-right text-sm font-bold text-slate-700">
-                        Amount
-                      </th>
+                      {[
+                        "Item",
+                        "HSN",
+                        "Qty",
+                        "Rate",
+                        "Discount",
+                        "Taxable",
+                        "GST %",
+                        "CGST",
+                        "SGST",
+                        "IGST",
+                        "Amount",
+                      ].map((heading) => (
+                        <th
+                          key={heading}
+                          className="px-3 py-4 text-xs font-bold text-slate-700"
+                        >
+                          {heading}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
 
@@ -638,27 +788,45 @@ export default function InvoicePreviewPage() {
                         key={`${item.productId}-${index}`}
                         className="border-t border-slate-100"
                       >
-                        <td className="px-5 py-4 font-bold text-slate-900">
+                        <td className="px-3 py-4 font-bold text-slate-900">
                           {item.productName}
                         </td>
-
-                        <td className="px-5 py-4 text-slate-700">
+                        <td className="px-3 py-4 text-slate-700">
+                          {item.hsnSacCode || "—"}
+                        </td>
+                        <td className="px-3 py-4 text-slate-700">
                           {item.quantity}
                         </td>
-
-                        <td className="px-5 py-4 text-slate-700">
+                        <td className="px-3 py-4 text-slate-700">
                           {formatCurrency(item.rate)}
                         </td>
-
-                        <td className="px-5 py-4 text-slate-700">
-                          {item.gst}%
-                        </td>
-
-                        <td className="px-5 py-4 text-slate-700">
+                        <td className="px-3 py-4 text-slate-700">
                           {formatCurrency(item.discount)}
                         </td>
-
-                        <td className="px-5 py-4 text-right font-bold text-slate-900">
+                        <td className="px-3 py-4 text-slate-700">
+                          {formatCurrency(
+                            item.taxableAmount
+                          )}
+                        </td>
+                        <td className="px-3 py-4 text-slate-700">
+                          {item.gst}%
+                        </td>
+                        <td className="px-3 py-4 text-slate-700">
+                          {formatCurrency(
+                            item.cgstAmount
+                          )}
+                        </td>
+                        <td className="px-3 py-4 text-slate-700">
+                          {formatCurrency(
+                            item.sgstAmount
+                          )}
+                        </td>
+                        <td className="px-3 py-4 text-slate-700">
+                          {formatCurrency(
+                            item.igstAmount
+                          )}
+                        </td>
+                        <td className="px-3 py-4 text-right font-bold text-slate-900">
                           {formatCurrency(item.amount)}
                         </td>
                       </tr>
@@ -667,45 +835,162 @@ export default function InvoicePreviewPage() {
                 </table>
               </div>
 
-              <div className="mt-5 w-full max-w-sm rounded-2xl bg-slate-50 p-4 print:border print:border-slate-200 print:bg-white sm:ml-auto sm:mt-6 sm:p-5">
-                <div className="flex justify-between border-b border-slate-200 pb-3 text-slate-700">
-                  <span>Subtotal</span>
+              <div className="mt-6 w-full max-w-md rounded-2xl bg-slate-50 p-5 print:border print:border-slate-200 print:bg-white sm:ml-auto">
+                <TotalRow
+                  label="Gross Subtotal"
+                  value={invoice.subtotal}
+                />
+                <TotalRow
+                  label="Discount"
+                  value={invoice.discountTotal}
+                />
+                <TotalRow
+                  label="Taxable Value"
+                  value={invoice.taxableTotal}
+                />
 
-                  <span className="font-semibold">
-                    {formatCurrency(invoice.subtotal)}
-                  </span>
-                </div>
+                {invoice.taxType === "INTRA_STATE" && (
+                  <>
+                    <TotalRow
+                      label="CGST"
+                      value={invoice.cgstTotal}
+                    />
+                    <TotalRow
+                      label="SGST"
+                      value={invoice.sgstTotal}
+                    />
+                  </>
+                )}
 
-                <div className="flex justify-between border-b border-slate-200 py-3 text-slate-700">
-                  <span>Total GST</span>
+                {invoice.taxType === "INTER_STATE" && (
+                  <TotalRow
+                    label="IGST"
+                    value={invoice.igstTotal}
+                  />
+                )}
 
-                  <span className="font-semibold">
-                    {formatCurrency(invoice.gstTotal)}
-                  </span>
-                </div>
+                {invoice.cessTotal > 0 && (
+                  <TotalRow
+                    label="Cess"
+                    value={invoice.cessTotal}
+                  />
+                )}
 
-                <div className="flex justify-between border-b border-slate-200 py-3 text-slate-700">
-                  <span>Discount</span>
-
-                  <span className="font-semibold">
-                    {formatCurrency(invoice.discountTotal)}
-                  </span>
-                </div>
+                {invoice.taxType === "UNCLASSIFIED" && (
+                  <TotalRow
+                    label="Total GST"
+                    value={invoice.gstTotal}
+                  />
+                )}
 
                 <div className="flex justify-between pt-4">
                   <span className="text-lg font-bold text-slate-900">
                     Grand Total
                   </span>
 
-                  <span className="text-2xl font-bold text-blue-600">
+                  <span className="text-2xl font-black text-blue-600">
                     {formatCurrency(invoice.grandTotal)}
                   </span>
                 </div>
               </div>
+
+              <footer className="mt-8 border-t border-slate-200 pt-5 text-center text-sm text-slate-500">
+                This is a computer-generated invoice from
+                VertexERP.
+              </footer>
             </section>
           </main>
         </div>
       </div>
     </>
+  );
+}
+
+function PageShell({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-h-screen bg-slate-100">
+      <Sidebar />
+
+      <div className="min-w-0 flex-1">
+        <Navbar />
+
+        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function StatusCard({ text }: { text: string }) {
+  return (
+    <div className="rounded-3xl border border-slate-100 bg-white p-6 text-center shadow-xl sm:p-10">
+      <p className="text-lg font-semibold text-slate-700">
+        {text}
+      </p>
+    </div>
+  );
+}
+
+function MetaBox({
+  label,
+  value,
+  valueClassName = "text-slate-900",
+}: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className="rounded-xl bg-slate-50 p-3">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p
+        className={`mt-1 break-words font-bold ${valueClassName}`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function InfoBox({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl bg-white p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p className="mt-1 break-words font-semibold text-slate-800">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function TotalRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="flex justify-between border-b border-slate-200 py-3 text-slate-700">
+      <span>{label}</span>
+      <span className="font-semibold">
+        {formatCurrency(value)}
+      </span>
+    </div>
   );
 }

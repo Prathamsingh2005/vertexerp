@@ -1,5 +1,7 @@
 "use client";
 
+import { type ReactNode } from "react";
+
 type Product = {
   id: string;
   name: string;
@@ -11,11 +13,14 @@ type Product = {
   quantity: number;
   lowStockAlert: number;
   gst: number;
+  hsnSacCode: string;
+  isService: boolean;
   description: string;
 };
 
 type ProductTableProps = {
   products: Product[];
+  onEditProduct: (product: Product) => void;
   onDeleteProduct: (productId: string) => void;
   onUpdateStock: (productId: string, nextQuantity: number) => void;
 };
@@ -24,19 +29,25 @@ function formatCurrency(amount: number) {
   return `₹${Number(amount || 0).toLocaleString("en-IN")}`;
 }
 
-function getProductStatus(quantity: number, lowStockAlert: number) {
-  const isOutOfStock = quantity <= 0;
-  const isLowStock =
-    !isOutOfStock && lowStockAlert > 0 && quantity <= lowStockAlert;
+function getProductStatus(product: Product) {
+  if (product.isService) {
+    return {
+      label: "Service",
+      className: "bg-violet-100 text-violet-700",
+    };
+  }
 
-  if (isOutOfStock) {
+  const quantity = Number(product.quantity || 0);
+  const lowStockAlert = Number(product.lowStockAlert || 0);
+
+  if (quantity <= 0) {
     return {
       label: "Out of Stock",
       className: "bg-red-100 text-red-700",
     };
   }
 
-  if (isLowStock) {
+  if (lowStockAlert > 0 && quantity <= lowStockAlert) {
     return {
       label: "Low Stock",
       className: "bg-orange-100 text-orange-700",
@@ -49,31 +60,45 @@ function getProductStatus(quantity: number, lowStockAlert: number) {
   };
 }
 
+function getHsnStatus(product: Product) {
+  if (/^[0-9]{4,8}$/.test(product.hsnSacCode)) {
+    return {
+      label: product.isService ? "SAC Ready" : "HSN Ready",
+      className: "bg-emerald-100 text-emerald-700",
+    };
+  }
+
+  return {
+    label: product.isService ? "SAC Missing" : "HSN Missing",
+    className: "bg-amber-100 text-amber-700",
+  };
+}
+
 export default function ProductTable({
   products,
+  onEditProduct,
   onDeleteProduct,
   onUpdateStock,
 }: ProductTableProps) {
-  function handleDelete(productId: string, productName: string) {
+  function handleDelete(product: Product) {
     const shouldDelete = window.confirm(
-      `Delete "${productName}" from inventory?`
+      `Delete "${product.name}" from inventory?`
     );
 
-    if (!shouldDelete) {
+    if (shouldDelete) {
+      onDeleteProduct(product.id);
+    }
+  }
+
+  function handleAdjustStock(product: Product) {
+    if (product.isService) {
+      window.alert("Stock adjustment is not available for service items.");
       return;
     }
 
-    onDeleteProduct(productId);
-  }
-
-  function handleAdjustStock(
-    productId: string,
-    productName: string,
-    currentQuantity: number
-  ) {
     const enteredQuantity = window.prompt(
-      `Set available stock for "${productName}"`,
-      String(currentQuantity)
+      `Set available stock for "${product.name}"`,
+      String(product.quantity)
     );
 
     if (enteredQuantity === null) {
@@ -89,7 +114,7 @@ export default function ProductTable({
       return;
     }
 
-    onUpdateStock(productId, nextQuantity);
+    onUpdateStock(product.id, nextQuantity);
   }
 
   return (
@@ -101,7 +126,7 @@ export default function ProductTable({
           </h2>
 
           <p className="mt-1 text-sm text-slate-600 sm:text-base">
-            View product details, available stock and pricing.
+            Edit existing items to complete their HSN/SAC and GST setup.
           </p>
         </div>
 
@@ -122,12 +147,10 @@ export default function ProductTable({
         </div>
       ) : (
         <>
-          {/* Mobile: product cards avoid wide, hard-to-read table scrolling. */}
           <div className="space-y-4 p-4 md:hidden">
             {products.map((product) => {
-              const quantity = Number(product.quantity || 0);
-              const lowStockAlert = Number(product.lowStockAlert || 0);
-              const status = getProductStatus(quantity, lowStockAlert);
+              const status = getProductStatus(product);
+              const hsnStatus = getHsnStatus(product);
 
               return (
                 <article
@@ -157,82 +180,79 @@ export default function ProductTable({
                   </p>
 
                   <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div className="rounded-xl bg-white p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Category
-                      </p>
-                      <p className="mt-1 truncate font-semibold text-slate-800">
-                        {product.category || "Uncategorized"}
-                      </p>
-                    </div>
+                    <InfoBox
+                      label={product.isService ? "SAC Code" : "HSN Code"}
+                      value={product.hsnSacCode || "—"}
+                    />
 
                     <div className="rounded-xl bg-white p-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        GST
+                        GST Setup
                       </p>
-                      <p className="mt-1 font-semibold text-slate-800">
-                        {product.gst}%
-                      </p>
-                    </div>
 
-                    <div className="rounded-xl bg-white p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Purchase Price
-                      </p>
-                      <p className="mt-1 font-bold text-slate-900">
-                        {formatCurrency(product.purchasePrice)}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl bg-white p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Selling Price
-                      </p>
-                      <p className="mt-1 font-bold text-slate-900">
-                        {formatCurrency(product.sellingPrice)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex items-center justify-between rounded-xl bg-white px-4 py-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-700">
-                        Available Stock
-                      </p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        Alert at {lowStockAlert} {product.unit}
-                      </p>
-                    </div>
-
-                    <p className="text-lg font-black text-slate-900">
-                      {quantity}{" "}
-                      <span className="text-sm font-semibold text-slate-500">
-                        {product.unit}
+                      <span
+                        className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${hsnStatus.className}`}
+                      >
+                        {hsnStatus.label}
                       </span>
-                    </p>
+                    </div>
+
+                    <InfoBox
+                      label="Selling Price"
+                      value={formatCurrency(product.sellingPrice)}
+                    />
+
+                    <InfoBox
+                      label="GST"
+                      value={`${product.gst}%`}
+                    />
                   </div>
+
+                  {!product.isService && (
+                    <div className="mt-4 flex items-center justify-between rounded-xl bg-white px-4 py-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-700">
+                          Available Stock
+                        </p>
+
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          Alert at {product.lowStockAlert} {product.unit}
+                        </p>
+                      </div>
+
+                      <p className="text-lg font-black text-slate-900">
+                        {product.quantity}{" "}
+                        <span className="text-sm font-semibold text-slate-500">
+                          {product.unit}
+                        </span>
+                      </p>
+                    </div>
+                  )}
 
                   <div className="mt-4 grid grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() =>
-                        handleAdjustStock(
-                          product.id,
-                          product.name,
-                          quantity
-                        )
-                      }
-                      className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-bold text-blue-700 transition hover:bg-blue-100"
+                      onClick={() => onEditProduct(product)}
+                      className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-sm font-bold text-violet-700 transition hover:bg-violet-100"
+                    >
+                      Edit Product
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleAdjustStock(product)}
+                      disabled={product.isService}
+                      className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-bold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                     >
                       Adjust Stock
                     </button>
 
                     <button
                       type="button"
-                      onClick={() => handleDelete(product.id, product.name)}
-                      className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                      onClick={() => handleDelete(product)}
+                      className="col-span-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
                     >
-                      Delete
+                      Delete Product
                     </button>
                   </div>
                 </article>
@@ -240,54 +260,26 @@ export default function ProductTable({
             })}
           </div>
 
-          {/* Desktop/tablet: dense table stays efficient for inventory review. */}
           <div className="hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[1150px]">
+            <table className="w-full min-w-[1350px]">
               <thead className="bg-slate-50">
                 <tr className="border-b border-slate-200 text-left">
-                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                    Product
-                  </th>
-
-                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                    SKU
-                  </th>
-
-                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                    Category
-                  </th>
-
-                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                    Purchase Price
-                  </th>
-
-                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                    Selling Price
-                  </th>
-
-                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                    Stock
-                  </th>
-
-                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                    GST
-                  </th>
-
-                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                    Status
-                  </th>
-
-                  <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                    Action
-                  </th>
+                  <Header>Product</Header>
+                  <Header>SKU</Header>
+                  <Header>HSN/SAC</Header>
+                  <Header>Category</Header>
+                  <Header>Selling Price</Header>
+                  <Header>Stock</Header>
+                  <Header>GST</Header>
+                  <Header>GST Setup</Header>
+                  <Header>Action</Header>
                 </tr>
               </thead>
 
               <tbody>
                 {products.map((product) => {
-                  const quantity = Number(product.quantity || 0);
-                  const lowStockAlert = Number(product.lowStockAlert || 0);
-                  const status = getProductStatus(quantity, lowStockAlert);
+                  const status = getProductStatus(product);
+                  const hsnStatus = getHsnStatus(product);
 
                   return (
                     <tr
@@ -308,12 +300,18 @@ export default function ProductTable({
                         {product.sku}
                       </td>
 
-                      <td className="px-6 py-5 text-slate-700">
-                        {product.category || "Uncategorized"}
+                      <td className="px-6 py-5">
+                        <p className="font-semibold text-slate-800">
+                          {product.hsnSacCode || "—"}
+                        </p>
+
+                        <p className="mt-1 text-xs text-slate-500">
+                          {product.isService ? "SAC" : "HSN"}
+                        </p>
                       </td>
 
                       <td className="px-6 py-5 text-slate-700">
-                        {formatCurrency(product.purchasePrice)}
+                        {product.category || "Uncategorized"}
                       </td>
 
                       <td className="px-6 py-5 font-semibold text-slate-900">
@@ -321,13 +319,19 @@ export default function ProductTable({
                       </td>
 
                       <td className="px-6 py-5">
-                        <p className="font-bold text-slate-900">
-                          {quantity} {product.unit}
-                        </p>
+                        {product.isService ? (
+                          <span className="text-slate-500">Not applicable</span>
+                        ) : (
+                          <>
+                            <p className="font-bold text-slate-900">
+                              {product.quantity} {product.unit}
+                            </p>
 
-                        <p className="mt-1 text-xs text-slate-500">
-                          Alert at {lowStockAlert}
-                        </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Alert at {product.lowStockAlert}
+                            </p>
+                          </>
+                        )}
                       </td>
 
                       <td className="px-6 py-5 text-slate-700">
@@ -335,34 +339,43 @@ export default function ProductTable({
                       </td>
 
                       <td className="px-6 py-5">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-bold ${status.className}`}
-                        >
-                          {status.label}
-                        </span>
+                        <div className="flex flex-col items-start gap-2">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-bold ${hsnStatus.className}`}
+                          >
+                            {hsnStatus.label}
+                          </span>
+
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-bold ${status.className}`}
+                          >
+                            {status.label}
+                          </span>
+                        </div>
                       </td>
 
                       <td className="px-6 py-5">
                         <div className="flex items-center gap-4">
                           <button
                             type="button"
-                            onClick={() =>
-                              handleAdjustStock(
-                                product.id,
-                                product.name,
-                                quantity
-                              )
-                            }
-                            className="font-semibold text-blue-600 transition hover:text-blue-800"
+                            onClick={() => onEditProduct(product)}
+                            className="font-semibold text-violet-600 transition hover:text-violet-800"
+                          >
+                            Edit
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleAdjustStock(product)}
+                            disabled={product.isService}
+                            className="font-semibold text-blue-600 transition hover:text-blue-800 disabled:cursor-not-allowed disabled:text-slate-400"
                           >
                             Adjust Stock
                           </button>
 
                           <button
                             type="button"
-                            onClick={() =>
-                              handleDelete(product.id, product.name)
-                            }
+                            onClick={() => handleDelete(product)}
                             className="font-semibold text-red-500 transition hover:text-red-700"
                           >
                             Delete
@@ -378,5 +391,33 @@ export default function ProductTable({
         </>
       )}
     </section>
+  );
+}
+
+function Header({ children }: { children: ReactNode }) {
+  return (
+    <th className="px-6 py-4 text-sm font-bold text-slate-700">
+      {children}
+    </th>
+  );
+}
+
+function InfoBox({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl bg-white p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+
+      <p className="mt-1 break-words font-semibold text-slate-800">
+        {value}
+      </p>
+    </div>
   );
 }

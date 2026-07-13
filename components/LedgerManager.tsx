@@ -1,23 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import LedgerForm from "./LedgerForm";
+import LedgerForm, {
+  type EditableLedger,
+  type LedgerInput,
+} from "./LedgerForm";
 import LedgerTable from "./LedgerTable";
 import { createClient } from "@/lib/supabase/client";
 
-type LedgerInput = {
-  name: string;
-  group: string;
-  openingBalance: number;
-  mobile: string;
-  email: string;
-  gst: string;
-  address: string;
-};
-
-type Ledger = LedgerInput & {
-  id: string;
-};
+type Ledger = EditableLedger;
 
 type LedgerRow = {
   id: string;
@@ -27,6 +18,9 @@ type LedgerRow = {
   mobile: string | null;
   email: string | null;
   gst_number: string | null;
+  state: string | null;
+  state_code: string | null;
+  pincode: string | null;
   address: string | null;
 };
 
@@ -36,11 +30,16 @@ type ProfileRow = {
 
 type CompanyRow = {
   name: string;
+  state: string | null;
+  state_code: string | null;
 };
 
 type LedgerManagerProps = {
   searchQuery?: string;
 };
+
+const LEDGER_SELECT =
+  "id, name, ledger_type, opening_balance, mobile, email, gst_number, state, state_code, pincode, address";
 
 function mapLedgerRow(row: LedgerRow): Ledger {
   return {
@@ -51,29 +50,49 @@ function mapLedgerRow(row: LedgerRow): Ledger {
     mobile: row.mobile || "",
     email: row.email || "",
     gst: row.gst_number || "",
+    state: row.state || "",
+    stateCode: row.state_code || "",
+    pincode: row.pincode || "",
     address: row.address || "",
   };
+}
+
+function isPartyLedger(group: string) {
+  return group === "Customer" || group === "Supplier";
+}
+
+function isValidGstin(value: string) {
+  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(
+    value
+  );
 }
 
 export default function LedgerManager({
   searchQuery = "",
 }: LedgerManagerProps) {
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
-  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
+  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(
+    null
+  );
   const [activeCompanyName, setActiveCompanyName] = useState("");
+  const [activeCompanyState, setActiveCompanyState] = useState("");
+  const [activeCompanyStateCode, setActiveCompanyStateCode] =
+    useState("");
+  const [editingLedgerId, setEditingLedgerId] = useState<string | null>(
+    null
+  );
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
 
   function showMessage(nextMessage: string) {
     setMessage(nextMessage);
-
-    window.setTimeout(() => {
-      setMessage("");
-    }, 4000);
+    window.setTimeout(() => setMessage(""), 4500);
   }
 
   function notifyLedgerUpdate() {
     window.dispatchEvent(new Event("vertexerp-ledgers-updated"));
+    window.dispatchEvent(new Event("vertexerp-gst-data-updated"));
   }
 
   async function loadLedgers() {
@@ -91,6 +110,9 @@ export default function LedgerManager({
         setLedgers([]);
         setActiveCompanyId(null);
         setActiveCompanyName("");
+        setActiveCompanyState("");
+        setActiveCompanyStateCode("");
+        setEditingLedgerId(null);
         showMessage("Please sign in before managing ledgers.");
         return;
       }
@@ -105,14 +127,17 @@ export default function LedgerManager({
         throw profileError;
       }
 
-      const profileData = profile as ProfileRow | null;
-      const companyId = profileData?.active_company_id || null;
+      const companyId =
+        (profile as ProfileRow | null)?.active_company_id || null;
 
       setActiveCompanyId(companyId);
+      setEditingLedgerId(null);
 
       if (!companyId) {
         setLedgers([]);
         setActiveCompanyName("");
+        setActiveCompanyState("");
+        setActiveCompanyStateCode("");
         showMessage("Select an active company from the Companies page first.");
         return;
       }
@@ -120,14 +145,12 @@ export default function LedgerManager({
       const [ledgerResponse, companyResponse] = await Promise.all([
         supabase
           .from("ledgers")
-          .select(
-            "id, name, ledger_type, opening_balance, mobile, email, gst_number, address"
-          )
+          .select(LEDGER_SELECT)
           .eq("company_id", companyId)
           .order("created_at", { ascending: false }),
         supabase
           .from("companies")
-          .select("name")
+          .select("name, state, state_code")
           .eq("id", companyId)
           .maybeSingle(),
       ]);
@@ -143,15 +166,18 @@ export default function LedgerManager({
       const company = companyResponse.data as CompanyRow | null;
 
       setActiveCompanyName(company?.name || "");
-      setLedgers((ledgerResponse.data || []).map(mapLedgerRow));
+      setActiveCompanyState(company?.state || "");
+      setActiveCompanyStateCode(company?.state_code || "");
+      setLedgers(
+        ((ledgerResponse.data || []) as LedgerRow[]).map(mapLedgerRow)
+      );
     } catch (error) {
-      const errorMessage =
+      setLedgers([]);
+      showMessage(
         error instanceof Error
           ? error.message
-          : "Ledgers could not be loaded from the cloud database.";
-
-      setLedgers([]);
-      showMessage(errorMessage);
+          : "Ledgers could not be loaded from the cloud database."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -173,6 +199,12 @@ export default function LedgerManager({
     };
   }, []);
 
+  const editingLedger = useMemo(
+    () =>
+      ledgers.find((ledger) => ledger.id === editingLedgerId) || null,
+    [ledgers, editingLedgerId]
+  );
+
   const filteredLedgers = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
 
@@ -187,6 +219,9 @@ export default function LedgerManager({
         ledger.mobile,
         ledger.email,
         ledger.gst,
+        ledger.state,
+        ledger.stateCode,
+        ledger.pincode,
         ledger.address,
       ]
         .join(" ")
@@ -196,37 +231,115 @@ export default function LedgerManager({
     });
   }, [ledgers, searchQuery]);
 
-  async function addLedger(ledgerInput: LedgerInput) {
+  const partyReadiness = useMemo(() => {
+    const partyLedgers = ledgers.filter((ledger) =>
+      isPartyLedger(ledger.group)
+    );
+
+    const missingState = partyLedgers.filter(
+      (ledger) => !/^[0-9]{2}$/.test(ledger.stateCode)
+    ).length;
+
+    return {
+      ready: partyLedgers.length - missingState,
+      missingState,
+    };
+  }, [ledgers]);
+
+  function validateLedgerInput(ledgerInput: LedgerInput) {
+    if (!ledgerInput.name.trim()) {
+      return "Please enter a ledger name.";
+    }
+
+    if (
+      isPartyLedger(ledgerInput.group) &&
+      !/^[0-9]{2}$/.test(ledgerInput.stateCode)
+    ) {
+      return "Customer or Supplier State is required.";
+    }
+
+    const gstNumber = ledgerInput.gst.trim().toUpperCase();
+
+    if (gstNumber && !isValidGstin(gstNumber)) {
+      return "Please enter a valid 15-character GSTIN.";
+    }
+
+    if (
+      gstNumber &&
+      ledgerInput.stateCode &&
+      gstNumber.slice(0, 2) !== ledgerInput.stateCode
+    ) {
+      return "GSTIN State Code must match the selected party state.";
+    }
+
+    return null;
+  }
+
+  async function saveLedger(ledgerInput: LedgerInput) {
     if (!activeCompanyId) {
       showMessage("Select an active company before creating a ledger.");
-      return;
+      return false;
     }
 
-    const ledgerName = ledgerInput.name.trim();
+    const validationMessage = validateLedgerInput(ledgerInput);
 
-    if (!ledgerName) {
-      showMessage("Please enter a ledger name.");
-      return;
+    if (validationMessage) {
+      showMessage(validationMessage);
+      return false;
     }
+
+    setIsSaving(true);
 
     try {
       const supabase = createClient();
+
+      const commonPayload = {
+        name: ledgerInput.name.trim(),
+        mobile: ledgerInput.mobile.trim() || null,
+        email: ledgerInput.email.trim() || null,
+        gst_number:
+          ledgerInput.gst.trim().toUpperCase() || null,
+        state: ledgerInput.state.trim() || null,
+        state_code: ledgerInput.stateCode.trim() || null,
+        pincode: ledgerInput.pincode.trim() || null,
+        address: ledgerInput.address.trim() || null,
+      };
+
+      if (editingLedgerId) {
+        const { data, error } = await supabase
+          .from("ledgers")
+          .update(commonPayload)
+          .eq("id", editingLedgerId)
+          .eq("company_id", activeCompanyId)
+          .select(LEDGER_SELECT)
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        const updatedLedger = mapLedgerRow(data as LedgerRow);
+
+        setLedgers((currentLedgers) =>
+          currentLedgers.map((ledger) =>
+            ledger.id === updatedLedger.id ? updatedLedger : ledger
+          )
+        );
+        setEditingLedgerId(null);
+        notifyLedgerUpdate();
+        showMessage("Ledger and GST details updated successfully.");
+        return true;
+      }
 
       const { data, error } = await supabase
         .from("ledgers")
         .insert({
           company_id: activeCompanyId,
-          name: ledgerName,
           ledger_type: ledgerInput.group,
           opening_balance: Number(ledgerInput.openingBalance || 0),
-          mobile: ledgerInput.mobile.trim() || null,
-          email: ledgerInput.email.trim() || null,
-          gst_number: ledgerInput.gst.trim().toUpperCase() || null,
-          address: ledgerInput.address.trim() || null,
+          ...commonPayload,
         })
-        .select(
-          "id, name, ledger_type, opening_balance, mobile, email, gst_number, address"
-        )
+        .select(LEDGER_SELECT)
         .single();
 
       if (error) {
@@ -234,20 +347,40 @@ export default function LedgerManager({
       }
 
       setLedgers((currentLedgers) => [
-        mapLedgerRow(data),
+        mapLedgerRow(data as LedgerRow),
         ...currentLedgers,
       ]);
 
       notifyLedgerUpdate();
       showMessage("Ledger saved to the cloud database successfully.");
+      return true;
     } catch (error) {
-      const errorMessage =
+      showMessage(
         error instanceof Error
           ? error.message
-          : "Ledger could not be saved.";
-
-      showMessage(errorMessage);
+          : "Ledger could not be saved."
+      );
+      return false;
+    } finally {
+      setIsSaving(false);
     }
+  }
+
+  function startEditLedger(ledger: Ledger) {
+    setEditingLedgerId(ledger.id);
+    setMessage("");
+
+    window.setTimeout(() => {
+      document.getElementById("create-ledger")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 50);
+  }
+
+  function cancelEditLedger() {
+    setEditingLedgerId(null);
+    setMessage("");
   }
 
   async function deleteLedger(ledgerId: string) {
@@ -265,7 +398,8 @@ export default function LedgerManager({
       const { error } = await supabase
         .from("ledgers")
         .delete()
-        .eq("id", ledgerId);
+        .eq("id", ledgerId)
+        .eq("company_id", activeCompanyId);
 
       if (error) {
         throw error;
@@ -275,35 +409,67 @@ export default function LedgerManager({
         currentLedgers.filter((ledger) => ledger.id !== ledgerId)
       );
 
+      if (editingLedgerId === ledgerId) {
+        setEditingLedgerId(null);
+      }
+
       notifyLedgerUpdate();
       showMessage("Ledger deleted successfully.");
     } catch (error) {
-      const errorMessage =
+      showMessage(
         error instanceof Error
           ? error.message
-          : "Ledger could not be deleted.";
-
-      showMessage(errorMessage);
+          : "Ledger could not be deleted."
+      );
     }
   }
 
   return (
     <>
       <section className="mt-6 rounded-3xl border border-blue-100 bg-blue-50 p-4 sm:mt-8 sm:p-5">
-        <p className="text-sm font-bold text-blue-800">Active Company</p>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="text-sm font-bold text-blue-800">
+              Active Company
+            </p>
 
-        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="break-words text-lg font-bold text-slate-900 sm:text-xl">
-            {isLoading
-              ? "Loading company..."
-              : activeCompanyName || "No active company selected"}
-          </p>
+            <p className="mt-2 break-words text-lg font-bold text-slate-900 sm:text-xl">
+              {isLoading
+                ? "Loading company..."
+                : activeCompanyName || "No active company selected"}
+            </p>
 
-          <span className="w-fit rounded-full bg-white px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
-            {activeCompanyId
-              ? "Ledgers are saved in cloud"
-              : "Select a company first"}
-          </span>
+            {activeCompanyId && (
+              <p className="mt-1 text-sm text-slate-600">
+                {activeCompanyState || "Company state not configured"}
+                {activeCompanyStateCode
+                  ? ` · State Code ${activeCompanyStateCode}`
+                  : ""}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <span className="w-fit rounded-full bg-white px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
+              {activeCompanyId
+                ? "Ledgers are saved in cloud"
+                : "Select a company first"}
+            </span>
+
+            {activeCompanyId && (
+              <span
+                className={`w-fit rounded-full px-3 py-1.5 text-xs font-bold shadow-sm ${
+                  partyReadiness.missingState === 0
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                {partyReadiness.missingState === 0
+                  ? `${partyReadiness.ready} Party States Ready`
+                  : `${partyReadiness.missingState} Party States Pending`}
+              </span>
+            )}
+          </div>
         </div>
       </section>
 
@@ -320,7 +486,12 @@ export default function LedgerManager({
             : ""
         }
       >
-        <LedgerForm onAddLedger={addLedger} />
+        <LedgerForm
+          onSaveLedger={saveLedger}
+          editingLedger={editingLedger}
+          onCancelEdit={cancelEditLedger}
+          isSaving={isSaving}
+        />
       </div>
 
       {isLoading ? (
@@ -330,6 +501,7 @@ export default function LedgerManager({
       ) : (
         <LedgerTable
           ledgers={filteredLedgers}
+          onEditLedger={startEditLedger}
           onDeleteLedger={deleteLedger}
         />
       )}
