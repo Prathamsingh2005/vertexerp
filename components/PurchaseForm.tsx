@@ -9,13 +9,16 @@ type Product = {
   sku: string;
   purchasePrice: number;
   gst: number;
+  hsnSacCode: string;
 };
 
-type Ledger = {
+type Supplier = {
   id: string;
   name: string;
   mobile: string;
   gst: string;
+  state: string;
+  stateCode: string;
 };
 
 type ProductRow = {
@@ -24,13 +27,22 @@ type ProductRow = {
   sku: string | null;
   purchase_price: number | string | null;
   gst_rate: number | string | null;
+  hsn_sac_code: string | null;
+  is_service: boolean | null;
 };
 
-type LedgerRow = {
+type SupplierRow = {
   id: string;
   name: string;
   mobile: string | null;
   gst_number: string | null;
+  state: string | null;
+  state_code: string | null;
+};
+
+type CompanyRow = {
+  state: string | null;
+  state_code: string | null;
 };
 
 type ProfileRow = {
@@ -45,15 +57,22 @@ type PurchaseItemForm = {
   discount: string;
 };
 
+type TaxType = "UNCLASSIFIED" | "INTRA_STATE" | "INTER_STATE" | "EXEMPT";
+
 type CalculatedPurchaseItem = {
   productId: string;
   productName: string;
+  hsnSacCode: string;
   quantity: number;
   rate: number;
   gst: number;
   discount: number;
   baseAmount: number;
+  taxableAmount: number;
   gstAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
   amount: number;
 };
 
@@ -93,29 +112,80 @@ function createEmptyItem(): PurchaseItemForm {
   };
 }
 
-function mapProductRow(row: ProductRow): Product {
+function toNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatCurrency(value: number) {
+  return `₹${toNumber(value).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function mapProduct(row: ProductRow): Product {
   return {
     id: row.id,
     name: row.name || "",
     sku: row.sku || "",
-    purchasePrice: Number(row.purchase_price || 0),
-    gst: Number(row.gst_rate || 0),
+    purchasePrice: toNumber(row.purchase_price),
+    gst: toNumber(row.gst_rate),
+    hsnSacCode: row.hsn_sac_code || "",
   };
 }
 
-function mapLedgerRow(row: LedgerRow): Ledger {
+function mapSupplier(row: SupplierRow): Supplier {
   return {
     id: row.id,
     name: row.name || "",
     mobile: row.mobile || "",
     gst: row.gst_number || "",
+    state: row.state || "",
+    stateCode: row.state_code || "",
   };
+}
+
+function getTaxType(
+  companyStateCode: string,
+  supplierStateCode: string,
+  gstTotal: number,
+): TaxType {
+  if (gstTotal <= 0) {
+    return "EXEMPT";
+  }
+
+  if (
+    !/^[0-9]{2}$/.test(companyStateCode) ||
+    !/^[0-9]{2}$/.test(supplierStateCode)
+  ) {
+    return "UNCLASSIFIED";
+  }
+
+  return companyStateCode === supplierStateCode ? "INTRA_STATE" : "INTER_STATE";
+}
+
+function getTaxTypeLabel(taxType: TaxType) {
+  if (taxType === "INTRA_STATE") {
+    return "Intra-State · CGST + SGST";
+  }
+
+  if (taxType === "INTER_STATE") {
+    return "Inter-State · IGST";
+  }
+
+  if (taxType === "EXEMPT") {
+    return "Exempt / Nil GST";
+  }
+
+  return "GST Setup Pending";
 }
 
 export default function PurchaseForm() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [suppliers, setSuppliers] = useState<Ledger[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
+  const [companyState, setCompanyState] = useState("");
+  const [companyStateCode, setCompanyStateCode] = useState("");
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -129,16 +199,11 @@ export default function PurchaseForm() {
     supplierId: "",
   });
 
-  const [items, setItems] = useState<PurchaseItemForm[]>([
-    createEmptyItem(),
-  ]);
+  const [items, setItems] = useState<PurchaseItemForm[]>([createEmptyItem()]);
 
   function showMessage(nextMessage: string) {
     setMessage(nextMessage);
-
-    window.setTimeout(() => {
-      setMessage("");
-    }, 4000);
+    window.setTimeout(() => setMessage(""), 5000);
   }
 
   async function loadFormData() {
@@ -156,6 +221,8 @@ export default function PurchaseForm() {
         setProducts([]);
         setSuppliers([]);
         setActiveCompanyId(null);
+        setCompanyState("");
+        setCompanyStateCode("");
         showMessage("Please sign in before creating a purchase bill.");
         return;
       }
@@ -178,23 +245,34 @@ export default function PurchaseForm() {
       if (!companyId) {
         setProducts([]);
         setSuppliers([]);
+        setCompanyState("");
+        setCompanyStateCode("");
         showMessage("Select an active company from the Companies page first.");
         return;
       }
 
-      const [productsResponse, suppliersResponse] = await Promise.all([
-        supabase
-          .from("products")
-          .select("id, name, sku, purchase_price, gst_rate")
-          .eq("company_id", companyId)
-          .order("name"),
-        supabase
-          .from("ledgers")
-          .select("id, name, mobile, gst_number")
-          .eq("company_id", companyId)
-          .eq("ledger_type", "Supplier")
-          .order("name"),
-      ]);
+      const [productsResponse, suppliersResponse, companyResponse] =
+        await Promise.all([
+          supabase
+            .from("products")
+            .select(
+              "id, name, sku, purchase_price, gst_rate, hsn_sac_code, is_service",
+            )
+            .eq("company_id", companyId)
+            .eq("is_service", false)
+            .order("name"),
+          supabase
+            .from("ledgers")
+            .select("id, name, mobile, gst_number, state, state_code")
+            .eq("company_id", companyId)
+            .eq("ledger_type", "Supplier")
+            .order("name"),
+          supabase
+            .from("companies")
+            .select("state, state_code")
+            .eq("id", companyId)
+            .maybeSingle(),
+        ]);
 
       if (productsResponse.error) {
         throw productsResponse.error;
@@ -204,15 +282,26 @@ export default function PurchaseForm() {
         throw suppliersResponse.error;
       }
 
-      setProducts((productsResponse.data || []).map(mapProductRow));
-      setSuppliers((suppliersResponse.data || []).map(mapLedgerRow));
+      if (companyResponse.error) {
+        throw companyResponse.error;
+      }
+
+      const company = companyResponse.data as CompanyRow | null;
+
+      setProducts(
+        ((productsResponse.data || []) as ProductRow[]).map(mapProduct),
+      );
+      setSuppliers(
+        ((suppliersResponse.data || []) as SupplierRow[]).map(mapSupplier),
+      );
+      setCompanyState(company?.state || "");
+      setCompanyStateCode(company?.state_code || "");
     } catch (error) {
-      const errorMessage =
+      showMessage(
         error instanceof Error
           ? error.message
-          : "Purchase form data could not be loaded.";
-
-      showMessage(errorMessage);
+          : "Purchase form data could not be loaded.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -221,16 +310,20 @@ export default function PurchaseForm() {
   useEffect(() => {
     loadFormData();
 
-    window.addEventListener(
+    const refreshEvents = [
       "vertexerp-active-company-updated",
-      loadFormData
-    );
+      "vertexerp-ledgers-updated",
+      "vertexerp-products-updated",
+    ];
+
+    refreshEvents.forEach((eventName) => {
+      window.addEventListener(eventName, loadFormData);
+    });
 
     return () => {
-      window.removeEventListener(
-        "vertexerp-active-company-updated",
-        loadFormData
-      );
+      refreshEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, loadFormData);
+      });
     };
   }, []);
 
@@ -258,80 +351,132 @@ export default function PurchaseForm() {
               gst: String(item.gst),
               discount: String(item.discount),
             }))
-          : [createEmptyItem()]
+          : [createEmptyItem()],
       );
 
       window.setTimeout(() => {
-        document
-          .getElementById("purchase-bill-form")
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        document.getElementById("purchase-bill-form")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
       }, 0);
     }
 
-    window.addEventListener(
-      "vertexerp-edit-purchase",
-      handleEditPurchase
-    );
+    window.addEventListener("vertexerp-edit-purchase", handleEditPurchase);
 
     return () => {
-      window.removeEventListener(
-        "vertexerp-edit-purchase",
-        handleEditPurchase
-      );
+      window.removeEventListener("vertexerp-edit-purchase", handleEditPurchase);
     };
   }, []);
 
-  const calculatedItems = useMemo<CalculatedPurchaseItem[]>(() => {
+  const selectedSupplier = suppliers.find(
+    (supplier) => supplier.id === form.supplierId,
+  );
+
+  const itemBaseCalculations = useMemo(() => {
     return items.map((item) => {
       const selectedProduct = products.find(
-        (product) => product.id === item.productId
+        (product) => product.id === item.productId,
       );
 
-      const quantity = Math.max(0, Number(item.quantity) || 0);
-      const rate = Math.max(0, Number(item.rate) || 0);
-      const gst = Math.max(0, Number(item.gst) || 0);
-      const discount = Math.max(0, Number(item.discount) || 0);
-
-      const baseAmount = quantity * rate;
-      const taxableAmount = Math.max(baseAmount - discount, 0);
-      const gstAmount = (taxableAmount * gst) / 100;
-      const amount = taxableAmount + gstAmount;
+      const quantity = Math.max(0, toNumber(item.quantity));
+      const rate = Math.max(0, toNumber(item.rate));
+      const gst = Math.max(0, toNumber(item.gst));
+      const baseAmount = Number((quantity * rate).toFixed(2));
+      const discount = Math.min(
+        Math.max(0, toNumber(item.discount)),
+        baseAmount,
+      );
+      const taxableAmount = Number(
+        Math.max(0, baseAmount - discount).toFixed(2),
+      );
+      const gstAmount = Number(((taxableAmount * gst) / 100).toFixed(2));
 
       return {
-        productId: item.productId,
-        productName: selectedProduct?.name || "Select product",
+        selectedProduct,
         quantity,
         rate,
         gst,
         discount,
         baseAmount,
+        taxableAmount,
         gstAmount,
-        amount,
       };
     });
   }, [items, products]);
+
+  const draftGstTotal = useMemo(
+    () =>
+      itemBaseCalculations.reduce((total, item) => total + item.gstAmount, 0),
+    [itemBaseCalculations],
+  );
+
+  const taxType = getTaxType(
+    companyStateCode,
+    selectedSupplier?.stateCode || "",
+    draftGstTotal,
+  );
+
+  const calculatedItems = useMemo<CalculatedPurchaseItem[]>(() => {
+    return itemBaseCalculations.map((item, index) => {
+      const cgstAmount =
+        taxType === "INTRA_STATE" ? Number((item.gstAmount / 2).toFixed(2)) : 0;
+
+      const sgstAmount =
+        taxType === "INTRA_STATE"
+          ? Number((item.gstAmount - cgstAmount).toFixed(2))
+          : 0;
+
+      const igstAmount = taxType === "INTER_STATE" ? item.gstAmount : 0;
+
+      return {
+        productId: items[index].productId,
+        productName: item.selectedProduct?.name || "Select product",
+        hsnSacCode: item.selectedProduct?.hsnSacCode || "",
+        quantity: item.quantity,
+        rate: item.rate,
+        gst: item.gst,
+        discount: item.discount,
+        baseAmount: item.baseAmount,
+        taxableAmount: item.taxableAmount,
+        gstAmount: item.gstAmount,
+        cgstAmount,
+        sgstAmount,
+        igstAmount,
+        amount: Number((item.taxableAmount + item.gstAmount).toFixed(2)),
+      };
+    });
+  }, [itemBaseCalculations, items, taxType]);
 
   const totals = useMemo(() => {
     return calculatedItems.reduce(
       (result, item) => ({
         subtotal: result.subtotal + item.baseAmount,
+        taxableTotal: result.taxableTotal + item.taxableAmount,
         gstTotal: result.gstTotal + item.gstAmount,
+        cgstTotal: result.cgstTotal + item.cgstAmount,
+        sgstTotal: result.sgstTotal + item.sgstAmount,
+        igstTotal: result.igstTotal + item.igstAmount,
         discountTotal: result.discountTotal + item.discount,
         grandTotal: result.grandTotal + item.amount,
       }),
       {
         subtotal: 0,
+        taxableTotal: 0,
         gstTotal: 0,
+        cgstTotal: 0,
+        sgstTotal: 0,
+        igstTotal: 0,
         discountTotal: 0,
         grandTotal: 0,
-      }
+      },
     );
   }, [calculatedItems]);
 
   function updateItem(
     index: number,
     field: keyof PurchaseItemForm,
-    value: string
+    value: string,
   ) {
     setItems((currentItems) =>
       currentItems.map((item, itemIndex) => {
@@ -341,15 +486,13 @@ export default function PurchaseForm() {
 
         if (field === "productId") {
           const selectedProduct = products.find(
-            (product) => product.id === value
+            (product) => product.id === value,
           );
 
           return {
             ...item,
             productId: value,
-            rate: selectedProduct
-              ? String(selectedProduct.purchasePrice)
-              : "",
+            rate: selectedProduct ? String(selectedProduct.purchasePrice) : "",
             gst: selectedProduct ? String(selectedProduct.gst) : "18",
           };
         }
@@ -358,7 +501,7 @@ export default function PurchaseForm() {
           ...item,
           [field]: value,
         };
-      })
+      }),
     );
   }
 
@@ -373,7 +516,7 @@ export default function PurchaseForm() {
     }
 
     setItems((currentItems) =>
-      currentItems.filter((_, itemIndex) => itemIndex !== index)
+      currentItems.filter((_, itemIndex) => itemIndex !== index),
     );
   }
 
@@ -396,40 +539,60 @@ export default function PurchaseForm() {
     event.preventDefault();
 
     if (!activeCompanyId) {
-      showMessage(
-        editingPurchase
-          ? "Select an active company before updating a purchase bill."
-          : "Select an active company before creating a purchase bill."
-      );
+      showMessage("Select an active company before saving a purchase bill.");
       return;
     }
 
-    const selectedSupplier = suppliers.find(
-      (supplier) => supplier.id === form.supplierId
-    );
+    if (!/^[0-9]{2}$/.test(companyStateCode)) {
+      showMessage("Complete the active Company State and State Code first.");
+      return;
+    }
 
-    const validItems = calculatedItems.filter(
-      (item) =>
-        item.productId &&
-        item.quantity > 0 &&
-        item.rate > 0 &&
-        item.productName !== "Select product"
-    );
+    if (!selectedSupplier) {
+      showMessage("Please select a Supplier ledger.");
+      return;
+    }
+
+    if (!/^[0-9]{2}$/.test(selectedSupplier.stateCode)) {
+      showMessage(
+        "Complete the selected Supplier State and State Code from the Ledger page.",
+      );
+      return;
+    }
 
     if (!form.date) {
       showMessage("Please select a purchase date.");
       return;
     }
 
-    if (!selectedSupplier) {
+    const validItems = calculatedItems.filter(
+      (item) =>
+        item.productId &&
+        item.quantity > 0 &&
+        item.rate > 0 &&
+        item.productName !== "Select product",
+    );
+
+    if (validItems.length === 0) {
+      showMessage("Add at least one valid product with quantity and rate.");
+      return;
+    }
+
+    const missingHsnItem = validItems.find(
+      (item) => !/^[0-9]{4,8}$/.test(item.hsnSacCode),
+    );
+
+    if (missingHsnItem) {
       showMessage(
-        "Please select a supplier. Create a ledger with the Supplier group first."
+        `Complete the HSN Code for ${missingHsnItem.productName} from the Inventory page.`,
       );
       return;
     }
 
-    if (validItems.length === 0) {
-      showMessage("Add at least one valid product with quantity and rate.");
+    if (totals.gstTotal > 0 && taxType === "UNCLASSIFIED") {
+      showMessage(
+        "GST Type could not be classified. Check Company and Supplier State Codes.",
+      );
       return;
     }
 
@@ -451,7 +614,13 @@ export default function PurchaseForm() {
       gst_rate: item.gst,
       discount: item.discount,
       base_amount: item.baseAmount,
+      taxable_amount: item.taxableAmount,
       gst_amount: item.gstAmount,
+      cgst_amount: item.cgstAmount,
+      sgst_amount: item.sgstAmount,
+      igst_amount: item.igstAmount,
+      cess_amount: 0,
+      hsn_sac_code: item.hsnSacCode,
       amount: item.amount,
     }));
 
@@ -489,7 +658,7 @@ export default function PurchaseForm() {
       if (error) {
         if (error.code === "23505") {
           showMessage(
-            `Purchase bill number "${billNumber}" already exists for this company.`
+            `Purchase bill number "${billNumber}" already exists for this company.`,
           );
           return;
         }
@@ -498,8 +667,12 @@ export default function PurchaseForm() {
       }
 
       const successMessage = editingPurchase
-        ? `Purchase bill ${billNumber} updated, inventory rebalanced and audit history saved.`
-        : `Purchase bill ${billNumber} saved and product stock updated successfully.`;
+        ? `Purchase bill ${billNumber} updated with ${getTaxTypeLabel(
+            taxType,
+          )} GST snapshots. Inventory was rebalanced safely.`
+        : `Purchase bill ${billNumber} saved with ${getTaxTypeLabel(
+            taxType,
+          )} GST snapshots and stock updated.`;
 
       setEditingPurchase(null);
       resetForm();
@@ -507,23 +680,19 @@ export default function PurchaseForm() {
 
       window.dispatchEvent(new Event("vertexerp-purchases-updated"));
       window.dispatchEvent(new Event("vertexerp-products-updated"));
+      window.dispatchEvent(new Event("vertexerp-gst-data-updated"));
 
       showMessage(successMessage);
     } catch (error) {
-      const errorMessage =
+      showMessage(
         error instanceof Error
           ? error.message
-          : "Purchase bill could not be saved.";
-
-      showMessage(errorMessage);
+          : "Purchase bill could not be saved.",
+      );
     } finally {
       setIsSaving(false);
     }
   }
-
-  const selectedSupplier = suppliers.find(
-    (supplier) => supplier.id === form.supplierId
-  );
 
   const isFormDisabled = isLoading || !activeCompanyId || isSaving;
 
@@ -536,13 +705,14 @@ export default function PurchaseForm() {
       <div className="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-6 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-            {editingPurchase ? "Edit Purchase Bill" : "Create Purchase Bill"}
+            {editingPurchase
+              ? "Edit GST Purchase Bill"
+              : "Create GST Purchase Bill"}
           </h2>
 
           <p className="mt-1 text-sm text-slate-600 sm:text-base">
-            {editingPurchase
-              ? "Update supplier bill details and received quantities safely. Inventory is rebalanced and the previous version remains in Audit History."
-              : "Save supplier purchase bills and automatically increase product stock."}
+            Automatic supplier-state classification, HSN snapshots and CGST/SGST
+            or IGST input-tax split.
           </p>
         </div>
 
@@ -553,98 +723,119 @@ export default function PurchaseForm() {
               : "bg-blue-50 text-blue-700"
           }`}
         >
-          {editingPurchase ? "Editing Bill" : "Cloud Stock Entry"}
+          {editingPurchase ? "Editing Bill" : "GST Classification Active"}
         </div>
       </div>
 
       {message && (
-        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:text-base">
+        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
           {message}
         </div>
       )}
 
+      <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <SummaryBox
+            label="Receiving Company"
+            value={
+              companyStateCode
+                ? `${companyState} (${companyStateCode})`
+                : "Setup Pending"
+            }
+          />
+
+          <SummaryBox
+            label="Supplier State"
+            value={
+              selectedSupplier?.stateCode
+                ? `${selectedSupplier.state} (${selectedSupplier.stateCode})`
+                : "Select Supplier"
+            }
+          />
+
+          <SummaryBox
+            label="GST Type"
+            value={getTaxTypeLabel(taxType)}
+            valueClassName={
+              taxType === "UNCLASSIFIED"
+                ? "text-amber-700"
+                : taxType === "INTER_STATE"
+                  ? "text-violet-700"
+                  : "text-emerald-700"
+            }
+          />
+        </div>
+      </div>
+
       {editingPurchase && (
-        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 sm:text-base">
-          Editing purchase bill <strong>{editingPurchase.billNumber}</strong>{" "}
-          from <strong>{editingPurchase.supplierName}</strong>. Save Changes
-          will rebalance inventory and create an UPDATE record in Audit
-          History.
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+          Saving changes will rebalance inventory, weighted-average cost,
+          accounting and audit history through the existing protected purchase
+          workflow.
         </div>
       )}
 
-      {!isLoading && !activeCompanyId && (
-        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700 sm:text-base">
-          Select an active company from the <strong>Companies</strong> page
-          before creating a purchase bill.
-        </div>
-      )}
+      {!isLoading &&
+        activeCompanyId &&
+        !/^[0-9]{2}$/.test(companyStateCode) && (
+          <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-700">
+            Complete the active company State from the{" "}
+            <strong>Companies</strong> page.
+          </div>
+        )}
 
       {!isLoading && activeCompanyId && suppliers.length === 0 && (
-        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700 sm:text-base">
-          No supplier ledger found. Create a ledger with the{" "}
-          <strong>Supplier</strong> group from the Ledger page first.
+        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-700">
+          No Supplier ledger found. Create one from the <strong>Ledgers</strong>{" "}
+          page.
         </div>
       )}
 
       {!isLoading && activeCompanyId && products.length === 0 && (
-        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700 sm:text-base">
-          No products found. Add products from the <strong>Inventory</strong>{" "}
-          page first.
+        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-700">
+          No goods products found. Add inventory products before recording a
+          purchase bill.
         </div>
       )}
 
       <fieldset disabled={isFormDisabled}>
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-          <div>
-            <label className="mb-2 block font-semibold text-slate-800">
-              Purchase Bill Number
-            </label>
+          <Field
+            label="Purchase Bill Number"
+            value={form.billNumber}
+            placeholder="Example: PUR-0001"
+            onChange={(value) =>
+              setForm((current) => ({
+                ...current,
+                billNumber: value,
+              }))
+            }
+          />
 
-            <input
-              type="text"
-              value={form.billNumber}
-              onChange={(event) =>
-                setForm({ ...form, billNumber: event.target.value })
-              }
-              placeholder="Example: PUR-0001"
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed"
-            />
-          </div>
+          <Field
+            label="Purchase Date *"
+            type="date"
+            value={form.date}
+            placeholder=""
+            onChange={(value) =>
+              setForm((current) => ({
+                ...current,
+                date: value,
+              }))
+            }
+          />
 
-          <div>
-            <label className="mb-2 block font-semibold text-slate-800">
-              Purchase Date *
-            </label>
-
-            <input
-              type="date"
-              value={form.date}
-              onChange={(event) =>
-                setForm({ ...form, date: event.target.value })
-              }
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed"
-            />
-          </div>
-
-          <div>
-            <label className="mb-2 block font-semibold text-slate-800">
-              Payment Mode
-            </label>
-
-            <select
-              value={form.paymentMode}
-              onChange={(event) =>
-                setForm({ ...form, paymentMode: event.target.value })
-              }
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed"
-            >
-              <option>Cash</option>
-              <option>UPI</option>
-              <option>Bank Transfer</option>
-              <option>Credit</option>
-              <option>Card</option>
-            </select>
-          </div>
+          <SelectField
+            label="Payment Mode"
+            value={form.paymentMode}
+            options={["Cash", "UPI", "Bank Transfer", "Credit", "Card"]}
+            onChange={(value) =>
+              setForm((current) => ({
+                ...current,
+                paymentMode: value,
+              }))
+            }
+          />
 
           <div>
             <label className="mb-2 block font-semibold text-slate-800">
@@ -654,47 +845,37 @@ export default function PurchaseForm() {
             <select
               value={form.supplierId}
               onChange={(event) =>
-                setForm({ ...form, supplierId: event.target.value })
+                setForm((current) => ({
+                  ...current,
+                  supplierId: event.target.value,
+                }))
               }
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
             >
               <option value="">Select supplier</option>
 
               {suppliers.map((supplier) => (
                 <option key={supplier.id} value={supplier.id}>
                   {supplier.name}
+                  {supplier.stateCode
+                    ? ` · ${supplier.stateCode}`
+                    : " · State Pending"}
                 </option>
               ))}
             </select>
           </div>
 
-          <div>
-            <label className="mb-2 block font-semibold text-slate-800">
-              Supplier Mobile
-            </label>
+          <ReadOnlyField
+            label="Supplier Mobile"
+            value={selectedSupplier?.mobile || ""}
+            placeholder="Supplier mobile"
+          />
 
-            <input
-              type="text"
-              value={selectedSupplier?.mobile || ""}
-              readOnly
-              placeholder="Supplier mobile will appear here"
-              className="w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-slate-700 placeholder:text-slate-500 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="mb-2 block font-semibold text-slate-800">
-              Supplier GST Number
-            </label>
-
-            <input
-              type="text"
-              value={selectedSupplier?.gst || ""}
-              readOnly
-              placeholder="Supplier GST will appear here"
-              className="w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-slate-700 placeholder:text-slate-500 outline-none"
-            />
-          </div>
+          <ReadOnlyField
+            label="Supplier GST Number"
+            value={selectedSupplier?.gst || ""}
+            placeholder="Unregistered supplier"
+          />
         </div>
 
         <div className="mt-8 sm:mt-10">
@@ -705,7 +886,7 @@ export default function PurchaseForm() {
               </h3>
 
               <p className="mt-1 text-sm text-slate-600">
-                Select products received from the supplier.
+                HSN and GST rate are loaded from Inventory.
               </p>
             </div>
 
@@ -718,294 +899,209 @@ export default function PurchaseForm() {
             </button>
           </div>
 
-          {/* Phone layout: each purchase item is a readable card. */}
           <div className="space-y-4 md:hidden">
-            {items.map((item, index) => (
-              <div
-                key={index}
-                className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-              >
-                <div className="mb-4 flex items-center justify-between">
-                  <p className="font-bold text-slate-900">
-                    Item {index + 1}
-                  </p>
+            {items.map((item, index) => {
+              const calculated = calculatedItems[index];
 
-                  <button
-                    type="button"
-                    onClick={() => removeItem(index)}
-                    className="text-sm font-semibold text-red-500 transition hover:text-red-700"
-                  >
-                    Remove
-                  </button>
-                </div>
+              return (
+                <div
+                  key={index}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                >
+                  <div className="mb-4 flex items-center justify-between">
+                    <p className="font-bold text-slate-900">
+                      Purchase Item {index + 1}
+                    </p>
 
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    Product
-                  </label>
-
-                  <select
-                    value={item.productId}
-                    onChange={(event) =>
-                      updateItem(index, "productId", event.target.value)
-                    }
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-800 outline-none focus:border-blue-500"
-                  >
-                    <option value="">Select product</option>
-
-                    {products.map((product) => (
-                      <option key={product.id} value={product.id}>
-                        {product.name}
-                        {product.sku ? ` (${product.sku})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      Quantity
-                    </label>
-
-                    <input
-                      type="number"
-                      min="1"
-                      value={item.quantity}
-                      onChange={(event) =>
-                        updateItem(index, "quantity", event.target.value)
-                      }
-                      placeholder="0"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-900 outline-none focus:border-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      Purchase Rate
-                    </label>
-
-                    <input
-                      type="number"
-                      min="0"
-                      value={item.rate}
-                      onChange={(event) =>
-                        updateItem(index, "rate", event.target.value)
-                      }
-                      placeholder="₹ 0"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-900 outline-none focus:border-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      GST
-                    </label>
-
-                    <select
-                      value={item.gst}
-                      onChange={(event) =>
-                        updateItem(index, "gst", event.target.value)
-                      }
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-800 outline-none focus:border-blue-500"
+                    <button
+                      type="button"
+                      onClick={() => removeItem(index)}
+                      className="text-sm font-semibold text-red-500"
                     >
-                      <option value="0">0%</option>
-                      <option value="5">5%</option>
-                      <option value="12">12%</option>
-                      <option value="18">18%</option>
-                      <option value="28">28%</option>
-                    </select>
+                      Remove
+                    </button>
                   </div>
 
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      Discount
-                    </label>
+                  <ProductSelect
+                    value={item.productId}
+                    products={products}
+                    onChange={(value) => updateItem(index, "productId", value)}
+                  />
 
-                    <input
-                      type="number"
-                      min="0"
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <MiniField
+                      label="Quantity"
+                      value={item.quantity}
+                      onChange={(value) => updateItem(index, "quantity", value)}
+                    />
+
+                    <MiniField
+                      label="Purchase Rate"
+                      value={item.rate}
+                      onChange={(value) => updateItem(index, "rate", value)}
+                    />
+
+                    <MiniField
+                      label="GST %"
+                      value={item.gst}
+                      onChange={(value) => updateItem(index, "gst", value)}
+                    />
+
+                    <MiniField
+                      label="Discount"
                       value={item.discount}
-                      onChange={(event) =>
-                        updateItem(index, "discount", event.target.value)
-                      }
-                      placeholder="₹ 0"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-900 outline-none focus:border-blue-500"
+                      onChange={(value) => updateItem(index, "discount", value)}
+                    />
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <SummaryBox
+                      label="HSN"
+                      value={calculated.hsnSacCode || "Pending"}
+                    />
+                    <SummaryBox
+                      label="Taxable"
+                      value={formatCurrency(calculated.taxableAmount)}
+                    />
+                    <SummaryBox
+                      label="Input GST"
+                      value={formatCurrency(calculated.gstAmount)}
+                    />
+                    <SummaryBox
+                      label="Item Total"
+                      value={formatCurrency(calculated.amount)}
                     />
                   </div>
                 </div>
-
-                <div className="mt-4 flex items-center justify-between rounded-xl bg-white px-4 py-3">
-                  <span className="text-sm font-semibold text-slate-600">
-                    Amount
-                  </span>
-
-                  <span className="font-bold text-slate-900">
-                    ₹
-                    {calculatedItems[index].amount.toLocaleString("en-IN", {
-                      maximumFractionDigits: 2,
-                    })}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
-          {/* Desktop/tablet layout: horizontal table remains efficient for rapid entry. */}
           <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 md:block">
-            <table className="w-full min-w-[1000px]">
+            <table className="w-full min-w-[1120px]">
               <thead className="bg-slate-50">
                 <tr className="text-left">
-                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                    Product
-                  </th>
-                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                    Quantity
-                  </th>
-                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                    Purchase Rate
-                  </th>
-                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                    GST
-                  </th>
-                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                    Discount
-                  </th>
-                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                    Amount
-                  </th>
-                  <th className="px-5 py-4 text-sm font-bold text-slate-700">
-                    Action
-                  </th>
+                  {[
+                    "Product",
+                    "HSN",
+                    "Qty",
+                    "Rate",
+                    "GST",
+                    "Discount",
+                    "Taxable",
+                    "Amount",
+                    "Action",
+                  ].map((heading) => (
+                    <th
+                      key={heading}
+                      className="px-4 py-4 text-sm font-bold text-slate-700"
+                    >
+                      {heading}
+                    </th>
+                  ))}
                 </tr>
               </thead>
 
               <tbody>
-                {items.map((item, index) => (
-                  <tr key={index} className="border-t border-slate-200">
-                    <td className="px-5 py-4">
-                      <select
-                        value={item.productId}
-                        onChange={(event) =>
-                          updateItem(index, "productId", event.target.value)
-                        }
-                        className="w-full min-w-[190px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-800 outline-none focus:border-blue-500"
-                      >
-                        <option value="">Select product</option>
+                {items.map((item, index) => {
+                  const calculated = calculatedItems[index];
 
-                        {products.map((product) => (
-                          <option key={product.id} value={product.id}>
-                            {product.name}
-                            {product.sku ? ` (${product.sku})` : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
+                  return (
+                    <tr key={index} className="border-t border-slate-200">
+                      <td className="px-4 py-4">
+                        <ProductSelect
+                          value={item.productId}
+                          products={products}
+                          onChange={(value) =>
+                            updateItem(index, "productId", value)
+                          }
+                        />
+                      </td>
 
-                    <td className="px-5 py-4">
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(event) =>
-                          updateItem(index, "quantity", event.target.value)
-                        }
-                        placeholder="0"
-                        className="w-24 rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
-                      />
-                    </td>
+                      <td className="px-4 py-4 font-semibold text-slate-700">
+                        {calculated.hsnSacCode || "—"}
+                      </td>
 
-                    <td className="px-5 py-4">
-                      <input
-                        type="number"
-                        min="0"
-                        value={item.rate}
-                        onChange={(event) =>
-                          updateItem(index, "rate", event.target.value)
-                        }
-                        placeholder="₹ 0"
-                        className="w-28 rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
-                      />
-                    </td>
+                      <td className="px-4 py-4">
+                        <TableInput
+                          value={item.quantity}
+                          onChange={(value) =>
+                            updateItem(index, "quantity", value)
+                          }
+                        />
+                      </td>
 
-                    <td className="px-5 py-4">
-                      <select
-                        value={item.gst}
-                        onChange={(event) =>
-                          updateItem(index, "gst", event.target.value)
-                        }
-                        className="w-24 rounded-xl border border-slate-300 px-3 py-2 text-slate-800 outline-none focus:border-blue-500"
-                      >
-                        <option value="0">0%</option>
-                        <option value="5">5%</option>
-                        <option value="12">12%</option>
-                        <option value="18">18%</option>
-                        <option value="28">28%</option>
-                      </select>
-                    </td>
+                      <td className="px-4 py-4">
+                        <TableInput
+                          value={item.rate}
+                          onChange={(value) => updateItem(index, "rate", value)}
+                        />
+                      </td>
 
-                    <td className="px-5 py-4">
-                      <input
-                        type="number"
-                        min="0"
-                        value={item.discount}
-                        onChange={(event) =>
-                          updateItem(index, "discount", event.target.value)
-                        }
-                        placeholder="₹ 0"
-                        className="w-28 rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
-                      />
-                    </td>
+                      <td className="px-4 py-4">
+                        <TableInput
+                          value={item.gst}
+                          onChange={(value) => updateItem(index, "gst", value)}
+                        />
+                      </td>
 
-                    <td className="px-5 py-4 font-bold text-slate-900">
-                      ₹
-                      {calculatedItems[index].amount.toLocaleString("en-IN", {
-                        maximumFractionDigits: 2,
-                      })}
-                    </td>
+                      <td className="px-4 py-4">
+                        <TableInput
+                          value={item.discount}
+                          onChange={(value) =>
+                            updateItem(index, "discount", value)
+                          }
+                        />
+                      </td>
 
-                    <td className="px-5 py-4">
-                      <button
-                        type="button"
-                        onClick={() => removeItem(index)}
-                        className="font-semibold text-red-500 transition hover:text-red-700"
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      <td className="px-4 py-4 font-semibold text-slate-700">
+                        {formatCurrency(calculated.taxableAmount)}
+                      </td>
+
+                      <td className="px-4 py-4 font-bold text-slate-900">
+                        {formatCurrency(calculated.amount)}
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <button
+                          type="button"
+                          onClick={() => removeItem(index)}
+                          className="font-semibold text-red-500"
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
 
-        <div className="mt-6 max-w-none rounded-2xl bg-slate-50 p-5 sm:mt-8 sm:p-6 md:ml-auto md:max-w-md">
-          <div className="flex items-center justify-between border-b border-slate-200 pb-3 text-slate-700">
-            <span>Subtotal</span>
-            <span className="font-semibold">
-              ₹{totals.subtotal.toLocaleString("en-IN")}
-            </span>
-          </div>
+        <div className="mt-6 max-w-none rounded-2xl bg-slate-50 p-5 sm:mt-8 sm:p-6 md:ml-auto md:max-w-lg">
+          <TotalRow label="Gross Subtotal" value={totals.subtotal} />
+          <TotalRow label="Discount" value={totals.discountTotal} />
+          <TotalRow label="Taxable Value" value={totals.taxableTotal} />
 
-          <div className="flex items-center justify-between border-b border-slate-200 py-3 text-slate-700">
-            <span>Total GST</span>
-            <span className="font-semibold">
-              ₹{totals.gstTotal.toLocaleString("en-IN")}
-            </span>
-          </div>
+          {taxType === "INTRA_STATE" && (
+            <>
+              <TotalRow label="Input CGST" value={totals.cgstTotal} />
+              <TotalRow label="Input SGST" value={totals.sgstTotal} />
+            </>
+          )}
 
-          <div className="flex items-center justify-between border-b border-slate-200 py-3 text-slate-700">
-            <span>Discount</span>
-            <span className="font-semibold">
-              ₹{totals.discountTotal.toLocaleString("en-IN")}
-            </span>
-          </div>
+          {taxType === "INTER_STATE" && (
+            <TotalRow label="Input IGST" value={totals.igstTotal} />
+          )}
 
           <div className="flex items-center justify-between pt-4">
-            <span className="text-lg font-bold text-slate-900">Grand Total</span>
+            <span className="text-lg font-bold text-slate-900">
+              Grand Total
+            </span>
+
             <span className="text-2xl font-bold text-blue-600">
-              ₹{totals.grandTotal.toLocaleString("en-IN")}
+              {formatCurrency(totals.grandTotal)}
             </span>
           </div>
         </div>
@@ -1013,15 +1109,13 @@ export default function PurchaseForm() {
         <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:gap-4">
           <button
             type="submit"
-            className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl sm:w-auto sm:px-7"
+            className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 sm:w-auto sm:px-7"
           >
             {isSaving
-              ? editingPurchase
-                ? "Saving Changes..."
-                : "Saving Purchase..."
+              ? "Saving..."
               : editingPurchase
-                ? "Save Changes & Rebalance Stock"
-                : "Save Purchase & Update Stock"}
+                ? "Save GST Bill Changes"
+                : "Save GST Purchase Bill"}
           </button>
 
           <button
@@ -1034,5 +1128,187 @@ export default function PurchaseForm() {
         </div>
       </fieldset>
     </form>
+  );
+}
+
+function Field({
+  label,
+  value,
+  placeholder,
+  onChange,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+  type?: string;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block font-semibold text-slate-800">{label}</label>
+
+      <input
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+      />
+    </div>
+  );
+}
+
+function ReadOnlyField({
+  label,
+  value,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block font-semibold text-slate-800">{label}</label>
+
+      <input
+        value={value}
+        readOnly
+        placeholder={placeholder}
+        className="w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-slate-700"
+      />
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block font-semibold text-slate-800">{label}</label>
+
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+      >
+        {options.map((option) => (
+          <option key={option}>{option}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function ProductSelect({
+  value,
+  products,
+  onChange,
+}: {
+  value: string;
+  products: Product[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="w-full min-w-[210px] rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-800 outline-none focus:border-blue-500"
+    >
+      <option value="">Select product</option>
+
+      {products.map((product) => (
+        <option key={product.id} value={product.id}>
+          {product.name}
+          {product.sku ? ` (${product.sku})` : ""}
+          {product.hsnSacCode
+            ? ` · HSN ${product.hsnSacCode}`
+            : " · HSN Pending"}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function MiniField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-semibold text-slate-700">
+        {label}
+      </label>
+
+      <input
+        type="number"
+        min="0"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-900 outline-none focus:border-blue-500"
+      />
+    </div>
+  );
+}
+
+function TableInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <input
+      type="number"
+      min="0"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="w-24 rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
+    />
+  );
+}
+
+function SummaryBox({
+  label,
+  value,
+  valueClassName = "text-slate-900",
+}: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className="rounded-xl bg-white p-3">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+
+      <p className={`mt-1 break-words font-bold ${valueClassName}`}>{value}</p>
+    </div>
+  );
+}
+
+function TotalRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between border-b border-slate-200 py-3 text-slate-700">
+      <span>{label}</span>
+      <span className="font-semibold">{formatCurrency(value)}</span>
+    </div>
   );
 }

@@ -21,8 +21,11 @@ type Product = {
 type ProductTableProps = {
   products: Product[];
   onEditProduct: (product: Product) => void;
-  onDeleteProduct: (productId: string) => void;
-  onUpdateStock: (productId: string, nextQuantity: number) => void;
+  onDeleteProduct: (productId: string) => void | Promise<void>;
+  onUpdateStock: (
+    productId: string,
+    nextQuantity: number
+  ) => void | Promise<void>;
 };
 
 function formatCurrency(amount: number) {
@@ -37,17 +40,17 @@ function getProductStatus(product: Product) {
     };
   }
 
-  const quantity = Number(product.quantity || 0);
-  const lowStockAlert = Number(product.lowStockAlert || 0);
-
-  if (quantity <= 0) {
+  if (product.quantity <= 0) {
     return {
       label: "Out of Stock",
       className: "bg-red-100 text-red-700",
     };
   }
 
-  if (lowStockAlert > 0 && quantity <= lowStockAlert) {
+  if (
+    product.lowStockAlert > 0 &&
+    product.quantity <= product.lowStockAlert
+  ) {
     return {
       label: "Low Stock",
       className: "bg-orange-100 text-orange-700",
@@ -80,19 +83,21 @@ export default function ProductTable({
   onDeleteProduct,
   onUpdateStock,
 }: ProductTableProps) {
-  function handleDelete(product: Product) {
+  async function handleDelete(product: Product) {
     const shouldDelete = window.confirm(
       `Delete "${product.name}" from inventory?`
     );
 
     if (shouldDelete) {
-      onDeleteProduct(product.id);
+      await onDeleteProduct(product.id);
     }
   }
 
-  function handleAdjustStock(product: Product) {
+  async function handleAdjustStock(product: Product) {
     if (product.isService) {
-      window.alert("Stock adjustment is not available for service items.");
+      window.alert(
+        "Stock adjustment is not available for service items."
+      );
       return;
     }
 
@@ -114,7 +119,7 @@ export default function ProductTable({
       return;
     }
 
-    onUpdateStock(product.id, nextQuantity);
+    await onUpdateStock(product.id, nextQuantity);
   }
 
   return (
@@ -162,7 +167,6 @@ export default function ProductTable({
                       <p className="truncate text-lg font-bold text-slate-900">
                         {product.name}
                       </p>
-
                       <p className="mt-1 text-sm font-semibold text-blue-600">
                         {product.sku || "No SKU"}
                       </p>
@@ -181,7 +185,11 @@ export default function ProductTable({
 
                   <div className="mt-4 grid grid-cols-2 gap-3">
                     <InfoBox
-                      label={product.isService ? "SAC Code" : "HSN Code"}
+                      label={
+                        product.isService
+                          ? "SAC Code"
+                          : "HSN Code"
+                      }
                       value={product.hsnSacCode || "—"}
                     />
 
@@ -189,7 +197,6 @@ export default function ProductTable({
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                         GST Setup
                       </p>
-
                       <span
                         className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${hsnStatus.className}`}
                       >
@@ -199,7 +206,9 @@ export default function ProductTable({
 
                     <InfoBox
                       label="Selling Price"
-                      value={formatCurrency(product.sellingPrice)}
+                      value={formatCurrency(
+                        product.sellingPrice
+                      )}
                     />
 
                     <InfoBox
@@ -214,9 +223,9 @@ export default function ProductTable({
                         <p className="text-sm font-semibold text-slate-700">
                           Available Stock
                         </p>
-
                         <p className="mt-0.5 text-xs text-slate-500">
-                          Alert at {product.lowStockAlert} {product.unit}
+                          Alert at {product.lowStockAlert}{" "}
+                          {product.unit}
                         </p>
                       </div>
 
@@ -240,7 +249,9 @@ export default function ProductTable({
 
                     <button
                       type="button"
-                      onClick={() => handleAdjustStock(product)}
+                      onClick={() =>
+                        void handleAdjustStock(product)
+                      }
                       disabled={product.isService}
                       className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-bold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                     >
@@ -249,7 +260,7 @@ export default function ProductTable({
 
                     <button
                       type="button"
-                      onClick={() => handleDelete(product)}
+                      onClick={() => void handleDelete(product)}
                       className="col-span-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
                     >
                       Delete Product
@@ -290,9 +301,9 @@ export default function ProductTable({
                         <p className="font-bold text-slate-900">
                           {product.name}
                         </p>
-
                         <p className="mt-1 max-w-[230px] truncate text-sm text-slate-500">
-                          {product.description || "No description added"}
+                          {product.description ||
+                            "No description added"}
                         </p>
                       </td>
 
@@ -304,7 +315,6 @@ export default function ProductTable({
                         <p className="font-semibold text-slate-800">
                           {product.hsnSacCode || "—"}
                         </p>
-
                         <p className="mt-1 text-xs text-slate-500">
                           {product.isService ? "SAC" : "HSN"}
                         </p>
@@ -315,18 +325,21 @@ export default function ProductTable({
                       </td>
 
                       <td className="px-6 py-5 font-semibold text-slate-900">
-                        {formatCurrency(product.sellingPrice)}
+                        {formatCurrency(
+                          product.sellingPrice
+                        )}
                       </td>
 
                       <td className="px-6 py-5">
                         {product.isService ? (
-                          <span className="text-slate-500">Not applicable</span>
+                          <span className="text-slate-500">
+                            Not applicable
+                          </span>
                         ) : (
                           <>
                             <p className="font-bold text-slate-900">
                               {product.quantity} {product.unit}
                             </p>
-
                             <p className="mt-1 text-xs text-slate-500">
                               Alert at {product.lowStockAlert}
                             </p>
@@ -358,7 +371,9 @@ export default function ProductTable({
                         <div className="flex items-center gap-4">
                           <button
                             type="button"
-                            onClick={() => onEditProduct(product)}
+                            onClick={() =>
+                              onEditProduct(product)
+                            }
                             className="font-semibold text-violet-600 transition hover:text-violet-800"
                           >
                             Edit
@@ -366,7 +381,9 @@ export default function ProductTable({
 
                           <button
                             type="button"
-                            onClick={() => handleAdjustStock(product)}
+                            onClick={() =>
+                              void handleAdjustStock(product)
+                            }
                             disabled={product.isService}
                             className="font-semibold text-blue-600 transition hover:text-blue-800 disabled:cursor-not-allowed disabled:text-slate-400"
                           >
@@ -375,7 +392,9 @@ export default function ProductTable({
 
                           <button
                             type="button"
-                            onClick={() => handleDelete(product)}
+                            onClick={() =>
+                              void handleDelete(product)
+                            }
                             className="font-semibold text-red-500 transition hover:text-red-700"
                           >
                             Delete
