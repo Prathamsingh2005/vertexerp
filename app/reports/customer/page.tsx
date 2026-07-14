@@ -31,6 +31,13 @@ type PaymentRow = {
   amount: number | string | null;
 };
 
+type CreditNoteRow = {
+  id: string;
+  source_sale_id: string;
+  grand_total: number | string | null;
+  status: "POSTED" | "VOID";
+};
+
 type ProfileRow = {
   active_company_id: string | null;
 };
@@ -45,6 +52,7 @@ type CustomerReportRow = {
   invoiceCount: number;
   totalSales: number;
   creditSales: number;
+  creditNoteAmount: number;
   receivedAmount: number;
   pendingAmount: number;
 };
@@ -61,17 +69,26 @@ function formatCurrency(amount: number) {
 }
 
 function isCustomerLedger(ledgerType: string) {
-  return String(ledgerType || "").trim().toLowerCase() === "customer";
+  return (
+    String(ledgerType || "")
+      .trim()
+      .toLowerCase() === "customer"
+  );
 }
 
 function isCreditPayment(paymentMode: string) {
-  return String(paymentMode || "").trim().toLowerCase() === "credit";
+  return (
+    String(paymentMode || "")
+      .trim()
+      .toLowerCase() === "credit"
+  );
 }
 
 function isCustomerReceipt(paymentType: string) {
   return (
-    String(paymentType || "").trim().toLowerCase() ===
-    "customer receipt"
+    String(paymentType || "")
+      .trim()
+      .toLowerCase() === "customer receipt"
   );
 }
 
@@ -79,6 +96,7 @@ export default function CustomerReportPage() {
   const [ledgers, setLedgers] = useState<LedgerRow[]>([]);
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [creditNotes, setCreditNotes] = useState<CreditNoteRow[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -106,6 +124,7 @@ export default function CustomerReportPage() {
         setLedgers([]);
         setSales([]);
         setPayments([]);
+        setCreditNotes([]);
         showMessage("Please sign in to view the customer report.");
         return;
       }
@@ -127,28 +146,38 @@ export default function CustomerReportPage() {
         setLedgers([]);
         setSales([]);
         setPayments([]);
+        setCreditNotes([]);
         showMessage("Select an active company from the Companies page first.");
         return;
       }
 
-      const [ledgersResponse, salesResponse, paymentsResponse] =
-        await Promise.all([
-          supabase
-            .from("ledgers")
-            .select(
-              "id, name, ledger_type, opening_balance, mobile, email, gst_number, address"
-            )
-            .eq("company_id", activeCompanyId)
-            .order("name", { ascending: true }),
-          supabase
-            .from("sales")
-            .select("id, customer_id, payment_mode, grand_total")
-            .eq("company_id", activeCompanyId),
-          supabase
-            .from("payments")
-            .select("id, payment_type, party_id, amount")
-            .eq("company_id", activeCompanyId),
-        ]);
+      const [
+        ledgersResponse,
+        salesResponse,
+        paymentsResponse,
+        creditNotesResponse,
+      ] = await Promise.all([
+        supabase
+          .from("ledgers")
+          .select(
+            "id, name, ledger_type, opening_balance, mobile, email, gst_number, address",
+          )
+          .eq("company_id", activeCompanyId)
+          .order("name", { ascending: true }),
+        supabase
+          .from("sales")
+          .select("id, customer_id, payment_mode, grand_total")
+          .eq("company_id", activeCompanyId),
+        supabase
+          .from("payments")
+          .select("id, payment_type, party_id, amount")
+          .eq("company_id", activeCompanyId),
+        supabase
+          .from("credit_notes")
+          .select("id, source_sale_id, grand_total, status")
+          .eq("company_id", activeCompanyId)
+          .eq("status", "POSTED"),
+      ]);
 
       if (ledgersResponse.error) {
         throw ledgersResponse.error;
@@ -162,18 +191,24 @@ export default function CustomerReportPage() {
         throw paymentsResponse.error;
       }
 
+      if (creditNotesResponse.error) {
+        throw creditNotesResponse.error;
+      }
+
       setLedgers((ledgersResponse.data || []) as LedgerRow[]);
       setSales((salesResponse.data || []) as SaleRow[]);
       setPayments((paymentsResponse.data || []) as PaymentRow[]);
+      setCreditNotes((creditNotesResponse.data || []) as CreditNoteRow[]);
     } catch (error) {
       setLedgers([]);
       setSales([]);
       setPayments([]);
+      setCreditNotes([]);
 
       showMessage(
         error instanceof Error
           ? error.message
-          : "Customer report data could not be loaded from the cloud database."
+          : "Customer report data could not be loaded from the cloud database.",
       );
     } finally {
       setIsLoading(false);
@@ -187,6 +222,7 @@ export default function CustomerReportPage() {
       "vertexerp-ledgers-updated",
       "vertexerp-sales-updated",
       "vertexerp-payments-updated",
+      "vertexerp-gst-data-updated",
       "vertexerp-active-company-updated",
     ];
 
@@ -217,6 +253,7 @@ export default function CustomerReportPage() {
           invoiceCount: 0,
           totalSales: 0,
           creditSales: 0,
+          creditNoteAmount: 0,
           receivedAmount: 0,
           pendingAmount: 0,
         });
@@ -243,6 +280,24 @@ export default function CustomerReportPage() {
       }
     });
 
+    const saleById = new Map(sales.map((sale) => [sale.id, sale] as const));
+
+    creditNotes.forEach((note) => {
+      const sourceSale = saleById.get(note.source_sale_id);
+
+      if (!sourceSale?.customer_id) {
+        return;
+      }
+
+      const customer = customerMap.get(sourceSale.customer_id);
+
+      if (!customer) {
+        return;
+      }
+
+      customer.creditNoteAmount += toNumber(note.grand_total);
+    });
+
     payments
       .filter((payment) => isCustomerReceipt(payment.payment_type))
       .forEach((payment) => {
@@ -262,14 +317,17 @@ export default function CustomerReportPage() {
     customerMap.forEach((customer) => {
       customer.pendingAmount = Math.max(
         0,
-        customer.creditSales - customer.receivedAmount
+        customer.openingBalance +
+          customer.creditSales -
+          customer.creditNoteAmount -
+          customer.receivedAmount,
       );
     });
 
     return Array.from(customerMap.values()).sort(
-      (first, second) => second.totalSales - first.totalSales
+      (first, second) => second.totalSales - first.totalSales,
     );
-  }, [ledgers, sales, payments]);
+  }, [ledgers, sales, payments, creditNotes]);
 
   const filteredCustomers = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
@@ -283,27 +341,32 @@ export default function CustomerReportPage() {
         customer.name.toLowerCase().includes(search) ||
         customer.mobile.includes(search) ||
         customer.email.toLowerCase().includes(search) ||
-        customer.gst.toLowerCase().includes(search)
+        customer.gst.toLowerCase().includes(search),
     );
   }, [customerRows, searchTerm]);
 
   const totalSales = customerRows.reduce(
     (total, customer) => total + customer.totalSales,
-    0
+    0,
   );
 
   const totalPending = customerRows.reduce(
     (total, customer) => total + customer.pendingAmount,
-    0
+    0,
   );
 
   const totalReceived = customerRows.reduce(
     (total, customer) => total + customer.receivedAmount,
-    0
+    0,
+  );
+
+  const totalCreditNotes = customerRows.reduce(
+    (total, customer) => total + customer.creditNoteAmount,
+    0,
   );
 
   const activeCustomers = customerRows.filter(
-    (customer) => customer.invoiceCount > 0
+    (customer) => customer.invoiceCount > 0,
   ).length;
 
   function resetSearch() {
@@ -369,9 +432,7 @@ export default function CustomerReportPage() {
             </div>
 
             <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
-              <p className="font-medium text-slate-600">
-                Total Customer Sales
-              </p>
+              <p className="font-medium text-slate-600">Total Customer Sales</p>
 
               <h2 className="mt-3 break-words text-3xl font-bold text-purple-600 sm:text-4xl">
                 {isLoading ? "..." : formatCurrency(totalSales)}
@@ -390,7 +451,8 @@ export default function CustomerReportPage() {
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Credit sales minus saved customer receipts
+                Opening balance plus credit sales, less posted Credit Notes and
+                receipts
               </p>
             </div>
           </div>
@@ -406,18 +468,17 @@ export default function CustomerReportPage() {
               </p>
 
               <p className="mt-2 text-sm text-emerald-700">
-                Total receipts recorded against customer balances
+                Receipts recorded · Credit Note adjustments:{" "}
+                {formatCurrency(totalCreditNotes)}
               </p>
             </div>
 
             <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 sm:p-6">
-              <p className="font-semibold text-blue-800">
-                Balance Calculation
-              </p>
+              <p className="font-semibold text-blue-800">Balance Calculation</p>
 
               <p className="mt-2 text-sm leading-6 text-blue-700">
-                Outstanding is calculated as credit sales minus customer
-                receipts. Opening balance is displayed separately for reference.
+                Outstanding = Opening Balance + Credit Sales − Posted Credit
+                Notes − Customer Receipts. VOID notes are excluded.
               </p>
             </div>
           </div>
@@ -492,7 +553,9 @@ export default function CustomerReportPage() {
                           </p>
 
                           <p className="mt-1 truncate text-sm text-slate-500">
-                            {customer.mobile || customer.email || "No contact details"}
+                            {customer.mobile ||
+                              customer.email ||
+                              "No contact details"}
                           </p>
                         </div>
 
@@ -537,6 +600,15 @@ export default function CustomerReportPage() {
 
                         <div className="rounded-xl bg-white p-3">
                           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Credit Notes
+                          </p>
+                          <p className="mt-1 break-words font-bold text-cyan-700">
+                            {formatCurrency(customer.creditNoteAmount)}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                             Receipts
                           </p>
                           <p className="mt-1 break-words font-bold text-emerald-700">
@@ -557,8 +629,12 @@ export default function CustomerReportPage() {
 
                       {(customer.gst || customer.email) && (
                         <div className="mt-3 space-y-1 text-sm text-slate-600">
-                          {customer.email && <p className="truncate">{customer.email}</p>}
-                          {customer.gst && <p className="break-words">GST: {customer.gst}</p>}
+                          {customer.email && (
+                            <p className="truncate">{customer.email}</p>
+                          )}
+                          {customer.gst && (
+                            <p className="break-words">GST: {customer.gst}</p>
+                          )}
                         </div>
                       )}
                     </article>
@@ -568,7 +644,7 @@ export default function CustomerReportPage() {
             </div>
 
             <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[1250px]">
+              <table className="w-full min-w-[1380px]">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left">
                     <th className="px-6 py-4 text-sm font-bold text-slate-700">
@@ -596,6 +672,10 @@ export default function CustomerReportPage() {
                     </th>
 
                     <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                      Credit Notes
+                    </th>
+
+                    <th className="px-6 py-4 text-sm font-bold text-slate-700">
                       Receipts
                     </th>
 
@@ -613,7 +693,7 @@ export default function CustomerReportPage() {
                   {isLoading ? (
                     <tr>
                       <td
-                        colSpan={9}
+                        colSpan={10}
                         className="px-6 py-12 text-center text-slate-500"
                       >
                         Loading customer report from the cloud database...
@@ -622,7 +702,7 @@ export default function CustomerReportPage() {
                   ) : filteredCustomers.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={9}
+                        colSpan={10}
                         className="px-6 py-12 text-center text-slate-500"
                       >
                         <p className="text-lg font-semibold text-slate-700">
@@ -668,6 +748,10 @@ export default function CustomerReportPage() {
 
                         <td className="px-6 py-5 font-bold text-blue-700">
                           {formatCurrency(customer.totalSales)}
+                        </td>
+
+                        <td className="px-6 py-5 font-bold text-cyan-700">
+                          {formatCurrency(customer.creditNoteAmount)}
                         </td>
 
                         <td className="px-6 py-5 font-bold text-emerald-600">

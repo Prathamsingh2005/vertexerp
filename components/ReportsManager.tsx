@@ -36,6 +36,28 @@ type PaymentRow = {
   amount: number | string | null;
 };
 
+type LedgerRow = {
+  id: string;
+  ledger_type: string;
+  opening_balance: number | string | null;
+};
+
+type CreditNoteRow = {
+  id: string;
+  source_sale_id: string;
+  credit_note_date: string;
+  grand_total: number | string | null;
+  status: "POSTED" | "VOID";
+};
+
+type DebitNoteRow = {
+  id: string;
+  source_purchase_id: string;
+  debit_note_date: string;
+  grand_total: number | string | null;
+  status: "POSTED" | "VOID";
+};
+
 type ProfileRow = {
   active_company_id: string | null;
 };
@@ -137,11 +159,7 @@ function formatDate(dateValue: string) {
   });
 }
 
-function isDateInRange(
-  dateValue: string,
-  fromDate: string,
-  toDate: string
-) {
+function isDateInRange(dateValue: string, fromDate: string, toDate: string) {
   if (!dateValue) {
     return false;
   }
@@ -158,27 +176,55 @@ function isDateInRange(
 }
 
 function isCreditPayment(paymentMode: string) {
-  return String(paymentMode || "").trim().toLowerCase() === "credit";
+  return (
+    String(paymentMode || "")
+      .trim()
+      .toLowerCase() === "credit"
+  );
 }
 
 function calculateOutstanding(
+  partyLedgers: LedgerRow[],
   entries: {
     partyId: string | null;
     amount: number;
   }[],
+  returnAdjustments: {
+    partyId: string | null;
+    amount: number;
+  }[],
   payments: PaymentRow[],
-  paymentType: PaymentType
+  paymentType: PaymentType,
 ) {
+  const expectedLedgerType =
+    paymentType === "Customer Receipt" ? "Customer" : "Supplier";
   const balanceByParty = new Map<string, number>();
 
+  partyLedgers
+    .filter((ledger) => ledger.ledger_type === expectedLedgerType)
+    .forEach((ledger) => {
+      balanceByParty.set(ledger.id, toNumber(ledger.opening_balance));
+    });
+
   entries.forEach((entry) => {
-    if (!entry.partyId) {
+    if (!entry.partyId || !balanceByParty.has(entry.partyId)) {
       return;
     }
 
     balanceByParty.set(
       entry.partyId,
-      (balanceByParty.get(entry.partyId) || 0) + entry.amount
+      (balanceByParty.get(entry.partyId) || 0) + entry.amount,
+    );
+  });
+
+  returnAdjustments.forEach((adjustment) => {
+    if (!adjustment.partyId || !balanceByParty.has(adjustment.partyId)) {
+      return;
+    }
+
+    balanceByParty.set(
+      adjustment.partyId,
+      (balanceByParty.get(adjustment.partyId) || 0) - adjustment.amount,
     );
   });
 
@@ -191,14 +237,13 @@ function calculateOutstanding(
 
       balanceByParty.set(
         payment.party_id,
-        (balanceByParty.get(payment.party_id) || 0) -
-          toNumber(payment.amount)
+        (balanceByParty.get(payment.party_id) || 0) - toNumber(payment.amount),
       );
     });
 
   return Array.from(balanceByParty.values()).reduce(
     (total, balance) => total + Math.max(0, balance),
-    0
+    0,
   );
 }
 
@@ -219,14 +264,18 @@ export default function ReportsManager() {
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [partyLedgers, setPartyLedgers] = useState<LedgerRow[]>([]);
+  const [creditNotes, setCreditNotes] = useState<CreditNoteRow[]>([]);
+  const [debitNotes, setDebitNotes] = useState<DebitNoteRow[]>([]);
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
 
   const [trialBalance, setTrialBalance] = useState<TrialBalanceRow[]>([]);
   const [profitLossAccounts, setProfitLossAccounts] = useState<
     ProfitLossAccountRow[]
   >([]);
-  const [profitLossSummary, setProfitLossSummary] =
-    useState<ProfitLossSummary>(initialProfitLossSummary);
+  const [profitLossSummary, setProfitLossSummary] = useState<ProfitLossSummary>(
+    initialProfitLossSummary,
+  );
   const [generalLedger, setGeneralLedger] = useState<GeneralLedgerRow[]>([]);
   const [selectedLedgerAccountId, setSelectedLedgerAccountId] = useState("");
 
@@ -266,6 +315,9 @@ export default function ReportsManager() {
         setSales([]);
         setPurchases([]);
         setPayments([]);
+        setPartyLedgers([]);
+        setCreditNotes([]);
+        setDebitNotes([]);
         setActiveCompanyId(null);
         showMessage("Please sign in to view report data.");
         return;
@@ -291,6 +343,9 @@ export default function ReportsManager() {
         setSales([]);
         setPurchases([]);
         setPayments([]);
+        setPartyLedgers([]);
+        setCreditNotes([]);
+        setDebitNotes([]);
         showMessage("Select an active company from the Companies page first.");
         return;
       }
@@ -300,6 +355,9 @@ export default function ReportsManager() {
         salesResponse,
         purchasesResponse,
         paymentsResponse,
+        ledgersResponse,
+        creditNotesResponse,
+        debitNotesResponse,
       ] = await Promise.all([
         supabase
           .from("products")
@@ -307,20 +365,33 @@ export default function ReportsManager() {
           .eq("company_id", companyId),
         supabase
           .from("sales")
-          .select(
-            "id, invoice_date, payment_mode, customer_id, grand_total"
-          )
+          .select("id, invoice_date, payment_mode, customer_id, grand_total")
           .eq("company_id", companyId),
         supabase
           .from("purchases")
-          .select(
-            "id, purchase_date, payment_mode, supplier_id, grand_total"
-          )
+          .select("id, purchase_date, payment_mode, supplier_id, grand_total")
           .eq("company_id", companyId),
         supabase
           .from("payments")
           .select("id, payment_type, party_id, payment_date, amount")
           .eq("company_id", companyId),
+        supabase
+          .from("ledgers")
+          .select("id, ledger_type, opening_balance")
+          .eq("company_id", companyId)
+          .in("ledger_type", ["Customer", "Supplier"]),
+        supabase
+          .from("credit_notes")
+          .select("id, source_sale_id, credit_note_date, grand_total, status")
+          .eq("company_id", companyId)
+          .eq("status", "POSTED"),
+        supabase
+          .from("debit_notes")
+          .select(
+            "id, source_purchase_id, debit_note_date, grand_total, status",
+          )
+          .eq("company_id", companyId)
+          .eq("status", "POSTED"),
       ]);
 
       if (productsResponse.error) {
@@ -339,21 +410,39 @@ export default function ReportsManager() {
         throw paymentsResponse.error;
       }
 
+      if (ledgersResponse.error) {
+        throw ledgersResponse.error;
+      }
+
+      if (creditNotesResponse.error) {
+        throw creditNotesResponse.error;
+      }
+
+      if (debitNotesResponse.error) {
+        throw debitNotesResponse.error;
+      }
+
       setProducts((productsResponse.data || []) as ProductRow[]);
       setSales((salesResponse.data || []) as SaleRow[]);
       setPurchases((purchasesResponse.data || []) as PurchaseRow[]);
       setPayments((paymentsResponse.data || []) as PaymentRow[]);
+      setPartyLedgers((ledgersResponse.data || []) as LedgerRow[]);
+      setCreditNotes((creditNotesResponse.data || []) as CreditNoteRow[]);
+      setDebitNotes((debitNotesResponse.data || []) as DebitNoteRow[]);
     } catch (error) {
       setProducts([]);
       setSales([]);
       setPurchases([]);
       setPayments([]);
+      setPartyLedgers([]);
+      setCreditNotes([]);
+      setDebitNotes([]);
       setActiveCompanyId(null);
 
       showMessage(
         error instanceof Error
           ? error.message
-          : "Report data could not be loaded from the cloud database."
+          : "Report data could not be loaded from the cloud database.",
       );
     } finally {
       setIsLoading(false);
@@ -363,7 +452,7 @@ export default function ReportsManager() {
   async function loadAccountingReports(
     companyId: string,
     reportFromDate: string,
-    reportToDate: string
+    reportToDate: string,
   ) {
     setIsAccountingLoading(true);
     setAccountingError("");
@@ -395,12 +484,12 @@ export default function ReportsManager() {
         throw accountsResponse.error;
       }
 
-      const nextTrialBalance =
-        (trialBalanceResponse.data || []) as TrialBalanceRow[];
+      const nextTrialBalance = (trialBalanceResponse.data ||
+        []) as TrialBalanceRow[];
       const nextSummary = (summaryResponse.data ||
         []) as ProfitLossSummaryRow[];
-      const nextProfitLossAccounts =
-        (accountsResponse.data || []) as ProfitLossAccountRow[];
+      const nextProfitLossAccounts = (accountsResponse.data ||
+        []) as ProfitLossAccountRow[];
 
       setTrialBalance(nextTrialBalance);
       setProfitLossAccounts(nextProfitLossAccounts);
@@ -417,7 +506,7 @@ export default function ReportsManager() {
         if (
           currentAccountId &&
           nextTrialBalance.some(
-            (account) => account.account_id === currentAccountId
+            (account) => account.account_id === currentAccountId,
           )
         ) {
           return currentAccountId;
@@ -435,7 +524,7 @@ export default function ReportsManager() {
       setAccountingError(
         error instanceof Error
           ? error.message
-          : "Accounting reports could not be loaded."
+          : "Accounting reports could not be loaded.",
       );
     } finally {
       setIsAccountingLoading(false);
@@ -446,7 +535,7 @@ export default function ReportsManager() {
     companyId: string,
     accountId: string,
     reportFromDate: string,
-    reportToDate: string
+    reportToDate: string,
   ) {
     if (!accountId) {
       setGeneralLedger([]);
@@ -475,7 +564,7 @@ export default function ReportsManager() {
       setAccountingError(
         error instanceof Error
           ? error.message
-          : "General ledger could not be loaded."
+          : "General ledger could not be loaded.",
       );
     } finally {
       setIsLedgerLoading(false);
@@ -490,6 +579,7 @@ export default function ReportsManager() {
       "vertexerp-sales-updated",
       "vertexerp-purchases-updated",
       "vertexerp-payments-updated",
+      "vertexerp-gst-data-updated",
       "vertexerp-expenses-updated",
       "vertexerp-active-company-updated",
     ];
@@ -521,11 +611,7 @@ export default function ReportsManager() {
       return;
     }
 
-    loadAccountingReports(
-      activeCompanyId,
-      appliedFromDate,
-      appliedToDate
-    );
+    loadAccountingReports(activeCompanyId, appliedFromDate, appliedToDate);
   }, [activeCompanyId, appliedFromDate, appliedToDate, refreshKey]);
 
   useEffect(() => {
@@ -538,7 +624,7 @@ export default function ReportsManager() {
       activeCompanyId,
       selectedLedgerAccountId,
       appliedFromDate,
-      appliedToDate
+      appliedToDate,
     );
   }, [
     activeCompanyId,
@@ -550,64 +636,101 @@ export default function ReportsManager() {
 
   const reportData = useMemo<ReportData>(() => {
     const filteredSales = sales.filter((sale) =>
-      isDateInRange(sale.invoice_date, appliedFromDate, appliedToDate)
+      isDateInRange(sale.invoice_date, appliedFromDate, appliedToDate),
     );
 
     const filteredPurchases = purchases.filter((purchase) =>
-      isDateInRange(purchase.purchase_date, appliedFromDate, appliedToDate)
-    );
-
-    const filteredPayments = payments.filter((payment) =>
-      isDateInRange(payment.payment_date, appliedFromDate, appliedToDate)
+      isDateInRange(purchase.purchase_date, appliedFromDate, appliedToDate),
     );
 
     const totalSales = filteredSales.reduce(
       (total, sale) => total + toNumber(sale.grand_total),
-      0
+      0,
     );
 
     const totalPurchase = filteredPurchases.reduce(
       (total, purchase) => total + toNumber(purchase.grand_total),
-      0
+      0,
     );
 
-    const customerCreditSales = filteredSales
+    // Receivable/payable cards are closing balances as of To Date.
+    // From Date only controls period sales and purchase totals.
+    const balanceSales = sales.filter(
+      (sale) => !appliedToDate || sale.invoice_date <= appliedToDate,
+    );
+    const balancePurchases = purchases.filter(
+      (purchase) => !appliedToDate || purchase.purchase_date <= appliedToDate,
+    );
+    const balancePayments = payments.filter(
+      (payment) => !appliedToDate || payment.payment_date <= appliedToDate,
+    );
+    const balanceCreditNotes = creditNotes.filter(
+      (note) =>
+        note.status === "POSTED" &&
+        (!appliedToDate || note.credit_note_date <= appliedToDate),
+    );
+    const balanceDebitNotes = debitNotes.filter(
+      (note) =>
+        note.status === "POSTED" &&
+        (!appliedToDate || note.debit_note_date <= appliedToDate),
+    );
+
+    const customerCreditSales = balanceSales
       .filter((sale) => isCreditPayment(sale.payment_mode))
       .map((sale) => ({
         partyId: sale.customer_id,
         amount: toNumber(sale.grand_total),
       }));
 
-    const supplierCreditPurchases = filteredPurchases
+    const supplierCreditPurchases = balancePurchases
       .filter((purchase) => isCreditPayment(purchase.payment_mode))
       .map((purchase) => ({
         partyId: purchase.supplier_id,
         amount: toNumber(purchase.grand_total),
       }));
 
+    const saleById = new Map(
+      balanceSales.map((sale) => [sale.id, sale] as const),
+    );
+    const purchaseById = new Map(
+      balancePurchases.map((purchase) => [purchase.id, purchase] as const),
+    );
+
+    const customerReturnAdjustments = balanceCreditNotes.map((note) => ({
+      partyId: saleById.get(note.source_sale_id)?.customer_id || null,
+      amount: toNumber(note.grand_total),
+    }));
+
+    const supplierReturnAdjustments = balanceDebitNotes.map((note) => ({
+      partyId: purchaseById.get(note.source_purchase_id)?.supplier_id || null,
+      amount: toNumber(note.grand_total),
+    }));
+
     const customerReceivable = calculateOutstanding(
+      partyLedgers,
       customerCreditSales,
-      filteredPayments,
-      "Customer Receipt"
+      customerReturnAdjustments,
+      balancePayments,
+      "Customer Receipt",
     );
 
     const supplierPayable = calculateOutstanding(
+      partyLedgers,
       supplierCreditPurchases,
-      filteredPayments,
-      "Supplier Payment"
+      supplierReturnAdjustments,
+      balancePayments,
+      "Supplier Payment",
     );
 
     const stockValue = products.reduce(
       (total, product) =>
-        total +
-        toNumber(product.quantity) * toNumber(product.purchase_price),
-      0
+        total + toNumber(product.quantity) * toNumber(product.purchase_price),
+      0,
     );
 
     const lowStockCount = products.filter(
       (product) =>
-        toNumber(product.quantity) <=
-        toNumber(product.low_stock_alert)
+        toNumber(product.quantity) <= toNumber(product.low_stock_alert),
     ).length;
 
     return {
@@ -623,6 +746,9 @@ export default function ReportsManager() {
     sales,
     purchases,
     payments,
+    partyLedgers,
+    creditNotes,
+    debitNotes,
     appliedFromDate,
     appliedToDate,
   ]);
@@ -633,32 +759,30 @@ export default function ReportsManager() {
         debit: totals.debit + toNumber(account.total_debit),
         credit: totals.credit + toNumber(account.total_credit),
       }),
-      { debit: 0, credit: 0 }
+      { debit: 0, credit: 0 },
     );
   }, [trialBalance]);
 
   const incomeAccounts = useMemo(
     () =>
-      profitLossAccounts.filter(
-        (account) => account.account_type === "Income"
-      ),
-    [profitLossAccounts]
+      profitLossAccounts.filter((account) => account.account_type === "Income"),
+    [profitLossAccounts],
   );
 
   const expenseAccounts = useMemo(
     () =>
       profitLossAccounts.filter(
-        (account) => account.account_type === "Expense"
+        (account) => account.account_type === "Expense",
       ),
-    [profitLossAccounts]
+    [profitLossAccounts],
   );
 
   const selectedLedgerAccount = useMemo(
     () =>
       trialBalance.find(
-        (account) => account.account_id === selectedLedgerAccountId
+        (account) => account.account_id === selectedLedgerAccountId,
       ) || null,
-    [trialBalance, selectedLedgerAccountId]
+    [trialBalance, selectedLedgerAccountId],
   );
 
   function handleGenerateReport() {
@@ -723,16 +847,13 @@ export default function ReportsManager() {
         </article>
 
         <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
-          <p className="font-medium text-slate-600">
-            Customer Receivable
-          </p>
+          <p className="font-medium text-slate-600">Customer Receivable</p>
           <h2 className="mt-3 break-words text-3xl font-bold text-orange-500 sm:text-4xl">
-            {isLoading
-              ? "..."
-              : formatCurrency(reportData.customerReceivable)}
+            {isLoading ? "..." : formatCurrency(reportData.customerReceivable)}
           </h2>
           <p className="mt-2 text-sm text-slate-500">
-            Credit sales minus receipts in the selected period
+            Opening + credit sales − posted Credit Notes − receipts, as of To
+            Date
           </p>
         </article>
 
@@ -758,7 +879,8 @@ export default function ReportsManager() {
             {isLoading ? "..." : formatCurrency(reportData.supplierPayable)}
           </p>
           <p className="mt-2 text-sm text-orange-700">
-            Credit purchases minus payments in the selected period
+            Opening + credit purchases − posted Debit Notes − payments, as of To
+            Date
           </p>
         </article>
 
@@ -1029,18 +1151,16 @@ export default function ReportsManager() {
 
           <span
             className={`w-fit rounded-full px-4 py-2 text-sm font-semibold ${
-              Math.abs(
-                trialBalanceTotals.debit - trialBalanceTotals.credit
-              ) < 0.01
+              Math.abs(trialBalanceTotals.debit - trialBalanceTotals.credit) <
+              0.01
                 ? "bg-emerald-50 text-emerald-700"
                 : "bg-red-50 text-red-700"
             }`}
           >
             {isAccountingLoading
               ? "Checking..."
-              : Math.abs(
-                    trialBalanceTotals.debit - trialBalanceTotals.credit
-                  ) < 0.01
+              : Math.abs(trialBalanceTotals.debit - trialBalanceTotals.credit) <
+                  0.01
                 ? "Balanced"
                 : "Needs Review"}
           </span>
@@ -1100,7 +1220,8 @@ export default function ReportsManager() {
                     </div>
 
                     <p className="mt-4 rounded-xl bg-white px-3 py-3 text-sm font-semibold text-slate-700">
-                      Closing Balance: {getBalanceLabel(closingDebit, closingCredit)}
+                      Closing Balance:{" "}
+                      {getBalanceLabel(closingDebit, closingCredit)}
                     </p>
                   </article>
                 );

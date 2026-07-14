@@ -9,12 +9,14 @@ import ConfirmDeleteModal from "@/components/ConfirmDeleteModal";
 type PaymentType = "Customer Receipt" | "Supplier Payment";
 
 type SaleRow = {
+  id: string;
   customer_id: string | null;
   payment_mode: string;
   grand_total: number | string | null;
 };
 
 type PurchaseRow = {
+  id: string;
   supplier_id: string | null;
   payment_mode: string;
   grand_total: number | string | null;
@@ -36,6 +38,21 @@ type LedgerRow = {
   id: string;
   name: string;
   ledger_type: string;
+  opening_balance: number | string | null;
+};
+
+type CreditNoteRow = {
+  id: string;
+  source_sale_id: string;
+  grand_total: number | string | null;
+  status: "POSTED" | "VOID";
+};
+
+type DebitNoteRow = {
+  id: string;
+  source_purchase_id: string;
+  grand_total: number | string | null;
+  status: "POSTED" | "VOID";
 };
 
 type Payment = {
@@ -54,7 +71,9 @@ type Payment = {
 type PartyBalance = {
   id: string;
   name: string;
+  openingBalance: number;
   totalCredit: number;
+  returnAdjustment: number;
   paidAmount: number;
   outstanding: number;
 };
@@ -99,9 +118,14 @@ function formatDate(dateValue: string) {
 }
 
 function getBalances(
+  partyLedgers: LedgerRow[],
   entries: {
     partyId: string;
     partyName: string;
+    amount: number;
+  }[],
+  returnAdjustments: {
+    partyId: string;
     amount: number;
   }[],
   paymentType: PaymentType,
@@ -109,21 +133,36 @@ function getBalances(
 ) {
   const balanceMap = new Map<string, PartyBalance>();
 
-  entries.forEach((entry) => {
-    const existingParty = balanceMap.get(entry.partyId);
-
-    if (existingParty) {
-      existingParty.totalCredit += entry.amount;
-      return;
-    }
-
-    balanceMap.set(entry.partyId, {
-      id: entry.partyId,
-      name: entry.partyName,
-      totalCredit: entry.amount,
+  partyLedgers.forEach((ledger) => {
+    balanceMap.set(ledger.id, {
+      id: ledger.id,
+      name: ledger.name || "Unnamed Party",
+      openingBalance: toNumber(ledger.opening_balance),
+      totalCredit: 0,
+      returnAdjustment: 0,
       paidAmount: 0,
       outstanding: 0,
     });
+  });
+
+  entries.forEach((entry) => {
+    const party = balanceMap.get(entry.partyId);
+
+    if (!party) {
+      return;
+    }
+
+    party.totalCredit += entry.amount;
+  });
+
+  returnAdjustments.forEach((adjustment) => {
+    const party = balanceMap.get(adjustment.partyId);
+
+    if (!party) {
+      return;
+    }
+
+    party.returnAdjustment += adjustment.amount;
   });
 
   payments
@@ -137,11 +176,16 @@ function getBalances(
     });
 
   return Array.from(balanceMap.values())
-    .map((party) => ({
-      ...party,
-      paidAmount: Math.min(party.paidAmount, party.totalCredit),
-      outstanding: Math.max(0, party.totalCredit - party.paidAmount),
-    }))
+    .map((party) => {
+      const grossDue = party.openingBalance + party.totalCredit;
+      const adjustedDue = Math.max(0, grossDue - party.returnAdjustment);
+
+      return {
+        ...party,
+        paidAmount: Math.min(party.paidAmount, adjustedDue),
+        outstanding: Math.max(0, adjustedDue - party.paidAmount),
+      };
+    })
     .sort((first, second) => second.outstanding - first.outstanding);
 }
 
@@ -150,6 +194,8 @@ export default function PaymentsPage() {
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [ledgers, setLedgers] = useState<LedgerRow[]>([]);
+  const [creditNotes, setCreditNotes] = useState<CreditNoteRow[]>([]);
+  const [debitNotes, setDebitNotes] = useState<DebitNoteRow[]>([]);
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -193,6 +239,8 @@ export default function PaymentsPage() {
         setPurchases([]);
         setPayments([]);
         setLedgers([]);
+        setCreditNotes([]);
+        setDebitNotes([]);
         setActiveCompanyId(null);
         showMessage("Please sign in before recording payments.");
         return;
@@ -218,6 +266,8 @@ export default function PaymentsPage() {
         setPurchases([]);
         setPayments([]);
         setLedgers([]);
+        setCreditNotes([]);
+        setDebitNotes([]);
         showMessage("Select an active company from the Companies page first.");
         return;
       }
@@ -227,14 +277,16 @@ export default function PaymentsPage() {
         purchasesResponse,
         paymentsResponse,
         ledgersResponse,
+        creditNotesResponse,
+        debitNotesResponse,
       ] = await Promise.all([
         supabase
           .from("sales")
-          .select("customer_id, payment_mode, grand_total")
+          .select("id, customer_id, payment_mode, grand_total")
           .eq("company_id", companyId),
         supabase
           .from("purchases")
-          .select("supplier_id, payment_mode, grand_total")
+          .select("id, supplier_id, payment_mode, grand_total")
           .eq("company_id", companyId),
         supabase
           .from("payments")
@@ -245,8 +297,18 @@ export default function PaymentsPage() {
           .order("created_at", { ascending: false }),
         supabase
           .from("ledgers")
-          .select("id, name, ledger_type")
+          .select("id, name, ledger_type, opening_balance")
           .eq("company_id", companyId),
+        supabase
+          .from("credit_notes")
+          .select("id, source_sale_id, grand_total, status")
+          .eq("company_id", companyId)
+          .eq("status", "POSTED"),
+        supabase
+          .from("debit_notes")
+          .select("id, source_purchase_id, grand_total, status")
+          .eq("company_id", companyId)
+          .eq("status", "POSTED"),
       ]);
 
       if (salesResponse.error) {
@@ -265,6 +327,14 @@ export default function PaymentsPage() {
         throw ledgersResponse.error;
       }
 
+      if (creditNotesResponse.error) {
+        throw creditNotesResponse.error;
+      }
+
+      if (debitNotesResponse.error) {
+        throw debitNotesResponse.error;
+      }
+
       const nextLedgers = (ledgersResponse.data || []) as LedgerRow[];
       const ledgerNameById = new Map(
         nextLedgers.map((ledger) => [ledger.id, ledger.name])
@@ -273,6 +343,8 @@ export default function PaymentsPage() {
       setSales((salesResponse.data || []) as SaleRow[]);
       setPurchases((purchasesResponse.data || []) as PurchaseRow[]);
       setLedgers(nextLedgers);
+      setCreditNotes((creditNotesResponse.data || []) as CreditNoteRow[]);
+      setDebitNotes((debitNotesResponse.data || []) as DebitNoteRow[]);
       setPayments(
         ((paymentsResponse.data || []) as PaymentRow[]).map((payment) => ({
           id: payment.id,
@@ -293,6 +365,8 @@ export default function PaymentsPage() {
       setPurchases([]);
       setPayments([]);
       setLedgers([]);
+      setCreditNotes([]);
+      setDebitNotes([]);
 
       showMessage(
         error instanceof Error
@@ -323,6 +397,10 @@ export default function PaymentsPage() {
       "vertexerp-active-company-updated",
       loadData
     );
+    window.addEventListener(
+      "vertexerp-gst-data-updated",
+      loadData
+    );
 
     return () => {
       window.removeEventListener(
@@ -339,6 +417,10 @@ export default function PaymentsPage() {
       );
       window.removeEventListener(
         "vertexerp-active-company-updated",
+        loadData
+      );
+      window.removeEventListener(
+        "vertexerp-gst-data-updated",
         loadData
       );
     };
@@ -374,21 +456,93 @@ export default function PaymentsPage() {
       }));
   }, [purchases, ledgerNameById]);
 
+  const saleById = useMemo(
+    () => new Map(sales.map((sale) => [sale.id, sale] as const)),
+    [sales]
+  );
+
+  const purchaseById = useMemo(
+    () => new Map(purchases.map((purchase) => [purchase.id, purchase] as const)),
+    [purchases]
+  );
+
+  const customerReturnAdjustments = useMemo(
+    () =>
+      creditNotes.flatMap((note) => {
+        const sourceSale = saleById.get(note.source_sale_id);
+
+        if (!sourceSale?.customer_id) {
+          return [];
+        }
+
+        return [
+          {
+            partyId: sourceSale.customer_id,
+            amount: toNumber(note.grand_total),
+          },
+        ];
+      }),
+    [creditNotes, saleById]
+  );
+
+  const supplierReturnAdjustments = useMemo(
+    () =>
+      debitNotes.flatMap((note) => {
+        const sourcePurchase = purchaseById.get(note.source_purchase_id);
+
+        if (!sourcePurchase?.supplier_id) {
+          return [];
+        }
+
+        return [
+          {
+            partyId: sourcePurchase.supplier_id,
+            amount: toNumber(note.grand_total),
+          },
+        ];
+      }),
+    [debitNotes, purchaseById]
+  );
+
+  const customerLedgers = useMemo(
+    () => ledgers.filter((ledger) => ledger.ledger_type === "Customer"),
+    [ledgers]
+  );
+
+  const supplierLedgers = useMemo(
+    () => ledgers.filter((ledger) => ledger.ledger_type === "Supplier"),
+    [ledgers]
+  );
+
   const customerBalanceSummary = useMemo(() => {
     return getBalances(
+      customerLedgers,
       customerCreditEntries,
+      customerReturnAdjustments,
       "Customer Receipt",
       payments
     );
-  }, [customerCreditEntries, payments]);
+  }, [
+    customerLedgers,
+    customerCreditEntries,
+    customerReturnAdjustments,
+    payments,
+  ]);
 
   const supplierBalanceSummary = useMemo(() => {
     return getBalances(
+      supplierLedgers,
       supplierCreditEntries,
+      supplierReturnAdjustments,
       "Supplier Payment",
       payments
     );
-  }, [supplierCreditEntries, payments]);
+  }, [
+    supplierLedgers,
+    supplierCreditEntries,
+    supplierReturnAdjustments,
+    payments,
+  ]);
 
   const customerBalances = useMemo(
     () =>
@@ -651,7 +805,7 @@ export default function PaymentsPage() {
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Pending amount to collect from customers
+                Opening balance + credit sales − Credit Notes − receipts
               </p>
             </div>
 
@@ -668,7 +822,7 @@ export default function PaymentsPage() {
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                Pending amount payable to suppliers
+                Opening balance + credit purchases − Debit Notes − payments
               </p>
             </div>
           </section>

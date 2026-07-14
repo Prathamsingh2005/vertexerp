@@ -11,6 +11,7 @@ import {
   CircleDollarSign,
   Cloud,
   FileSpreadsheet,
+  HardDriveDownload,
   History,
   Landmark,
   LayoutDashboard,
@@ -108,6 +109,12 @@ const navigationItems: NavigationItem[] = [
     href: "/audit-history",
     label: "Audit History",
     icon: History,
+  },
+  {
+    href: "/settings/backup",
+    label: "Backup & Export",
+    icon: HardDriveDownload,
+    section: "System",
   },
 ];
 

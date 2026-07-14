@@ -44,7 +44,9 @@ type Payment = {
 type PartyOutstanding = {
   id: string;
   name: string;
+  openingBalance: number;
   totalCredit: number;
+  returnAdjustment: number;
   paidAmount: number;
   outstanding: number;
   billCount: number;
@@ -58,6 +60,22 @@ type ProfileRow = {
 type LedgerRow = {
   id: string;
   name: string;
+  ledger_type: string;
+  opening_balance: number | string | null;
+};
+
+type CreditNoteRow = {
+  id: string;
+  source_sale_id: string;
+  grand_total: number | string | null;
+  status: "POSTED" | "VOID";
+};
+
+type DebitNoteRow = {
+  id: string;
+  source_purchase_id: string;
+  grand_total: number | string | null;
+  status: "POSTED" | "VOID";
 };
 
 type SaleRow = {
@@ -130,10 +148,15 @@ function getJoinedLedger(
 }
 
 function buildOutstanding(
+  partyLedgers: LedgerRow[],
   entries: {
     partyId: string;
     partyName: string;
     date: string;
+    amount: number;
+  }[],
+  returnAdjustments: {
+    partyId: string;
     amount: number;
   }[],
   payments: Payment[],
@@ -141,29 +164,41 @@ function buildOutstanding(
 ) {
   const partyMap = new Map<string, PartyOutstanding>();
 
+  partyLedgers.forEach((ledger) => {
+    partyMap.set(ledger.id, {
+      id: ledger.id,
+      name: ledger.name || "Unnamed Party",
+      openingBalance: toNumber(ledger.opening_balance),
+      totalCredit: 0,
+      returnAdjustment: 0,
+      paidAmount: 0,
+      outstanding: 0,
+      billCount: 0,
+      latestDate: "",
+    });
+  });
+
   entries.forEach((entry) => {
-    const existingParty = partyMap.get(entry.partyId);
+    const party = partyMap.get(entry.partyId);
 
-    if (existingParty) {
-      existingParty.totalCredit += entry.amount;
-      existingParty.billCount += 1;
-
-      if (entry.date > existingParty.latestDate) {
-        existingParty.latestDate = entry.date;
-      }
-
+    if (!party) {
       return;
     }
 
-    partyMap.set(entry.partyId, {
-      id: entry.partyId,
-      name: entry.partyName,
-      totalCredit: entry.amount,
-      paidAmount: 0,
-      outstanding: 0,
-      billCount: 1,
-      latestDate: entry.date,
-    });
+    party.totalCredit += entry.amount;
+    party.billCount += 1;
+
+    if (!party.latestDate || entry.date > party.latestDate) {
+      party.latestDate = entry.date;
+    }
+  });
+
+  returnAdjustments.forEach((adjustment) => {
+    const party = partyMap.get(adjustment.partyId);
+
+    if (party) {
+      party.returnAdjustment += adjustment.amount;
+    }
   });
 
   payments
@@ -177,11 +212,16 @@ function buildOutstanding(
     });
 
   return Array.from(partyMap.values())
-    .map((party) => ({
-      ...party,
-      paidAmount: Math.min(party.paidAmount, party.totalCredit),
-      outstanding: Math.max(0, party.totalCredit - party.paidAmount),
-    }))
+    .map((party) => {
+      const grossDue = party.openingBalance + party.totalCredit;
+      const adjustedDue = Math.max(0, grossDue - party.returnAdjustment);
+
+      return {
+        ...party,
+        paidAmount: Math.min(party.paidAmount, adjustedDue),
+        outstanding: Math.max(0, adjustedDue - party.paidAmount),
+      };
+    })
     .filter((party) => party.outstanding > 0)
     .sort((first, second) => second.outstanding - first.outstanding);
 }
@@ -190,6 +230,9 @@ export default function OutstandingPage() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [ledgers, setLedgers] = useState<LedgerRow[]>([]);
+  const [creditNotes, setCreditNotes] = useState<CreditNoteRow[]>([]);
+  const [debitNotes, setDebitNotes] = useState<DebitNoteRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -216,6 +259,9 @@ export default function OutstandingPage() {
         setSales([]);
         setPurchases([]);
         setPayments([]);
+        setLedgers([]);
+        setCreditNotes([]);
+        setDebitNotes([]);
         showMessage("Please sign in to view outstanding balances.");
         return;
       }
@@ -237,12 +283,21 @@ export default function OutstandingPage() {
         setSales([]);
         setPurchases([]);
         setPayments([]);
+        setLedgers([]);
+        setCreditNotes([]);
+        setDebitNotes([]);
         showMessage("Select an active company from the Companies page first.");
         return;
       }
 
-      const [salesResponse, purchasesResponse, paymentsResponse, ledgersResponse] =
-        await Promise.all([
+      const [
+        salesResponse,
+        purchasesResponse,
+        paymentsResponse,
+        ledgersResponse,
+        creditNotesResponse,
+        debitNotesResponse,
+      ] = await Promise.all([
           supabase
             .from("sales")
             .select(
@@ -288,8 +343,18 @@ export default function OutstandingPage() {
             .order("created_at", { ascending: false }),
           supabase
             .from("ledgers")
-            .select("id, name")
+            .select("id, name, ledger_type, opening_balance")
             .eq("company_id", activeCompanyId),
+          supabase
+            .from("credit_notes")
+            .select("id, source_sale_id, grand_total, status")
+            .eq("company_id", activeCompanyId)
+            .eq("status", "POSTED"),
+          supabase
+            .from("debit_notes")
+            .select("id, source_purchase_id, grand_total, status")
+            .eq("company_id", activeCompanyId)
+            .eq("status", "POSTED"),
         ]);
 
       if (salesResponse.error) {
@@ -308,8 +373,17 @@ export default function OutstandingPage() {
         throw ledgersResponse.error;
       }
 
+      if (creditNotesResponse.error) {
+        throw creditNotesResponse.error;
+      }
+
+      if (debitNotesResponse.error) {
+        throw debitNotesResponse.error;
+      }
+
+      const nextLedgers = (ledgersResponse.data || []) as LedgerRow[];
       const ledgerNameById = new Map(
-        ((ledgersResponse.data || []) as LedgerRow[]).map((ledger) => [
+        nextLedgers.map((ledger) => [
           ledger.id,
           ledger.name,
         ])
@@ -366,10 +440,16 @@ export default function OutstandingPage() {
       setSales(nextSales);
       setPurchases(nextPurchases);
       setPayments(nextPayments);
+      setLedgers(nextLedgers);
+      setCreditNotes((creditNotesResponse.data || []) as CreditNoteRow[]);
+      setDebitNotes((debitNotesResponse.data || []) as DebitNoteRow[]);
     } catch (error) {
       setSales([]);
       setPurchases([]);
       setPayments([]);
+      setLedgers([]);
+      setCreditNotes([]);
+      setDebitNotes([]);
 
       showMessage(
         error instanceof Error
@@ -400,6 +480,10 @@ export default function OutstandingPage() {
       "vertexerp-active-company-updated",
       loadOutstandingData
     );
+    window.addEventListener(
+      "vertexerp-gst-data-updated",
+      loadOutstandingData
+    );
 
     return () => {
       window.removeEventListener(
@@ -416,6 +500,10 @@ export default function OutstandingPage() {
       );
       window.removeEventListener(
         "vertexerp-active-company-updated",
+        loadOutstandingData
+      );
+      window.removeEventListener(
+        "vertexerp-gst-data-updated",
         loadOutstandingData
       );
     };
@@ -458,24 +546,96 @@ export default function OutstandingPage() {
     [creditPurchases]
   );
 
+  const saleById = useMemo(
+    () => new Map(sales.map((sale) => [sale.id, sale] as const)),
+    [sales]
+  );
+
+  const purchaseById = useMemo(
+    () => new Map(purchases.map((purchase) => [purchase.id, purchase] as const)),
+    [purchases]
+  );
+
+  const customerReturnAdjustments = useMemo(
+    () =>
+      creditNotes.flatMap((note) => {
+        const sourceSale = saleById.get(note.source_sale_id);
+
+        if (!sourceSale?.customerId) {
+          return [];
+        }
+
+        return [
+          {
+            partyId: sourceSale.customerId,
+            amount: toNumber(note.grand_total),
+          },
+        ];
+      }),
+    [creditNotes, saleById]
+  );
+
+  const supplierReturnAdjustments = useMemo(
+    () =>
+      debitNotes.flatMap((note) => {
+        const sourcePurchase = purchaseById.get(note.source_purchase_id);
+
+        if (!sourcePurchase?.supplierId) {
+          return [];
+        }
+
+        return [
+          {
+            partyId: sourcePurchase.supplierId,
+            amount: toNumber(note.grand_total),
+          },
+        ];
+      }),
+    [debitNotes, purchaseById]
+  );
+
+  const customerLedgers = useMemo(
+    () => ledgers.filter((ledger) => ledger.ledger_type === "Customer"),
+    [ledgers]
+  );
+
+  const supplierLedgers = useMemo(
+    () => ledgers.filter((ledger) => ledger.ledger_type === "Supplier"),
+    [ledgers]
+  );
+
   const customerOutstanding = useMemo(
     () =>
       buildOutstanding(
+        customerLedgers,
         customerCreditEntries,
+        customerReturnAdjustments,
         payments,
         "Customer Receipt"
       ),
-    [customerCreditEntries, payments]
+    [
+      customerLedgers,
+      customerCreditEntries,
+      customerReturnAdjustments,
+      payments,
+    ]
   );
 
   const supplierOutstanding = useMemo(
     () =>
       buildOutstanding(
+        supplierLedgers,
         supplierCreditEntries,
+        supplierReturnAdjustments,
         payments,
         "Supplier Payment"
       ),
-    [supplierCreditEntries, payments]
+    [
+      supplierLedgers,
+      supplierCreditEntries,
+      supplierReturnAdjustments,
+      payments,
+    ]
   );
 
   const totalReceivable = customerOutstanding.reduce(
@@ -542,9 +702,9 @@ export default function OutstandingPage() {
               className="mt-1 text-sm leading-6"
               style={{ color: "#7c2d12" }}
             >
-              Only Credit sales and Credit purchase bills appear here. Recorded
-              customer receipts and supplier payments automatically reduce the
-              pending balance.
+              Opening balances and Credit transactions create the due amount.
+              Posted Credit Notes, Debit Notes, customer receipts and supplier
+              payments automatically reduce the pending balance.
             </p>
           </section>
 
@@ -632,7 +792,7 @@ export default function OutstandingPage() {
                 </h2>
 
                 <p className="mt-1 text-slate-600">
-                  Credit sales after recorded customer receipts.
+                  Opening balance + Credit sales − Credit Notes − customer receipts.
                 </p>
               </div>
 
@@ -821,7 +981,7 @@ export default function OutstandingPage() {
                 </h2>
 
                 <p className="mt-1 text-slate-600">
-                  Credit purchase bills after recorded supplier payments.
+                  Opening balance + Credit purchases − Debit Notes − supplier payments.
                 </p>
               </div>
 

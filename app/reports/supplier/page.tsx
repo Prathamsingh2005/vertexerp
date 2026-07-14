@@ -31,6 +31,13 @@ type PaymentRow = {
   amount: number | string | null;
 };
 
+type DebitNoteRow = {
+  id: string;
+  source_purchase_id: string;
+  grand_total: number | string | null;
+  status: "POSTED" | "VOID";
+};
+
 type ProfileRow = {
   active_company_id: string | null;
 };
@@ -45,6 +52,7 @@ type SupplierReportRow = {
   billCount: number;
   totalPurchase: number;
   creditPurchase: number;
+  debitNoteAmount: number;
   paidAmount: number;
   pendingAmount: number;
 };
@@ -61,17 +69,26 @@ function formatCurrency(amount: number) {
 }
 
 function isSupplierLedger(ledgerType: string) {
-  return String(ledgerType || "").trim().toLowerCase() === "supplier";
+  return (
+    String(ledgerType || "")
+      .trim()
+      .toLowerCase() === "supplier"
+  );
 }
 
 function isCreditPayment(paymentMode: string) {
-  return String(paymentMode || "").trim().toLowerCase() === "credit";
+  return (
+    String(paymentMode || "")
+      .trim()
+      .toLowerCase() === "credit"
+  );
 }
 
 function isSupplierPayment(paymentType: string) {
   return (
-    String(paymentType || "").trim().toLowerCase() ===
-    "supplier payment"
+    String(paymentType || "")
+      .trim()
+      .toLowerCase() === "supplier payment"
   );
 }
 
@@ -79,6 +96,7 @@ export default function SupplierReportPage() {
   const [ledgers, setLedgers] = useState<LedgerRow[]>([]);
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [debitNotes, setDebitNotes] = useState<DebitNoteRow[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -106,6 +124,7 @@ export default function SupplierReportPage() {
         setLedgers([]);
         setPurchases([]);
         setPayments([]);
+        setDebitNotes([]);
         showMessage("Please sign in to view the supplier report.");
         return;
       }
@@ -127,28 +146,38 @@ export default function SupplierReportPage() {
         setLedgers([]);
         setPurchases([]);
         setPayments([]);
+        setDebitNotes([]);
         showMessage("Select an active company from the Companies page first.");
         return;
       }
 
-      const [ledgersResponse, purchasesResponse, paymentsResponse] =
-        await Promise.all([
-          supabase
-            .from("ledgers")
-            .select(
-              "id, name, ledger_type, opening_balance, mobile, email, gst_number, address"
-            )
-            .eq("company_id", activeCompanyId)
-            .order("name", { ascending: true }),
-          supabase
-            .from("purchases")
-            .select("id, supplier_id, payment_mode, grand_total")
-            .eq("company_id", activeCompanyId),
-          supabase
-            .from("payments")
-            .select("id, payment_type, party_id, amount")
-            .eq("company_id", activeCompanyId),
-        ]);
+      const [
+        ledgersResponse,
+        purchasesResponse,
+        paymentsResponse,
+        debitNotesResponse,
+      ] = await Promise.all([
+        supabase
+          .from("ledgers")
+          .select(
+            "id, name, ledger_type, opening_balance, mobile, email, gst_number, address",
+          )
+          .eq("company_id", activeCompanyId)
+          .order("name", { ascending: true }),
+        supabase
+          .from("purchases")
+          .select("id, supplier_id, payment_mode, grand_total")
+          .eq("company_id", activeCompanyId),
+        supabase
+          .from("payments")
+          .select("id, payment_type, party_id, amount")
+          .eq("company_id", activeCompanyId),
+        supabase
+          .from("debit_notes")
+          .select("id, source_purchase_id, grand_total, status")
+          .eq("company_id", activeCompanyId)
+          .eq("status", "POSTED"),
+      ]);
 
       if (ledgersResponse.error) {
         throw ledgersResponse.error;
@@ -162,18 +191,24 @@ export default function SupplierReportPage() {
         throw paymentsResponse.error;
       }
 
+      if (debitNotesResponse.error) {
+        throw debitNotesResponse.error;
+      }
+
       setLedgers((ledgersResponse.data || []) as LedgerRow[]);
       setPurchases((purchasesResponse.data || []) as PurchaseRow[]);
       setPayments((paymentsResponse.data || []) as PaymentRow[]);
+      setDebitNotes((debitNotesResponse.data || []) as DebitNoteRow[]);
     } catch (error) {
       setLedgers([]);
       setPurchases([]);
       setPayments([]);
+      setDebitNotes([]);
 
       showMessage(
         error instanceof Error
           ? error.message
-          : "Supplier report data could not be loaded from the cloud database."
+          : "Supplier report data could not be loaded from the cloud database.",
       );
     } finally {
       setIsLoading(false);
@@ -187,6 +222,7 @@ export default function SupplierReportPage() {
       "vertexerp-ledgers-updated",
       "vertexerp-purchases-updated",
       "vertexerp-payments-updated",
+      "vertexerp-gst-data-updated",
       "vertexerp-active-company-updated",
     ];
 
@@ -217,6 +253,7 @@ export default function SupplierReportPage() {
           billCount: 0,
           totalPurchase: 0,
           creditPurchase: 0,
+          debitNoteAmount: 0,
           paidAmount: 0,
           pendingAmount: 0,
         });
@@ -243,6 +280,26 @@ export default function SupplierReportPage() {
       }
     });
 
+    const purchaseById = new Map(
+      purchases.map((purchase) => [purchase.id, purchase] as const),
+    );
+
+    debitNotes.forEach((note) => {
+      const sourcePurchase = purchaseById.get(note.source_purchase_id);
+
+      if (!sourcePurchase?.supplier_id) {
+        return;
+      }
+
+      const supplier = supplierMap.get(sourcePurchase.supplier_id);
+
+      if (!supplier) {
+        return;
+      }
+
+      supplier.debitNoteAmount += toNumber(note.grand_total);
+    });
+
     payments
       .filter((payment) => isSupplierPayment(payment.payment_type))
       .forEach((payment) => {
@@ -262,14 +319,17 @@ export default function SupplierReportPage() {
     supplierMap.forEach((supplier) => {
       supplier.pendingAmount = Math.max(
         0,
-        supplier.creditPurchase - supplier.paidAmount
+        supplier.openingBalance +
+          supplier.creditPurchase -
+          supplier.debitNoteAmount -
+          supplier.paidAmount,
       );
     });
 
     return Array.from(supplierMap.values()).sort(
-      (first, second) => second.totalPurchase - first.totalPurchase
+      (first, second) => second.totalPurchase - first.totalPurchase,
     );
-  }, [ledgers, purchases, payments]);
+  }, [ledgers, purchases, payments, debitNotes]);
 
   const filteredSuppliers = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
@@ -283,27 +343,32 @@ export default function SupplierReportPage() {
         supplier.name.toLowerCase().includes(search) ||
         supplier.mobile.includes(search) ||
         supplier.email.toLowerCase().includes(search) ||
-        supplier.gst.toLowerCase().includes(search)
+        supplier.gst.toLowerCase().includes(search),
     );
   }, [supplierRows, searchTerm]);
 
   const totalPurchase = supplierRows.reduce(
     (total, supplier) => total + supplier.totalPurchase,
-    0
+    0,
   );
 
   const totalPending = supplierRows.reduce(
     (total, supplier) => total + supplier.pendingAmount,
-    0
+    0,
   );
 
   const totalPaid = supplierRows.reduce(
     (total, supplier) => total + supplier.paidAmount,
-    0
+    0,
+  );
+
+  const totalDebitNotes = supplierRows.reduce(
+    (total, supplier) => total + supplier.debitNoteAmount,
+    0,
   );
 
   const activeSuppliers = supplierRows.filter(
-    (supplier) => supplier.billCount > 0
+    (supplier) => supplier.billCount > 0,
   ).length;
 
   function resetSearch() {
@@ -369,9 +434,7 @@ export default function SupplierReportPage() {
             </div>
 
             <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
-              <p className="font-medium text-slate-600">
-                Total Purchase Value
-              </p>
+              <p className="font-medium text-slate-600">Total Purchase Value</p>
 
               <h2 className="mt-3 break-words text-3xl font-bold text-purple-600 sm:text-4xl">
                 {isLoading ? "..." : formatCurrency(totalPurchase)}
@@ -406,18 +469,17 @@ export default function SupplierReportPage() {
               </p>
 
               <p className="mt-2 text-sm text-emerald-700">
-                Total payments recorded against supplier balances
+                Payments recorded · Debit Note adjustments:{" "}
+                {formatCurrency(totalDebitNotes)}
               </p>
             </div>
 
             <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 sm:p-6">
-              <p className="font-semibold text-blue-800">
-                Balance Calculation
-              </p>
+              <p className="font-semibold text-blue-800">Balance Calculation</p>
 
               <p className="mt-2 text-sm leading-6 text-blue-700">
-                Outstanding is calculated as credit purchases minus supplier
-                payments. Opening balance is displayed separately for reference.
+                Outstanding = Opening Balance + Credit Purchases − Posted Debit
+                Notes − Supplier Payments. VOID notes are excluded.
               </p>
             </div>
           </div>
@@ -492,7 +554,9 @@ export default function SupplierReportPage() {
                           </p>
 
                           <p className="mt-1 truncate text-sm text-slate-500">
-                            {supplier.mobile || supplier.email || "No contact details"}
+                            {supplier.mobile ||
+                              supplier.email ||
+                              "No contact details"}
                           </p>
                         </div>
 
@@ -537,6 +601,15 @@ export default function SupplierReportPage() {
 
                         <div className="rounded-xl bg-white p-3">
                           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Debit Notes
+                          </p>
+                          <p className="mt-1 break-words font-bold text-orange-700">
+                            {formatCurrency(supplier.debitNoteAmount)}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                             Payments
                           </p>
                           <p className="mt-1 break-words font-bold text-emerald-700">
@@ -572,7 +645,7 @@ export default function SupplierReportPage() {
             </div>
 
             <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[1250px]">
+              <table className="w-full min-w-[1380px]">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left">
                     <th className="px-6 py-4 text-sm font-bold text-slate-700">
@@ -600,6 +673,10 @@ export default function SupplierReportPage() {
                     </th>
 
                     <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                      Debit Notes
+                    </th>
+
+                    <th className="px-6 py-4 text-sm font-bold text-slate-700">
                       Payments
                     </th>
 
@@ -617,7 +694,7 @@ export default function SupplierReportPage() {
                   {isLoading ? (
                     <tr>
                       <td
-                        colSpan={9}
+                        colSpan={10}
                         className="px-6 py-12 text-center text-slate-500"
                       >
                         Loading supplier report from the cloud database...
@@ -626,7 +703,7 @@ export default function SupplierReportPage() {
                   ) : filteredSuppliers.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={9}
+                        colSpan={10}
                         className="px-6 py-12 text-center text-slate-500"
                       >
                         <p className="text-lg font-semibold text-slate-700">
@@ -672,6 +749,10 @@ export default function SupplierReportPage() {
 
                         <td className="px-6 py-5 font-bold text-purple-700">
                           {formatCurrency(supplier.totalPurchase)}
+                        </td>
+
+                        <td className="px-6 py-5 font-bold text-orange-700">
+                          {formatCurrency(supplier.debitNoteAmount)}
                         </td>
 
                         <td className="px-6 py-5 font-bold text-emerald-600">
