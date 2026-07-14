@@ -1083,38 +1083,74 @@ export default function GSTReportsManager() {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-3xl border border-violet-200 bg-white shadow-xl">
-        <div className="grid gap-6 p-5 sm:p-7 lg:grid-cols-[1fr_auto] lg:items-center">
-          <div className="flex items-start gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
-              <FileSpreadsheet className="h-7 w-7" />
+      <section className="grid gap-4 xl:grid-cols-2">
+        <article className="overflow-hidden rounded-3xl border border-violet-200 bg-white shadow-xl">
+          <div className="flex h-full flex-col p-5 sm:p-7">
+            <div className="flex items-start gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
+                <FileSpreadsheet className="h-7 w-7" />
+              </div>
+
+              <div>
+                <p className="text-sm font-black uppercase tracking-[0.16em] text-violet-600">
+                  Detailed GST Register
+                </p>
+
+                <h2 className="mt-2 text-2xl font-black text-slate-900">
+                  Invoice-wise GST Transaction Register
+                </h2>
+
+                <p className="mt-2 leading-7 text-slate-600">
+                  Review Sales Invoices, Purchase Bills, Credit Notes and
+                  Debit Notes with party GSTIN, Place of Supply, taxable
+                  value, CGST, SGST, IGST, Cess and document totals.
+                </p>
+              </div>
             </div>
 
-            <div>
-              <p className="text-sm font-black uppercase tracking-[0.16em] text-violet-600">
-                Detailed GST Register
-              </p>
-
-              <h2 className="mt-2 text-2xl font-black text-slate-900">
-                Invoice-wise GST Transaction Register
-              </h2>
-
-              <p className="mt-2 max-w-3xl leading-7 text-slate-600">
-                Review Sales Invoices, Purchase Bills, Credit Notes and
-                Debit Notes with party GSTIN, Place of Supply, taxable
-                value, CGST, SGST, IGST, Cess and document totals.
-              </p>
-            </div>
+            <Link
+              href="/reports/gst/transactions"
+              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-violet-700 sm:w-fit"
+            >
+              Open Transaction Register
+              <ArrowUpRight className="h-5 w-5" />
+            </Link>
           </div>
+        </article>
 
-          <Link
-            href="/reports/gst/transactions"
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-violet-700 lg:w-auto"
-          >
-            Open Transaction Register
-            <ArrowUpRight className="h-5 w-5" />
-          </Link>
-        </div>
+        <article className="overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-xl">
+          <div className="flex h-full flex-col p-5 sm:p-7">
+            <div className="flex items-start gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-700">
+                <AlertTriangle className="h-7 w-7" />
+              </div>
+
+              <div>
+                <p className="text-sm font-black uppercase tracking-[0.16em] text-rose-600">
+                  GST Data Quality
+                </p>
+
+                <h2 className="mt-2 text-2xl font-black text-slate-900">
+                  GST Reconciliation &amp; Error Checker
+                </h2>
+
+                <p className="mt-2 leading-7 text-slate-600">
+                  Detect missing HSN/SAC, unclassified tax types,
+                  incorrect CGST/SGST/IGST splits, calculation mismatches,
+                  duplicate numbers and missing party master data.
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href="/reports/gst/reconciliation"
+              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-rose-600 px-6 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-rose-700 sm:w-fit"
+            >
+              Run GST Error Checker
+              <ArrowUpRight className="h-5 w-5" />
+            </Link>
+          </div>
+        </article>
       </section>
 
       {message && (
