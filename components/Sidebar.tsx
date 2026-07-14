@@ -10,6 +10,7 @@ import {
   Building2,
   CircleDollarSign,
   Cloud,
+  FileSpreadsheet,
   History,
   Landmark,
   LayoutDashboard,
@@ -26,13 +27,30 @@ type NavigationItem = {
   label: string;
   icon: typeof LayoutDashboard;
   section?: string;
+  exact?: boolean;
 };
 
 const navigationItems: NavigationItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/company", label: "Companies", icon: Building2 },
-  { href: "/ledger", label: "Ledgers", icon: BookOpenText },
-  { href: "/inventory", label: "Inventory", icon: Boxes },
+  {
+    href: "/dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+  },
+  {
+    href: "/company",
+    label: "Companies",
+    icon: Building2,
+  },
+  {
+    href: "/ledger",
+    label: "Ledgers",
+    icon: BookOpenText,
+  },
+  {
+    href: "/inventory",
+    label: "Inventory",
+    icon: Boxes,
+  },
   {
     href: "/sales",
     label: "Sales",
@@ -40,52 +58,98 @@ const navigationItems: NavigationItem[] = [
     section: "Transactions",
   },
   {
-  href: "/credit-notes",
-  label: "Credit Notes",
-  icon: RotateCcw,
-},
-  { href: "/purchase", label: "Purchase", icon: ReceiptText },
+    href: "/credit-notes",
+    label: "Credit Notes",
+    icon: RotateCcw,
+  },
   {
-  href: "/debit-notes",
-  label: "Debit Notes",
-  icon: PackageMinus,
-},
-  { href: "/expenses", label: "Expenses", icon: WalletCards },
-  { href: "/outstanding", label: "Outstanding", icon: CircleDollarSign },
-  { href: "/payments", label: "Payments", icon: CircleDollarSign },
+    href: "/purchase",
+    label: "Purchase",
+    icon: ReceiptText,
+  },
+  {
+    href: "/debit-notes",
+    label: "Debit Notes",
+    icon: PackageMinus,
+  },
+  {
+    href: "/expenses",
+    label: "Expenses",
+    icon: WalletCards,
+  },
+  {
+    href: "/outstanding",
+    label: "Outstanding",
+    icon: CircleDollarSign,
+  },
+  {
+    href: "/payments",
+    label: "Payments",
+    icon: CircleDollarSign,
+  },
   {
     href: "/accounting",
     label: "Accounting",
     icon: Landmark,
     section: "Management",
   },
-  { href: "/reports", label: "Reports", icon: BarChart3 },
-  { href: "/audit-history", label: "Audit History", icon: History },
+  {
+    href: "/reports",
+    label: "Reports",
+    icon: BarChart3,
+    exact: true,
+  },
+  {
+    href: "/reports/gst",
+    label: "GST Reports",
+    icon: FileSpreadsheet,
+  },
+  {
+    href: "/audit-history",
+    label: "Audit History",
+    icon: History,
+  },
 ];
 
-function isActiveRoute(pathname: string, href: string) {
-  if (href === "/") {
-    return pathname === "/";
+function isActiveRoute(
+  pathname: string,
+  item: NavigationItem
+) {
+  if (item.exact) {
+    return pathname === item.href;
   }
 
-  return pathname === href || pathname.startsWith(`${href}/`);
+  return (
+    pathname === item.href ||
+    pathname.startsWith(`${item.href}/`)
+  );
 }
 
 function useDesktopBreakpoint() {
-  const [isDesktop, setIsDesktop] = useState<boolean | null>(null);
+  const [isDesktop, setIsDesktop] = useState<boolean | null>(
+    null
+  );
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(min-width: 1024px)");
+    const mediaQuery = window.matchMedia(
+      "(min-width: 1024px)"
+    );
 
     function updateBreakpoint() {
       setIsDesktop(mediaQuery.matches);
     }
 
     updateBreakpoint();
-    mediaQuery.addEventListener("change", updateBreakpoint);
+    mediaQuery.addEventListener(
+      "change",
+      updateBreakpoint
+    );
 
     return () => {
-      mediaQuery.removeEventListener("change", updateBreakpoint);
+      mediaQuery.removeEventListener(
+        "change",
+        updateBreakpoint
+      );
     };
   }, []);
 
@@ -97,12 +161,15 @@ type NavLinksProps = {
   onNavigate?: () => void;
 };
 
-function NavLinks({ pathname, onNavigate }: NavLinksProps) {
+function NavLinks({
+  pathname,
+  onNavigate,
+}: NavLinksProps) {
   return (
     <ul className="space-y-1.5">
       {navigationItems.map((item) => {
         const Icon = item.icon;
-        const isActive = isActiveRoute(pathname, item.href);
+        const isActive = isActiveRoute(pathname, item);
 
         return (
           <li key={item.href}>
@@ -128,7 +195,10 @@ function NavLinks({ pathname, onNavigate }: NavLinksProps) {
                     : "bg-white/[0.06] text-slate-400 group-hover:bg-white/[0.1] group-hover:text-slate-100"
                 }`}
               >
-                <Icon className="h-4.5 w-4.5" strokeWidth={2.2} />
+                <Icon
+                  className="h-4.5 w-4.5"
+                  strokeWidth={2.2}
+                />
               </span>
 
               <span>{item.label}</span>
@@ -143,12 +213,13 @@ function NavLinks({ pathname, onNavigate }: NavLinksProps) {
 function Brand({ onClick }: { onClick?: () => void }) {
   return (
     <Link
-  href="/dashboard"
-  onClick={onClick}
-  className="flex items-center gap-3"
->
-      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-xl font-black text-white shadow-lg shadow-blue-950/50">
-        V
+      href="/dashboard"
+      onClick={onClick}
+      className="flex items-center gap-3"
+    >
+      <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-lg font-black text-white shadow-lg shadow-blue-950/50">
+        VX
+        <span className="absolute bottom-1.5 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-amber-300" />
       </div>
 
       <div>
@@ -172,8 +243,12 @@ function CloudStatus() {
         </span>
 
         <div>
-          <p className="text-sm font-bold text-white">Cloud sync active</p>
-          <p className="mt-0.5 text-xs text-slate-400">Supabase secured</p>
+          <p className="text-sm font-bold text-white">
+            Cloud sync active
+          </p>
+          <p className="mt-0.5 text-xs text-slate-400">
+            Supabase secured
+          </p>
         </div>
       </div>
     </div>
@@ -183,7 +258,8 @@ function CloudStatus() {
 export default function Sidebar() {
   const pathname = usePathname();
   const isDesktop = useDesktopBreakpoint();
-  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] =
+    useState(false);
 
   function closeMobileDrawer() {
     setIsMobileDrawerOpen(false);
@@ -196,7 +272,10 @@ export default function Sidebar() {
       }
     }
 
-    window.addEventListener("vertexerp-open-navigation", openMobileDrawer);
+    window.addEventListener(
+      "vertexerp-open-navigation",
+      openMobileDrawer
+    );
 
     return () => {
       window.removeEventListener(
@@ -217,7 +296,8 @@ export default function Sidebar() {
       return;
     }
 
-    const previousOverflow = document.body.style.overflow;
+    const previousOverflow =
+      document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     function handleEscape(event: KeyboardEvent) {
@@ -229,8 +309,12 @@ export default function Sidebar() {
     window.addEventListener("keydown", handleEscape);
 
     return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow =
+        previousOverflow;
+      window.removeEventListener(
+        "keydown",
+        handleEscape
+      );
     };
   }, [isMobileDrawerOpen]);
 
@@ -269,7 +353,9 @@ export default function Sidebar() {
         position: "fixed",
         inset: 0,
         zIndex: 80,
-        pointerEvents: isMobileDrawerOpen ? "auto" : "none",
+        pointerEvents: isMobileDrawerOpen
+          ? "auto"
+          : "none",
       }}
     >
       <button
@@ -283,7 +369,9 @@ export default function Sidebar() {
           height: "100%",
           opacity: isMobileDrawerOpen ? 1 : 0,
           backgroundColor: "rgba(2, 6, 23, 0.64)",
-          backdropFilter: isMobileDrawerOpen ? "blur(3px)" : "none",
+          backdropFilter: isMobileDrawerOpen
+            ? "blur(3px)"
+            : "none",
           transition: "opacity 220ms ease",
         }}
       />
@@ -299,7 +387,8 @@ export default function Sidebar() {
           transform: isMobileDrawerOpen
             ? "translateX(0)"
             : "translateX(-105%)",
-          transition: "transform 280ms cubic-bezier(0.22, 1, 0.36, 1)",
+          transition:
+            "transform 280ms cubic-bezier(0.22, 1, 0.36, 1)",
         }}
       >
         <div className="flex items-center justify-between border-b border-slate-800 px-5 py-5">
@@ -311,7 +400,10 @@ export default function Sidebar() {
             aria-label="Close navigation"
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.07] text-slate-200 transition hover:bg-white/[0.12] active:scale-95"
           >
-            <X className="h-5 w-5" strokeWidth={2.5} />
+            <X
+              className="h-5 w-5"
+              strokeWidth={2.5}
+            />
           </button>
         </div>
 
@@ -320,7 +412,10 @@ export default function Sidebar() {
             Workspace
           </p>
 
-          <NavLinks pathname={pathname} onNavigate={closeMobileDrawer} />
+          <NavLinks
+            pathname={pathname}
+            onNavigate={closeMobileDrawer}
+          />
         </div>
 
         <div className="p-4">
