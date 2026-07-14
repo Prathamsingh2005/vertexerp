@@ -1433,17 +1433,35 @@ export default function DebitNotesManager() {
                         </td>
 
                         <td className="px-6 py-5 text-right">
-                          <button
-                            type="button"
-                            onClick={() => voidDebitNote(note)}
-                            disabled={
-                              note.status !== "POSTED" ||
-                              isSaving
-                            }
-                            className="rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Void
-                          </button>
+                          <div className="flex justify-end gap-2">
+                            <Link
+                              href={`/debit-notes/${note.id}`}
+                              className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+                            >
+                              View
+                            </Link>
+
+                            <Link
+                              href={`/debit-notes/${note.id}?print=1`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-700 transition hover:bg-violet-100"
+                            >
+                              Print
+                            </Link>
+
+                            <button
+                              type="button"
+                              onClick={() => voidDebitNote(note)}
+                              disabled={
+                                note.status !== "POSTED" ||
+                                isSaving
+                              }
+                              className="rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Void
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1535,6 +1553,24 @@ export default function DebitNotesManager() {
                         </div>
                       </div>
 
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <Link
+                          href={`/debit-notes/${note.id}`}
+                          className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-center font-semibold text-blue-700 transition hover:bg-blue-100"
+                        >
+                          View
+                        </Link>
+
+                        <Link
+                          href={`/debit-notes/${note.id}?print=1`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-center font-semibold text-violet-700 transition hover:bg-violet-100"
+                        >
+                          Print
+                        </Link>
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => voidDebitNote(note)}
@@ -1542,7 +1578,7 @@ export default function DebitNotesManager() {
                           note.status !== "POSTED" ||
                           isSaving
                         }
-                        className="mt-4 w-full rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="mt-3 w-full rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Void Debit Note
                       </button>
