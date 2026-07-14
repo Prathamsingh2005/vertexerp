@@ -17,6 +17,16 @@ const reportCards = [
     borderClassName: "border-violet-200 bg-violet-50/40",
   },
   {
+    icon: "📖",
+    title: "Party Statements",
+    description:
+      "Generate customer and supplier statements with opening balance, documents, payments, return notes and running balance.",
+    href: "/reports/statements",
+    action: "Open Party Statements →",
+    actionClassName: "text-indigo-600 hover:text-indigo-800",
+    borderClassName: "border-indigo-200 bg-indigo-50/40",
+  },
+  {
     icon: "🛒",
     title: "Sales Report",
     description:
@@ -103,8 +113,8 @@ export default function ReportsPage() {
             </h1>
 
             <p className="mt-2 max-w-3xl text-base text-slate-600 sm:text-lg">
-              Review accounting, GST, sales, purchases, stock and business
-              performance from one place.
+              Review accounting, GST, party statements, sales, purchases, stock
+              and business performance from one place.
             </p>
           </div>
 
@@ -116,9 +126,7 @@ export default function ReportsPage() {
                 key={report.href}
                 className={`flex min-h-[210px] flex-col rounded-3xl border bg-white p-5 shadow-lg transition hover:-translate-y-1 hover:shadow-xl sm:min-h-[230px] sm:p-7 ${report.borderClassName}`}
               >
-                <div className="text-3xl sm:text-4xl">
-                  {report.icon}
-                </div>
+                <div className="text-3xl sm:text-4xl">{report.icon}</div>
 
                 <h2 className="mt-4 text-xl font-bold text-slate-900 sm:mt-5 sm:text-2xl">
                   {report.title}
