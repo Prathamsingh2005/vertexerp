@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -1079,6 +1080,40 @@ export default function GSTReportsManager() {
             />
             Refresh GST Data
           </button>
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-3xl border border-violet-200 bg-white shadow-xl">
+        <div className="grid gap-6 p-5 sm:p-7 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div className="flex items-start gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
+              <FileSpreadsheet className="h-7 w-7" />
+            </div>
+
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.16em] text-violet-600">
+                Detailed GST Register
+              </p>
+
+              <h2 className="mt-2 text-2xl font-black text-slate-900">
+                Invoice-wise GST Transaction Register
+              </h2>
+
+              <p className="mt-2 max-w-3xl leading-7 text-slate-600">
+                Review Sales Invoices, Purchase Bills, Credit Notes and
+                Debit Notes with party GSTIN, Place of Supply, taxable
+                value, CGST, SGST, IGST, Cess and document totals.
+              </p>
+            </div>
+          </div>
+
+          <Link
+            href="/reports/gst/transactions"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-violet-700 lg:w-auto"
+          >
+            Open Transaction Register
+            <ArrowUpRight className="h-5 w-5" />
+          </Link>
         </div>
       </section>
 
