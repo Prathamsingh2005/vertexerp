@@ -16,7 +16,13 @@ type SaleItemRow = {
   rate: number | string | null;
   gst_rate: number | string | null;
   base_amount: number | string | null;
+  taxable_amount: number | string | null;
   gst_amount: number | string | null;
+  cgst_amount: number | string | null;
+  sgst_amount: number | string | null;
+  igst_amount: number | string | null;
+  cess_amount: number | string | null;
+  hsn_sac_code: string | null;
   amount: number | string | null;
   unit_cost_snapshot: number | string | null;
   cogs_amount: number | string | null;
@@ -27,6 +33,9 @@ type SaleRow = {
   invoice_number: string;
   invoice_date: string;
   customer_id: string | null;
+  place_of_supply: string | null;
+  place_of_supply_code: string | null;
+  tax_type: string | null;
   customer: LedgerRow | LedgerRow[] | null;
   sale_items: SaleItemRow[] | null;
 };
@@ -37,6 +46,13 @@ type CreditNoteItemRow = {
   product_id: string;
   product_name: string;
   quantity: number | string | null;
+  hsn_sac_code: string | null;
+  taxable_amount: number | string | null;
+  gst_amount: number | string | null;
+  cgst_amount: number | string | null;
+  sgst_amount: number | string | null;
+  igst_amount: number | string | null;
+  cess_amount: number | string | null;
   amount: number | string | null;
   cogs_amount: number | string | null;
 };
@@ -49,6 +65,13 @@ type CreditNoteRow = {
   reason: string;
   subtotal: number | string | null;
   gst_total: number | string | null;
+  cgst_total: number | string | null;
+  sgst_total: number | string | null;
+  igst_total: number | string | null;
+  cess_total: number | string | null;
+  place_of_supply: string | null;
+  place_of_supply_code: string | null;
+  tax_type: string | null;
   grand_total: number | string | null;
   cogs_total: number | string | null;
   status: "POSTED" | "VOID";
@@ -65,8 +88,14 @@ type ReturnLine = {
   remainingQuantity: number;
   rate: number;
   gstRate: number;
+  hsnSacCode: string;
   sourceBaseAmount: number;
+  sourceTaxableAmount: number;
   sourceGstAmount: number;
+  sourceCgstAmount: number;
+  sourceSgstAmount: number;
+  sourceIgstAmount: number;
+  sourceCessAmount: number;
   sourceAmount: number;
   returnQuantity: string;
 };
@@ -196,6 +225,9 @@ export default function CreditNotesManager() {
               invoice_number,
               invoice_date,
               customer_id,
+              place_of_supply,
+              place_of_supply_code,
+              tax_type,
               customer:ledgers!sales_customer_id_fkey(id,name),
               sale_items(
                 id,
@@ -206,7 +238,13 @@ export default function CreditNotesManager() {
                 rate,
                 gst_rate,
                 base_amount,
+                taxable_amount,
                 gst_amount,
+                cgst_amount,
+                sgst_amount,
+                igst_amount,
+                cess_amount,
+                hsn_sac_code,
                 amount,
                 unit_cost_snapshot,
                 cogs_amount
@@ -227,6 +265,13 @@ export default function CreditNotesManager() {
               reason,
               subtotal,
               gst_total,
+              cgst_total,
+              sgst_total,
+              igst_total,
+              cess_total,
+              place_of_supply,
+              place_of_supply_code,
+              tax_type,
               grand_total,
               cogs_total,
               status,
@@ -238,6 +283,13 @@ export default function CreditNotesManager() {
                 product_id,
                 product_name,
                 quantity,
+                hsn_sac_code,
+                taxable_amount,
+                gst_amount,
+                cgst_amount,
+                sgst_amount,
+                igst_amount,
+                cess_amount,
                 amount,
                 cogs_amount
               )
@@ -307,19 +359,75 @@ export default function CreditNotesManager() {
   const totals = useMemo(() => {
     return returnLines.reduce(
       (sum, line) => {
-        const qty = Math.min(toNumber(line.returnQuantity), line.remainingQuantity);
-        const base = proportion(line.sourceBaseAmount, line.originalQuantity, qty);
-        const gst = proportion(line.sourceGstAmount, line.originalQuantity, qty);
-        const amount = proportion(line.sourceAmount, line.originalQuantity, qty);
+        const qty = Math.min(
+          toNumber(line.returnQuantity),
+          line.remainingQuantity
+        );
+        const base = proportion(
+          line.sourceBaseAmount,
+          line.originalQuantity,
+          qty
+        );
+        const taxable = proportion(
+          line.sourceTaxableAmount,
+          line.originalQuantity,
+          qty
+        );
+        const gst = proportion(
+          line.sourceGstAmount,
+          line.originalQuantity,
+          qty
+        );
+        const cgst = proportion(
+          line.sourceCgstAmount,
+          line.originalQuantity,
+          qty
+        );
+        const sgst = proportion(
+          line.sourceSgstAmount,
+          line.originalQuantity,
+          qty
+        );
+        const igst = proportion(
+          line.sourceIgstAmount,
+          line.originalQuantity,
+          qty
+        );
+        const cess = proportion(
+          line.sourceCessAmount,
+          line.originalQuantity,
+          qty
+        );
+        const amount = proportion(
+          line.sourceAmount,
+          line.originalQuantity,
+          qty
+        );
 
         return {
           subtotal: sum.subtotal + base,
+          taxableTotal: sum.taxableTotal + taxable,
           gstTotal: sum.gstTotal + gst,
+          cgstTotal: sum.cgstTotal + cgst,
+          sgstTotal: sum.sgstTotal + sgst,
+          igstTotal: sum.igstTotal + igst,
+          cessTotal: sum.cessTotal + cess,
           grandTotal: sum.grandTotal + amount,
-          itemCount: qty > 0 ? sum.itemCount + 1 : sum.itemCount,
+          itemCount:
+            qty > 0 ? sum.itemCount + 1 : sum.itemCount,
         };
       },
-      { subtotal: 0, gstTotal: 0, grandTotal: 0, itemCount: 0 }
+      {
+        subtotal: 0,
+        taxableTotal: 0,
+        gstTotal: 0,
+        cgstTotal: 0,
+        sgstTotal: 0,
+        igstTotal: 0,
+        cessTotal: 0,
+        grandTotal: 0,
+        itemCount: 0,
+      }
     );
   }, [returnLines]);
 
@@ -346,8 +454,16 @@ export default function CreditNotesManager() {
           remainingQuantity,
           rate: toNumber(item.rate),
           gstRate: toNumber(item.gst_rate),
+          hsnSacCode: item.hsn_sac_code || "",
           sourceBaseAmount: toNumber(item.base_amount),
+          sourceTaxableAmount:
+            toNumber(item.taxable_amount) ||
+            toNumber(item.base_amount),
           sourceGstAmount: toNumber(item.gst_amount),
+          sourceCgstAmount: toNumber(item.cgst_amount),
+          sourceSgstAmount: toNumber(item.sgst_amount),
+          sourceIgstAmount: toNumber(item.igst_amount),
+          sourceCessAmount: toNumber(item.cess_amount),
           sourceAmount: toNumber(item.amount),
           returnQuantity: "",
         };
@@ -459,6 +575,7 @@ export default function CreditNotesManager() {
       await loadData();
       window.dispatchEvent(new Event("vertexerp-sales-updated"));
       window.dispatchEvent(new Event("vertexerp-products-updated"));
+      window.dispatchEvent(new Event("vertexerp-gst-data-updated"));
     } catch (error) {
       showMessage(error instanceof Error ? error.message : "Credit note could not be saved.");
     } finally {
@@ -485,6 +602,7 @@ export default function CreditNotesManager() {
       await loadData();
       window.dispatchEvent(new Event("vertexerp-sales-updated"));
       window.dispatchEvent(new Event("vertexerp-products-updated"));
+      window.dispatchEvent(new Event("vertexerp-gst-data-updated"));
     } catch (error) {
       showMessage(error instanceof Error ? error.message : "Credit note could not be voided.");
     } finally {
@@ -592,7 +710,17 @@ export default function CreditNotesManager() {
                 <div>
                   <p className="font-bold text-slate-900">{selectedSale.invoice_number}</p>
                   <p className="text-sm text-slate-600">
-                    {selectedCustomer?.name || "Customer"} · {formatDate(selectedSale.invoice_date)}
+                    {selectedCustomer?.name || "Customer"} ·{" "}
+                    {formatDate(selectedSale.invoice_date)}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-violet-700">
+                    {selectedSale.tax_type === "INTRA_STATE"
+                      ? "Intra-State Return · Output CGST + SGST Reverse"
+                      : selectedSale.tax_type === "INTER_STATE"
+                        ? "Inter-State Return · Output IGST Reverse"
+                        : selectedSale.tax_type === "EXEMPT"
+                          ? "Exempt / Nil GST Return"
+                          : "GST Classification Pending"}
                   </p>
                 </div>
 
@@ -641,6 +769,10 @@ export default function CreditNotesManager() {
                               Sold: {formatQuantity(line.originalQuantity)} · Remaining:{" "}
                               {formatQuantity(line.remainingQuantity)} · Rate:{" "}
                               {formatCurrency(line.rate)}
+                            </p>
+                            <p className="mt-1 text-xs font-semibold text-slate-500">
+                              HSN: {line.hsnSacCode || "Pending"} · GST:{" "}
+                              {line.gstRate}%
                             </p>
                           </div>
 
@@ -711,6 +843,25 @@ export default function CreditNotesManager() {
                 {formatCurrency(totals.grandTotal)}
               </p>
             </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <GstSummaryCard
+              label="Taxable Return"
+              value={totals.taxableTotal}
+            />
+            <GstSummaryCard
+              label="Output CGST Reverse"
+              value={totals.cgstTotal}
+            />
+            <GstSummaryCard
+              label="Output SGST Reverse"
+              value={totals.sgstTotal}
+            />
+            <GstSummaryCard
+              label="Output IGST Reverse"
+              value={totals.igstTotal}
+            />
           </div>
 
           <button
@@ -784,6 +935,11 @@ export default function CreditNotesManager() {
 
                         <td className="px-6 py-5 text-right font-bold text-emerald-700">
                           {formatCurrency(toNumber(note.grand_total))}
+                          <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                            CGST {formatCurrency(toNumber(note.cgst_total))} ·
+                            SGST {formatCurrency(toNumber(note.sgst_total))} ·
+                            IGST {formatCurrency(toNumber(note.igst_total))}
+                          </p>
                         </td>
 
                         <td className="px-6 py-5 text-right font-bold text-purple-700">
@@ -855,7 +1011,14 @@ export default function CreditNotesManager() {
                       <div className="mt-4 grid grid-cols-2 gap-3">
                         <div className="rounded-xl bg-white p-3">
                           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Credit</p>
-                          <p className="font-bold text-slate-900">{formatCurrency(toNumber(note.grand_total))}</p>
+                          <p className="font-bold text-slate-900">
+                            {formatCurrency(toNumber(note.grand_total))}
+                          </p>
+                          <p className="mt-1 text-[10px] font-semibold text-slate-500">
+                            CGST {formatCurrency(toNumber(note.cgst_total))} ·
+                            SGST {formatCurrency(toNumber(note.sgst_total))} ·
+                            IGST {formatCurrency(toNumber(note.igst_total))}
+                          </p>
                         </div>
                         <div className="rounded-xl bg-white p-3">
                           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">COGS Reverse</p>
@@ -879,6 +1042,26 @@ export default function CreditNotesManager() {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+
+function GstSummaryCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-violet-700">
+        {label}
+      </p>
+      <p className="mt-1 text-lg font-bold text-violet-800">
+        {formatCurrency(value)}
+      </p>
     </div>
   );
 }

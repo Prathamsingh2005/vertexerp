@@ -28,7 +28,13 @@ type PurchaseItemRow = {
   gst_rate: number | string | null;
   discount: number | string | null;
   base_amount: number | string | null;
+  taxable_amount: number | string | null;
   gst_amount: number | string | null;
+  cgst_amount: number | string | null;
+  sgst_amount: number | string | null;
+  igst_amount: number | string | null;
+  cess_amount: number | string | null;
+  hsn_sac_code: string | null;
   amount: number | string | null;
   inventory_unit_cost: number | string | null;
   inventory_cost_amount: number | string | null;
@@ -39,6 +45,9 @@ type PurchaseRow = {
   bill_number: string;
   purchase_date: string;
   payment_mode: string;
+  place_of_supply: string | null;
+  place_of_supply_code: string | null;
+  tax_type: string | null;
   supplier_id: string | null;
   supplier: LedgerRow | LedgerRow[] | null;
   purchase_items: PurchaseItemRow[] | null;
@@ -54,6 +63,11 @@ type DebitNoteItemRow = {
   discount: number | string | null;
   taxable_amount: number | string | null;
   gst_amount: number | string | null;
+  cgst_amount: number | string | null;
+  sgst_amount: number | string | null;
+  igst_amount: number | string | null;
+  cess_amount: number | string | null;
+  hsn_sac_code: string | null;
   amount: number | string | null;
   inventory_cost_amount: number | string | null;
 };
@@ -66,6 +80,13 @@ type DebitNoteRow = {
   reason: string;
   subtotal: number | string | null;
   gst_total: number | string | null;
+  cgst_total: number | string | null;
+  sgst_total: number | string | null;
+  igst_total: number | string | null;
+  cess_total: number | string | null;
+  place_of_supply: string | null;
+  place_of_supply_code: string | null;
+  tax_type: string | null;
   grand_total: number | string | null;
   inventory_cost_total: number | string | null;
   variance_total: number | string | null;
@@ -80,6 +101,10 @@ type ReturnedAmounts = {
   baseAmount: number;
   discount: number;
   gstAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  cessAmount: number;
   amount: number;
 };
 
@@ -95,10 +120,20 @@ type ReturnLine = {
   gstRate: number;
   originalBaseAmount: number;
   originalDiscount: number;
+  hsnSacCode: string;
+  originalTaxableAmount: number;
   originalGstAmount: number;
+  originalCgstAmount: number;
+  originalSgstAmount: number;
+  originalIgstAmount: number;
+  originalCessAmount: number;
   remainingBaseAmount: number;
   remainingDiscount: number;
   remainingGstAmount: number;
+  remainingCgstAmount: number;
+  remainingSgstAmount: number;
+  remainingIgstAmount: number;
+  remainingCessAmount: number;
   remainingAmount: number;
   returnQuantity: string;
 };
@@ -181,6 +216,10 @@ function calculateReturnAmounts(line: ReturnLine, returnQuantity: number) {
       discount: 0,
       taxableAmount: 0,
       gstAmount: 0,
+      cgstAmount: 0,
+      sgstAmount: 0,
+      igstAmount: 0,
+      cessAmount: 0,
       amount: 0,
     };
   }
@@ -223,6 +262,50 @@ function calculateReturnAmounts(line: ReturnLine, returnQuantity: number) {
     ).toFixed(2)
   );
 
+  const cgstAmount = Number(
+    (
+      isFullRemaining
+        ? line.remainingCgstAmount
+        : Math.min(
+            line.remainingCgstAmount,
+            line.originalCgstAmount * ratio
+          )
+    ).toFixed(2)
+  );
+
+  const sgstAmount = Number(
+    (
+      isFullRemaining
+        ? line.remainingSgstAmount
+        : Math.min(
+            line.remainingSgstAmount,
+            line.originalSgstAmount * ratio
+          )
+    ).toFixed(2)
+  );
+
+  const igstAmount = Number(
+    (
+      isFullRemaining
+        ? line.remainingIgstAmount
+        : Math.min(
+            line.remainingIgstAmount,
+            line.originalIgstAmount * ratio
+          )
+    ).toFixed(2)
+  );
+
+  const cessAmount = Number(
+    (
+      isFullRemaining
+        ? line.remainingCessAmount
+        : Math.min(
+            line.remainingCessAmount,
+            line.originalCessAmount * ratio
+          )
+    ).toFixed(2)
+  );
+
   const taxableAmount = Number(
     Math.max(baseAmount - discount, 0).toFixed(2)
   );
@@ -232,7 +315,13 @@ function calculateReturnAmounts(line: ReturnLine, returnQuantity: number) {
     discount,
     taxableAmount,
     gstAmount,
-    amount: Number((taxableAmount + gstAmount).toFixed(2)),
+    cgstAmount,
+    sgstAmount,
+    igstAmount,
+    cessAmount,
+    amount: Number(
+      (taxableAmount + gstAmount + cessAmount).toFixed(2)
+    ),
   };
 }
 
@@ -315,6 +404,9 @@ export default function DebitNotesManager() {
                 bill_number,
                 purchase_date,
                 payment_mode,
+                place_of_supply,
+                place_of_supply_code,
+                tax_type,
                 supplier_id,
                 supplier:ledgers!purchases_supplier_id_fkey(
                   id,
@@ -330,7 +422,13 @@ export default function DebitNotesManager() {
                   gst_rate,
                   discount,
                   base_amount,
+                  taxable_amount,
                   gst_amount,
+                  cgst_amount,
+                  sgst_amount,
+                  igst_amount,
+                  cess_amount,
+                  hsn_sac_code,
                   amount,
                   inventory_unit_cost,
                   inventory_cost_amount
@@ -357,6 +455,13 @@ export default function DebitNotesManager() {
                 reason,
                 subtotal,
                 gst_total,
+                cgst_total,
+                sgst_total,
+                igst_total,
+                cess_total,
+                place_of_supply,
+                place_of_supply_code,
+                tax_type,
                 grand_total,
                 inventory_cost_total,
                 variance_total,
@@ -373,6 +478,11 @@ export default function DebitNotesManager() {
                   discount,
                   taxable_amount,
                   gst_amount,
+                  cgst_amount,
+                  sgst_amount,
+                  igst_amount,
+                  cess_amount,
+                  hsn_sac_code,
                   amount,
                   inventory_cost_amount
                 )
@@ -469,6 +579,10 @@ export default function DebitNotesManager() {
             baseAmount: 0,
             discount: 0,
             gstAmount: 0,
+            cgstAmount: 0,
+            sgstAmount: 0,
+            igstAmount: 0,
+            cessAmount: 0,
             amount: 0,
           };
 
@@ -476,7 +590,16 @@ export default function DebitNotesManager() {
             quantity: current.quantity + toNumber(item.quantity),
             baseAmount: current.baseAmount + toNumber(item.base_amount),
             discount: current.discount + toNumber(item.discount),
-            gstAmount: current.gstAmount + toNumber(item.gst_amount),
+            gstAmount:
+              current.gstAmount + toNumber(item.gst_amount),
+            cgstAmount:
+              current.cgstAmount + toNumber(item.cgst_amount),
+            sgstAmount:
+              current.sgstAmount + toNumber(item.sgst_amount),
+            igstAmount:
+              current.igstAmount + toNumber(item.igst_amount),
+            cessAmount:
+              current.cessAmount + toNumber(item.cess_amount),
             amount: current.amount + toNumber(item.amount),
           });
         });
@@ -506,6 +629,10 @@ export default function DebitNotesManager() {
         return {
           subtotal: sum.subtotal + amounts.taxableAmount,
           gstTotal: sum.gstTotal + amounts.gstAmount,
+          cgstTotal: sum.cgstTotal + amounts.cgstAmount,
+          sgstTotal: sum.sgstTotal + amounts.sgstAmount,
+          igstTotal: sum.igstTotal + amounts.igstAmount,
+          cessTotal: sum.cessTotal + amounts.cessAmount,
           grandTotal: sum.grandTotal + amounts.amount,
           itemCount:
             returnQuantity > 0 ? sum.itemCount + 1 : sum.itemCount,
@@ -514,6 +641,10 @@ export default function DebitNotesManager() {
       {
         subtotal: 0,
         gstTotal: 0,
+        cgstTotal: 0,
+        sgstTotal: 0,
+        igstTotal: 0,
+        cessTotal: 0,
         grandTotal: 0,
         itemCount: 0,
       }
@@ -538,6 +669,10 @@ export default function DebitNotesManager() {
           baseAmount: 0,
           discount: 0,
           gstAmount: 0,
+          cgstAmount: 0,
+          sgstAmount: 0,
+          igstAmount: 0,
+          cessAmount: 0,
           amount: 0,
         };
 
@@ -562,7 +697,19 @@ export default function DebitNotesManager() {
           gstRate: toNumber(item.gst_rate),
           originalBaseAmount: toNumber(item.base_amount),
           originalDiscount: toNumber(item.discount),
+          hsnSacCode: item.hsn_sac_code || "",
+          originalTaxableAmount:
+            toNumber(item.taxable_amount) ||
+            Math.max(
+              0,
+              toNumber(item.base_amount) -
+                toNumber(item.discount)
+            ),
           originalGstAmount: toNumber(item.gst_amount),
+          originalCgstAmount: toNumber(item.cgst_amount),
+          originalSgstAmount: toNumber(item.sgst_amount),
+          originalIgstAmount: toNumber(item.igst_amount),
+          originalCessAmount: toNumber(item.cess_amount),
           remainingBaseAmount: Math.max(
             0,
             Number(
@@ -579,6 +726,42 @@ export default function DebitNotesManager() {
             0,
             Number(
               (toNumber(item.gst_amount) - returned.gstAmount).toFixed(2)
+            )
+          ),
+          remainingCgstAmount: Math.max(
+            0,
+            Number(
+              (
+                toNumber(item.cgst_amount) -
+                returned.cgstAmount
+              ).toFixed(2)
+            )
+          ),
+          remainingSgstAmount: Math.max(
+            0,
+            Number(
+              (
+                toNumber(item.sgst_amount) -
+                returned.sgstAmount
+              ).toFixed(2)
+            )
+          ),
+          remainingIgstAmount: Math.max(
+            0,
+            Number(
+              (
+                toNumber(item.igst_amount) -
+                returned.igstAmount
+              ).toFixed(2)
+            )
+          ),
+          remainingCessAmount: Math.max(
+            0,
+            Number(
+              (
+                toNumber(item.cess_amount) -
+                returned.cessAmount
+              ).toFixed(2)
             )
           ),
           remainingAmount: Math.max(
@@ -714,6 +897,9 @@ export default function DebitNotesManager() {
       window.dispatchEvent(
         new Event("vertexerp-products-updated")
       );
+      window.dispatchEvent(
+        new Event("vertexerp-gst-data-updated")
+      );
     } catch (error) {
       showMessage(
         error instanceof Error
@@ -759,6 +945,9 @@ export default function DebitNotesManager() {
       );
       window.dispatchEvent(
         new Event("vertexerp-products-updated")
+      );
+      window.dispatchEvent(
+        new Event("vertexerp-gst-data-updated")
       );
     } catch (error) {
       showMessage(
@@ -903,6 +1092,16 @@ export default function DebitNotesManager() {
                     {formatDate(selectedPurchase.purchase_date)} ·{" "}
                     {selectedPurchase.payment_mode || "Cash"}
                   </p>
+
+                  <p className="mt-1 text-xs font-semibold text-violet-700">
+                    {selectedPurchase.tax_type === "INTRA_STATE"
+                      ? "Intra-State Return · Input CGST + SGST Reverse"
+                      : selectedPurchase.tax_type === "INTER_STATE"
+                        ? "Inter-State Return · Input IGST Reverse"
+                        : selectedPurchase.tax_type === "EXEMPT"
+                          ? "Exempt / Nil GST Return"
+                          : "GST Classification Pending"}
+                  </p>
                 </div>
 
                 <Link
@@ -967,6 +1166,11 @@ export default function DebitNotesManager() {
                               {formatQuantity(line.remainingQuantity)} ·
                               Current stock:{" "}
                               {formatQuantity(line.currentStock)}
+                            </p>
+
+                            <p className="mt-1 text-xs font-semibold text-slate-500">
+                              HSN: {line.hsnSacCode || "Pending"} · GST:{" "}
+                              {line.gstRate}%
                             </p>
 
                             {line.currentStock <
@@ -1064,6 +1268,25 @@ export default function DebitNotesManager() {
                 {formatCurrency(totals.grandTotal)}
               </p>
             </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <GstSummaryCard
+              label="Taxable Return"
+              value={totals.subtotal}
+            />
+            <GstSummaryCard
+              label="Input CGST Reverse"
+              value={totals.cgstTotal}
+            />
+            <GstSummaryCard
+              label="Input SGST Reverse"
+              value={totals.sgstTotal}
+            />
+            <GstSummaryCard
+              label="Input IGST Reverse"
+              value={totals.igstTotal}
+            />
           </div>
 
           <button
@@ -1184,6 +1407,11 @@ export default function DebitNotesManager() {
                           {formatCurrency(
                             toNumber(note.grand_total)
                           )}
+                          <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                            CGST {formatCurrency(toNumber(note.cgst_total))} ·
+                            SGST {formatCurrency(toNumber(note.sgst_total))} ·
+                            IGST {formatCurrency(toNumber(note.igst_total))}
+                          </p>
                         </td>
 
                         <td className="px-6 py-5 text-right font-bold text-amber-700">
@@ -1285,6 +1513,11 @@ export default function DebitNotesManager() {
                               toNumber(note.grand_total)
                             )}
                           </p>
+                          <p className="mt-1 text-[10px] font-semibold text-slate-500">
+                            CGST {formatCurrency(toNumber(note.cgst_total))} ·
+                            SGST {formatCurrency(toNumber(note.sgst_total))} ·
+                            IGST {formatCurrency(toNumber(note.igst_total))}
+                          </p>
                         </div>
 
                         <div className="rounded-xl bg-white p-3">
@@ -1321,6 +1554,26 @@ export default function DebitNotesManager() {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+
+function GstSummaryCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-violet-700">
+        {label}
+      </p>
+      <p className="mt-1 text-lg font-bold text-violet-800">
+        {formatCurrency(value)}
+      </p>
     </div>
   );
 }
