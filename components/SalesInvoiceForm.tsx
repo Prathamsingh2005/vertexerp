@@ -196,7 +196,15 @@ function getTaxTypeLabel(taxType: TaxType) {
   return "GST Setup Pending";
 }
 
-export default function SalesInvoiceForm() {
+type SalesInvoiceFormProps = {
+  canCreate: boolean;
+  canEdit: boolean;
+};
+
+export default function SalesInvoiceForm({
+  canCreate,
+  canEdit,
+}: SalesInvoiceFormProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(
@@ -360,6 +368,11 @@ export default function SalesInvoiceForm() {
 
   useEffect(() => {
     function handleEditSale(event: Event) {
+      if (!canEdit) {
+        showMessage("You do not have permission to edit sales invoices.");
+        return;
+      }
+
       const sale = (event as CustomEvent<EditableSale>).detail;
 
       if (!sale?.id) {
@@ -403,7 +416,7 @@ export default function SalesInvoiceForm() {
         handleEditSale
       );
     };
-  }, []);
+  }, [canEdit]);
 
   const selectedCustomer = customers.find(
     (customer) => customer.id === form.customerId
@@ -663,6 +676,16 @@ export default function SalesInvoiceForm() {
   ) {
     event.preventDefault();
 
+    if (editingSale && !canEdit) {
+      showMessage("You do not have permission to edit sales invoices.");
+      return;
+    }
+
+    if (!editingSale && !canCreate) {
+      showMessage("You do not have permission to create sales invoices.");
+      return;
+    }
+
     if (!activeCompanyId) {
       showMessage(
         "Select an active company before saving an invoice."
@@ -849,23 +872,47 @@ export default function SalesInvoiceForm() {
   }
 
   const isFormDisabled =
-    isLoading || !activeCompanyId || isSaving;
+    isLoading ||
+    !activeCompanyId ||
+    isSaving ||
+    (editingSale ? !canEdit : !canCreate);
+
+  if (!canCreate && !canEdit) {
+    return null;
+  }
+
+  if (!canCreate && !editingSale) {
+    return (
+      <section className="mt-6 rounded-3xl border border-violet-200 bg-violet-50 p-6 shadow-lg shadow-violet-100/60 sm:mt-8">
+        <p className="text-sm font-black uppercase tracking-[0.18em] text-violet-600">
+          Edit-only access
+        </p>
+        <h2 className="mt-2 text-2xl font-black text-slate-950">
+          Select an invoice to edit
+        </h2>
+        <p className="mt-2 text-slate-600">
+          Use the Edit action in the invoice register below. New invoice
+          creation is not available for your current role.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <form
       id="sales-invoice-form"
       onSubmit={handleSubmit}
-      className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:mt-8 sm:p-6 lg:p-8"
+      className="mt-6 min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white p-4 shadow-xl shadow-slate-200/70 sm:mt-8 sm:p-6 lg:p-8"
     >
-      <div className="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-6 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mb-6 flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-violet-950 via-violet-800 to-violet-700 p-5 text-white lg:mb-8 lg:flex-row lg:items-center lg:justify-between sm:p-6">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+          <h2 className="text-xl font-black text-white sm:text-2xl">
             {editingSale
               ? "Edit GST Sales Invoice"
               : "Create GST Sales Invoice"}
           </h2>
 
-          <p className="mt-1 text-sm text-slate-600 sm:text-base">
+          <p className="mt-1 text-sm text-violet-100 sm:text-base">
             Automatic Place of Supply, HSN and CGST/SGST or
             IGST snapshots.
           </p>
@@ -874,8 +921,8 @@ export default function SalesInvoiceForm() {
         <div
           className={`w-fit rounded-full px-4 py-2 text-sm font-semibold ${
             editingSale
-              ? "bg-amber-50 text-amber-700"
-              : "bg-blue-50 text-blue-700"
+              ? "bg-amber-100 text-amber-800"
+              : "bg-white/15 text-white ring-1 ring-white/20"
           }`}
         >
           {editingSale
@@ -885,7 +932,7 @@ export default function SalesInvoiceForm() {
       </div>
 
       {message && (
-        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+        <div className="mb-6 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 font-medium text-violet-700">
           {message}
         </div>
       )}
@@ -1000,7 +1047,7 @@ export default function SalesInvoiceForm() {
                   customerId: event.target.value,
                 }))
               }
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
             >
               <option value="">Select customer</option>
 
@@ -1028,7 +1075,7 @@ export default function SalesInvoiceForm() {
           />
         </div>
 
-        <div className="mt-8 sm:mt-10">
+        <div className="mt-8 min-w-0 sm:mt-10">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-xl font-bold text-slate-900">
@@ -1043,7 +1090,7 @@ export default function SalesInvoiceForm() {
             <button
               type="button"
               onClick={addItem}
-              className="w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 font-semibold text-blue-700 transition hover:bg-blue-100 sm:w-fit"
+              className="w-full rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 font-semibold text-violet-700 transition hover:bg-violet-100 sm:w-fit"
             >
               + Add Item
             </button>
@@ -1139,9 +1186,21 @@ export default function SalesInvoiceForm() {
             })}
           </div>
 
-          <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 md:block">
-            <table className="w-full min-w-[1200px]">
-              <thead className="bg-slate-50">
+          <div className="hidden max-w-full overflow-x-auto rounded-2xl border border-slate-200 md:block">
+            <table className="w-full min-w-[1060px] table-fixed">
+              <colgroup>
+                <col className="w-[250px]" />
+                <col className="w-[72px]" />
+                <col className="w-[72px]" />
+                <col className="w-[84px]" />
+                <col className="w-[100px]" />
+                <col className="w-[90px]" />
+                <col className="w-[105px]" />
+                <col className="w-[105px]" />
+                <col className="w-[105px]" />
+                <col className="w-[85px]" />
+              </colgroup>
+              <thead className="bg-violet-50">
                 <tr className="text-left">
                   {[
                     "Product",
@@ -1268,7 +1327,7 @@ export default function SalesInvoiceForm() {
           </div>
         </div>
 
-        <div className="mt-6 max-w-none rounded-2xl bg-slate-50 p-5 sm:mt-8 sm:p-6 md:ml-auto md:max-w-lg">
+        <div className="mt-6 max-w-none rounded-2xl border border-violet-100 bg-violet-50/70 p-5 sm:mt-8 sm:p-6 md:ml-auto md:max-w-lg">
           <TotalRow
             label="Gross Subtotal"
             value={totals.subtotal}
@@ -1307,7 +1366,7 @@ export default function SalesInvoiceForm() {
               Grand Total
             </span>
 
-            <span className="text-2xl font-bold text-blue-600">
+            <span className="text-2xl font-black text-violet-800">
               {formatCurrency(totals.grandTotal)}
             </span>
           </div>
@@ -1316,7 +1375,7 @@ export default function SalesInvoiceForm() {
         <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:gap-4">
           <button
             type="submit"
-            className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 sm:w-auto sm:px-7"
+            className="w-full rounded-xl bg-gradient-to-r from-violet-700 to-indigo-600 px-5 py-3 font-black text-white shadow-lg shadow-violet-200 transition hover:-translate-y-0.5 hover:from-violet-800 hover:to-indigo-700 sm:w-auto sm:px-7"
           >
             {isSaving
               ? "Saving..."
@@ -1366,7 +1425,7 @@ function Field({
           onChange(event.target.value)
         }
         placeholder={placeholder}
-        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
       />
     </div>
   );
@@ -1419,7 +1478,7 @@ function SelectField({
         onChange={(event) =>
           onChange(event.target.value)
         }
-        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
       >
         {options.map((option) => (
           <option key={option}>{option}</option>
@@ -1444,7 +1503,7 @@ function ProductSelect({
       onChange={(event) =>
         onChange(event.target.value)
       }
-      className="w-full min-w-[210px] rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-800 outline-none focus:border-blue-500"
+      className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-800 outline-none focus:border-violet-500"
     >
       <option value="">Select product</option>
 
@@ -1483,7 +1542,7 @@ function MiniField({
         onChange={(event) =>
           onChange(event.target.value)
         }
-        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-900 outline-none focus:border-blue-500"
+        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-900 outline-none focus:border-violet-500"
       />
     </div>
   );
@@ -1504,7 +1563,7 @@ function TableInput({
       onChange={(event) =>
         onChange(event.target.value)
       }
-      className="w-24 rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
+      className="w-full min-w-[68px] rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-violet-500"
     />
   );
 }

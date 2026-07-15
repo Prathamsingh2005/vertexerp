@@ -163,13 +163,23 @@ function getAccountLabel(account: ChartAccountRow) {
   return `${account.code} — ${account.name}`;
 }
 
-export default function AccountingManager() {
+type AccountingManagerProps = {
+  canManageAccounting: boolean;
+  canManageLocks: boolean;
+};
+
+export default function AccountingManager({
+  canManageAccounting,
+  canManageLocks,
+}: AccountingManagerProps) {
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<ChartAccountRow[]>([]);
   const [vouchers, setVouchers] = useState<VoucherWithEntries[]>([]);
   const [periodLocks, setPeriodLocks] = useState<PeriodLockRow[]>([]);
 
-  const [activeTab, setActiveTab] = useState<"vouchers" | "accounts" | "locks" | "history">("vouchers");
+  const [activeTab, setActiveTab] = useState<
+    "vouchers" | "accounts" | "locks" | "history"
+  >(canManageAccounting ? "vouchers" : "accounts");
   const [message, setMessage] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -349,6 +359,12 @@ export default function AccountingManager() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!canManageAccounting && activeTab === "vouchers") {
+      setActiveTab("accounts");
+    }
+  }, [activeTab, canManageAccounting]);
+
   const accountById = useMemo(() => {
     const nextMap = new Map<string, ChartAccountRow>();
 
@@ -492,6 +508,11 @@ export default function AccountingManager() {
   }
 
   function startEditAccount(account: ChartAccountRow) {
+    if (!canManageAccounting) {
+      showMessage("You do not have permission to manage accounting.");
+      return;
+    }
+
     if (account.is_system) {
       showMessage("System accounts are protected.");
       return;
@@ -511,6 +532,11 @@ export default function AccountingManager() {
   }
 
   function startEditVoucher(voucher: VoucherWithEntries) {
+    if (!canManageAccounting) {
+      showMessage("You do not have permission to manage accounting.");
+      return;
+    }
+
     if (voucher.status !== "POSTED") {
       showMessage("Only posted manual vouchers can be edited.");
       return;
@@ -536,6 +562,11 @@ export default function AccountingManager() {
   }
 
   async function saveAccount() {
+    if (!canManageAccounting) {
+      showMessage("You do not have permission to create or update accounts.");
+      return;
+    }
+
     if (!activeCompanyId) {
       showMessage("Select an active company first.");
       return;
@@ -603,6 +634,11 @@ export default function AccountingManager() {
   }
 
   async function saveVoucher() {
+    if (!canManageAccounting) {
+      showMessage("You do not have permission to create or update vouchers.");
+      return;
+    }
+
     if (!activeCompanyId) {
       showMessage("Select an active company first.");
       return;
@@ -700,6 +736,11 @@ export default function AccountingManager() {
   }
 
   async function voidVoucher(voucher: VoucherWithEntries) {
+    if (!canManageAccounting) {
+      showMessage("You do not have permission to void vouchers.");
+      return;
+    }
+
     const reason = window.prompt(`Enter a reason to void ${voucher.voucher_number}:`);
 
     if (!reason?.trim()) {
@@ -730,6 +771,11 @@ export default function AccountingManager() {
   }
 
   async function createPeriodLock() {
+    if (!canManageLocks) {
+      showMessage("You do not have permission to manage accounting period locks.");
+      return;
+    }
+
     if (!activeCompanyId) {
       showMessage("Select an active company first.");
       return;
@@ -778,6 +824,11 @@ export default function AccountingManager() {
   }
 
   async function unlockPeriodLock(lock: PeriodLockRow) {
+    if (!canManageLocks) {
+      showMessage("You do not have permission to manage accounting period locks.");
+      return;
+    }
+
     const reason = window.prompt(`Enter unlock reason for ${lock.lock_name}:`);
 
     if (!reason?.trim()) {
@@ -809,11 +860,14 @@ export default function AccountingManager() {
 
   function renderTabs() {
     const tabs: { key: typeof activeTab; label: string }[] = [
-      { key: "vouchers", label: "Vouchers" },
       { key: "accounts", label: "Chart of Accounts" },
       { key: "locks", label: "Period Locks" },
       { key: "history", label: "Voucher History" },
     ];
+
+    if (canManageAccounting) {
+      tabs.unshift({ key: "vouchers", label: "Vouchers" });
+    }
 
     return (
       <div className="flex flex-wrap gap-2">
@@ -827,7 +881,7 @@ export default function AccountingManager() {
             }}
             className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
               activeTab === tab.key
-                ? "bg-blue-600 text-white shadow-lg"
+                ? "bg-violet-700 text-white shadow-lg"
                 : "bg-slate-100 text-slate-700 hover:bg-slate-200"
             }`}
           >
@@ -839,8 +893,8 @@ export default function AccountingManager() {
   }
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
+    <div className="min-w-0 space-y-6">
+      <section className="rounded-3xl border border-violet-100 bg-white p-4 shadow-lg sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
@@ -861,7 +915,7 @@ export default function AccountingManager() {
         )}
 
         {message && (
-          <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700">
+          <div className="mt-5 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-medium text-violet-700">
             {message}
           </div>
         )}
@@ -869,7 +923,7 @@ export default function AccountingManager() {
 
       {activeTab === "vouchers" && (
         <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
+          <div className="rounded-3xl border border-violet-100 bg-white p-4 shadow-lg sm:p-6">
             <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="text-xl font-bold text-slate-900">
@@ -898,7 +952,7 @@ export default function AccountingManager() {
                   value={voucherType}
                   onChange={(event) => handleVoucherTypeChange(event.target.value as VoucherType)}
                   disabled={!!editingVoucher}
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   <option value="Journal">Journal</option>
                   <option value="Contra">Contra</option>
@@ -911,7 +965,7 @@ export default function AccountingManager() {
                   type="date"
                   value={voucherDate}
                   onChange={(event) => setVoucherDate(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
                 />
               </div>
 
@@ -921,7 +975,7 @@ export default function AccountingManager() {
                   value={voucherNumber}
                   onChange={(event) => setVoucherNumber(event.target.value)}
                   placeholder="Auto generated when empty"
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
                 />
               </div>
 
@@ -931,7 +985,7 @@ export default function AccountingManager() {
                   value={narration}
                   onChange={(event) => setNarration(event.target.value)}
                   placeholder={voucherType === "Contra" ? "Cash deposited into bank" : "Owner investment or adjustment"}
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
                 />
               </div>
             </div>
@@ -966,7 +1020,7 @@ export default function AccountingManager() {
                         <select
                           value={line.accountId}
                           onChange={(event) => updateVoucherLine(index, "accountId", event.target.value)}
-                          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:ring-4 focus:ring-violet-100"
                         >
                           <option value="">Select account</option>
                           {postingAccounts.map((account) => (
@@ -986,7 +1040,7 @@ export default function AccountingManager() {
                           value={line.debit}
                           onChange={(event) => updateVoucherLine(index, "debit", event.target.value)}
                           placeholder="0.00"
-                          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:ring-4 focus:ring-violet-100"
                         />
                       </div>
 
@@ -999,7 +1053,7 @@ export default function AccountingManager() {
                           value={line.credit}
                           onChange={(event) => updateVoucherLine(index, "credit", event.target.value)}
                           placeholder="0.00"
-                          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:ring-4 focus:ring-violet-100"
                         />
                       </div>
                     </div>
@@ -1010,7 +1064,7 @@ export default function AccountingManager() {
                         value={line.description}
                         onChange={(event) => updateVoucherLine(index, "description", event.target.value)}
                         placeholder="Optional line note"
-                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:ring-4 focus:ring-violet-100"
                       />
                     </div>
                   </div>
@@ -1055,14 +1109,14 @@ export default function AccountingManager() {
               type="button"
               onClick={saveVoucher}
               disabled={isSavingVoucher || isLoading}
-              className="mt-5 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-5 w-full rounded-xl bg-violet-700 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-violet-800 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSavingVoucher ? "Saving..." : editingVoucher ? "Save Voucher Changes" : "Post Voucher"}
             </button>
           </div>
 
-          <aside className="rounded-3xl border border-blue-100 bg-blue-50 p-4 shadow-lg sm:p-6">
-            <h3 className="text-xl font-bold text-blue-950">Quick Examples</h3>
+          <aside className="rounded-3xl border border-violet-100 bg-violet-50 p-4 shadow-lg sm:p-6">
+            <h3 className="text-xl font-bold text-violet-950">Quick Examples</h3>
 
             <div className="mt-5 space-y-4">
               <div className="rounded-2xl bg-white p-4">
@@ -1089,8 +1143,13 @@ export default function AccountingManager() {
       )}
 
       {activeTab === "accounts" && (
-        <section className="grid grid-cols-1 gap-6 xl:grid-cols-[0.85fr_1.15fr]">
-          <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
+        <section
+          className={`grid min-w-0 grid-cols-1 gap-6 ${
+            canManageAccounting ? "xl:grid-cols-[0.85fr_1.15fr]" : ""
+          }`}
+        >
+          {canManageAccounting && (
+          <div className="rounded-3xl border border-violet-100 bg-white p-4 shadow-lg sm:p-6">
             <div className="mb-5 flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-xl font-bold text-slate-900">
@@ -1119,7 +1178,7 @@ export default function AccountingManager() {
                   value={accountForm.code}
                   onChange={(event) => setAccountForm((current) => ({ ...current, code: event.target.value }))}
                   placeholder="6100"
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
                 />
               </div>
 
@@ -1129,7 +1188,7 @@ export default function AccountingManager() {
                   value={accountForm.name}
                   onChange={(event) => setAccountForm((current) => ({ ...current, name: event.target.value }))}
                   placeholder="Office Rent"
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
                 />
               </div>
 
@@ -1139,7 +1198,7 @@ export default function AccountingManager() {
                   value={accountForm.accountType}
                   onChange={(event) => setAccountForm((current) => ({ ...current, accountType: event.target.value as AccountType }))}
                   disabled={!!editingAccount}
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   <option value="Asset">Asset</option>
                   <option value="Liability">Liability</option>
@@ -1155,7 +1214,7 @@ export default function AccountingManager() {
                   value={accountForm.accountGroup}
                   onChange={(event) => setAccountForm((current) => ({ ...current, accountGroup: event.target.value }))}
                   placeholder="Indirect Expenses"
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
                 />
               </div>
 
@@ -1166,7 +1225,7 @@ export default function AccountingManager() {
                   onChange={(event) => setAccountForm((current) => ({ ...current, description: event.target.value }))}
                   rows={3}
                   placeholder="Optional account note"
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
                 />
               </div>
 
@@ -1188,25 +1247,33 @@ export default function AccountingManager() {
                 type="button"
                 onClick={saveAccount}
                 disabled={isSavingAccount || isLoading}
-                className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-xl bg-violet-700 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-violet-800 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSavingAccount ? "Saving..." : editingAccount ? "Save Account Changes" : "Create Account"}
               </button>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-lg">
+          )}
+
+          <div className="min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-lg">
             <div className="border-b border-slate-200 p-4 sm:p-6">
               <h3 className="text-xl font-bold text-slate-900">Chart of Accounts</h3>
               <p className="mt-1 text-sm text-slate-600">
                 System accounts are protected. Custom accounts can be edited.
               </p>
 
+              {!canManageAccounting && (
+                <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-800">
+                  Read-only access: account creation and editing are disabled.
+                </div>
+              )}
+
               <input
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 placeholder="Search accounts..."
-                className="mt-4 w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="mt-4 w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               />
             </div>
 
@@ -1228,7 +1295,7 @@ export default function AccountingManager() {
                         </div>
                         <span
                           className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
-                            account.is_system ? "bg-slate-200 text-slate-700" : "bg-blue-100 text-blue-700"
+                            account.is_system ? "bg-slate-200 text-slate-700" : "bg-violet-100 text-violet-700"
                           }`}
                         >
                           {account.is_system ? "System" : "Custom"}
@@ -1242,10 +1309,10 @@ export default function AccountingManager() {
                       <button
                         type="button"
                         onClick={() => startEditAccount(account)}
-                        disabled={account.is_system}
+                        disabled={account.is_system || !canManageAccounting}
                         className="mt-4 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {account.is_system ? "Protected" : "Edit"}
+                        {account.is_system ? "Protected" : canManageAccounting ? "Edit" : "View Only"}
                       </button>
                     </article>
                   ))}
@@ -1253,7 +1320,7 @@ export default function AccountingManager() {
               )}
             </div>
 
-            <div className="hidden overflow-x-auto md:block">
+            <div className="hidden max-w-full overflow-x-auto md:block">
               <table className="w-full min-w-[900px]">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left">
@@ -1279,7 +1346,7 @@ export default function AccountingManager() {
                     </tr>
                   ) : (
                     filteredAccounts.map((account) => (
-                      <tr key={account.id} className="border-b border-slate-100 transition hover:bg-blue-50">
+                      <tr key={account.id} className="border-b border-slate-100 transition hover:bg-violet-50">
                         <td className="px-6 py-5">
                           <p className="font-bold text-slate-900">{account.name}</p>
                           <p className="mt-1 text-xs text-slate-500">
@@ -1305,10 +1372,10 @@ export default function AccountingManager() {
                           <button
                             type="button"
                             onClick={() => startEditAccount(account)}
-                            disabled={account.is_system}
+                            disabled={account.is_system || !canManageAccounting}
                             className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            {account.is_system ? "Protected" : "Edit"}
+                            {account.is_system ? "Protected" : canManageAccounting ? "Edit" : "View Only"}
                           </button>
                         </td>
                       </tr>
@@ -1322,8 +1389,13 @@ export default function AccountingManager() {
       )}
 
       {activeTab === "locks" && (
-        <section className="grid grid-cols-1 gap-6 xl:grid-cols-[0.85fr_1.15fr]">
-          <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
+        <section
+          className={`grid min-w-0 grid-cols-1 gap-6 ${
+            canManageLocks ? "xl:grid-cols-[0.85fr_1.15fr]" : ""
+          }`}
+        >
+          {canManageLocks && (
+          <div className="rounded-3xl border border-violet-100 bg-white p-4 shadow-lg sm:p-6">
             <h3 className="text-xl font-bold text-slate-900">Create Period Lock</h3>
             <p className="mt-1 text-sm text-slate-600">
               Lock finalized periods to prevent backdated transaction changes.
@@ -1340,7 +1412,7 @@ export default function AccountingManager() {
                   value={lockName}
                   onChange={(event) => setLockName(event.target.value)}
                   placeholder="FY 2025-26 Final Lock"
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
                 />
               </div>
 
@@ -1349,7 +1421,7 @@ export default function AccountingManager() {
                 <select
                   value={lockType}
                   onChange={(event) => setLockType(event.target.value as LockType)}
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
                 >
                   <option value="FINANCIAL_YEAR">Financial Year</option>
                   <option value="MONTHLY">Monthly</option>
@@ -1363,7 +1435,7 @@ export default function AccountingManager() {
                   type="date"
                   value={lockedUntilDate}
                   onChange={(event) => setLockedUntilDate(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
                 />
               </div>
 
@@ -1374,7 +1446,7 @@ export default function AccountingManager() {
                   onChange={(event) => setLockReason(event.target.value)}
                   rows={3}
                   placeholder="Books finalized and reviewed"
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
                 />
               </div>
 
@@ -1382,19 +1454,27 @@ export default function AccountingManager() {
                 type="button"
                 onClick={createPeriodLock}
                 disabled={isSavingLock || isLoading}
-                className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-xl bg-violet-700 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-violet-800 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSavingLock ? "Saving..." : "Lock Accounting Period"}
               </button>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-lg">
+          )}
+
+          <div className="min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-lg">
             <div className="border-b border-slate-200 p-4 sm:p-6">
               <h3 className="text-xl font-bold text-slate-900">Period Lock History</h3>
               <p className="mt-1 text-sm text-slate-600">
                 Active locks protect finalized accounting periods.
               </p>
+
+              {!canManageLocks && (
+                <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-800">
+                  Read-only access: creating and deactivating period locks is disabled.
+                </div>
+              )}
 
               <div
                 className={`mt-4 rounded-2xl border px-4 py-4 ${
@@ -1450,10 +1530,10 @@ export default function AccountingManager() {
                       <button
                         type="button"
                         onClick={() => unlockPeriodLock(lock)}
-                        disabled={!lock.is_active || isSavingLock}
+                        disabled={!lock.is_active || isSavingLock || !canManageLocks}
                         className="mt-4 w-full rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Unlock
+                        {canManageLocks ? "Unlock" : "View Only"}
                       </button>
                     </article>
                   ))}
@@ -1461,7 +1541,7 @@ export default function AccountingManager() {
               )}
             </div>
 
-            <div className="hidden overflow-x-auto md:block">
+            <div className="hidden max-w-full overflow-x-auto md:block">
               <table className="w-full min-w-[920px]">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left">
@@ -1487,7 +1567,7 @@ export default function AccountingManager() {
                     </tr>
                   ) : (
                     periodLocks.map((lock) => (
-                      <tr key={lock.id} className="border-b border-slate-100 transition hover:bg-blue-50">
+                      <tr key={lock.id} className="border-b border-slate-100 transition hover:bg-violet-50">
                         <td className="px-6 py-5">
                           <p className="font-bold text-slate-900">{lock.lock_name}</p>
                           <p className="mt-1 text-xs text-slate-500">
@@ -1518,10 +1598,10 @@ export default function AccountingManager() {
                           <button
                             type="button"
                             onClick={() => unlockPeriodLock(lock)}
-                            disabled={!lock.is_active || isSavingLock}
+                            disabled={!lock.is_active || isSavingLock || !canManageLocks}
                             className="rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            Unlock
+                            {canManageLocks ? "Unlock" : "View Only"}
                           </button>
                         </td>
                       </tr>
@@ -1535,18 +1615,24 @@ export default function AccountingManager() {
       )}
 
       {activeTab === "history" && (
-        <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-lg">
+        <section className="overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-lg">
           <div className="border-b border-slate-200 p-4 sm:p-6">
             <h3 className="text-xl font-bold text-slate-900">Manual Voucher History</h3>
             <p className="mt-1 text-sm text-slate-600">
               Manual vouchers are edited or voided, never hard-deleted.
             </p>
 
+            {!canManageAccounting && (
+              <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-800">
+                Read-only access: voucher editing and voiding are disabled.
+              </div>
+            )}
+
             <input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               placeholder="Search vouchers..."
-              className="mt-4 w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+              className="mt-4 w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
             />
           </div>
 
@@ -1601,18 +1687,18 @@ export default function AccountingManager() {
                         <button
                           type="button"
                           onClick={() => startEditVoucher(voucher)}
-                          disabled={voucher.status !== "POSTED"}
+                          disabled={voucher.status !== "POSTED" || !canManageAccounting}
                           className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          Edit
+                          {canManageAccounting ? "Edit" : "View Only"}
                         </button>
                         <button
                           type="button"
                           onClick={() => voidVoucher(voucher)}
-                          disabled={voucher.status !== "POSTED"}
+                          disabled={voucher.status !== "POSTED" || !canManageAccounting}
                           className="flex-1 rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          Void
+                          {canManageAccounting ? "Void" : "View Only"}
                         </button>
                       </div>
                     </article>
@@ -1622,7 +1708,7 @@ export default function AccountingManager() {
             )}
           </div>
 
-          <div className="hidden overflow-x-auto md:block">
+          <div className="hidden max-w-full overflow-x-auto md:block">
             <table className="w-full min-w-[1000px]">
               <thead className="bg-slate-50">
                 <tr className="border-b border-slate-200 text-left">
@@ -1658,7 +1744,7 @@ export default function AccountingManager() {
                     );
 
                     return (
-                      <tr key={voucher.id} className="border-b border-slate-100 transition hover:bg-blue-50">
+                      <tr key={voucher.id} className="border-b border-slate-100 transition hover:bg-violet-50">
                         <td className="px-6 py-5">
                           <p className="font-bold text-slate-900">{voucher.voucher_number}</p>
                           <p className="mt-1 text-xs text-slate-500">
@@ -1686,18 +1772,18 @@ export default function AccountingManager() {
                             <button
                               type="button"
                               onClick={() => startEditVoucher(voucher)}
-                              disabled={voucher.status !== "POSTED"}
+                              disabled={voucher.status !== "POSTED" || !canManageAccounting}
                               className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              Edit
+                              {canManageAccounting ? "Edit" : "View Only"}
                             </button>
                             <button
                               type="button"
                               onClick={() => voidVoucher(voucher)}
-                              disabled={voucher.status !== "POSTED"}
+                              disabled={voucher.status !== "POSTED" || !canManageAccounting}
                               className="rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              Void
+                              {canManageAccounting ? "Void" : "View Only"}
                             </button>
                           </div>
                         </td>

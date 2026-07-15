@@ -325,7 +325,15 @@ function calculateReturnAmounts(line: ReturnLine, returnQuantity: number) {
   };
 }
 
-export default function DebitNotesManager() {
+type DebitNotesManagerProps = {
+  canCreate: boolean;
+  canVoid: boolean;
+};
+
+export default function DebitNotesManager({
+  canCreate,
+  canVoid,
+}: DebitNotesManagerProps) {
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
@@ -818,6 +826,11 @@ export default function DebitNotesManager() {
   }
 
   async function createDebitNote() {
+    if (!canCreate) {
+      showMessage("You do not have permission to create debit notes.");
+      return;
+    }
+
     if (!activeCompanyId) {
       showMessage("Select an active company first.");
       return;
@@ -912,6 +925,11 @@ export default function DebitNotesManager() {
   }
 
   async function voidDebitNote(note: DebitNoteRow) {
+    if (!canVoid) {
+      showMessage("You do not have permission to void debit notes.");
+      return;
+    }
+
     const voidReason = window.prompt(
       `Enter a reason to void ${note.debit_note_number}:`
     );
@@ -962,7 +980,7 @@ export default function DebitNotesManager() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
+      <section className="overflow-hidden rounded-3xl border border-violet-100 bg-white p-4 shadow-xl shadow-violet-100/50 sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
@@ -976,20 +994,38 @@ export default function DebitNotesManager() {
             </p>
           </div>
 
-          <div className="rounded-full bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700">
-            Purchase Return Safe
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
+              Purchase Return Safe
+            </span>
+
+            <span className="rounded-full bg-violet-100 px-4 py-2 text-sm font-bold text-violet-700">
+              {canCreate || canVoid ? "Operational" : "Read Only"}
+            </span>
           </div>
         </div>
 
         {message && (
-          <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700">
+          <div className="mt-5 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-medium text-violet-700">
             {message}
+          </div>
+        )}
+
+        {!canCreate && !canVoid && (
+          <div className="mt-5 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-800">
+            Read-only access is active. You can view and print debit notes,
+            but creating or voiding them is disabled.
           </div>
         )}
       </section>
 
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
+      <section
+        className={`grid min-w-0 grid-cols-1 gap-6 ${
+          canCreate ? "xl:grid-cols-[1.05fr_0.95fr]" : ""
+        }`}
+      >
+        {canCreate && (
+        <div className="min-w-0 rounded-3xl border border-violet-100 bg-white p-4 shadow-xl shadow-violet-100/40 sm:p-6">
           <h3 className="text-xl font-bold text-slate-900">
             Create Debit Note
           </h3>
@@ -1010,7 +1046,7 @@ export default function DebitNotesManager() {
                 onChange={(event) =>
                   handlePurchaseChange(event.target.value)
                 }
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               >
                 <option value="">Select bill</option>
 
@@ -1045,7 +1081,7 @@ export default function DebitNotesManager() {
                 onChange={(event) =>
                   setDebitNoteNumber(event.target.value)
                 }
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               />
             </div>
 
@@ -1060,7 +1096,7 @@ export default function DebitNotesManager() {
                 onChange={(event) =>
                   setDebitNoteDate(event.target.value)
                 }
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               />
             </div>
 
@@ -1074,7 +1110,7 @@ export default function DebitNotesManager() {
                 onChange={(event) => setReason(event.target.value)}
                 rows={3}
                 placeholder="Goods returned to supplier"
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               />
             </div>
           </div>
@@ -1191,7 +1227,7 @@ export default function DebitNotesManager() {
                               fillMaximumReturn(index)
                             }
                             disabled={line.maxReturnQuantity <= 0}
-                            className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             Return Maximum
                           </button>
@@ -1216,7 +1252,7 @@ export default function DebitNotesManager() {
                                 )
                               }
                               disabled={line.maxReturnQuantity <= 0}
-                              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
                             />
                           </div>
 
@@ -1297,25 +1333,28 @@ export default function DebitNotesManager() {
               isLoading ||
               totals.itemCount === 0
             }
-            className="mt-5 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-5 w-full rounded-xl bg-gradient-to-r from-violet-700 to-fuchsia-600 px-5 py-3 font-semibold text-white shadow-lg shadow-violet-700/20 transition hover:from-violet-800 hover:to-fuchsia-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSaving ? "Saving..." : "Post Debit Note"}
           </button>
         </div>
 
-        <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-lg">
-          <div className="border-b border-slate-200 p-4 sm:p-6">
-            <h3 className="text-xl font-bold text-slate-900">
+        )}
+
+        <div className="min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl shadow-violet-100/40">
+          <div className="border-b border-violet-200 bg-gradient-to-r from-violet-950 via-violet-800 to-violet-700 p-4 text-white sm:p-6">
+            <h3 className="text-xl font-bold text-white">
               Debit Note History
             </h3>
 
-            <p className="mt-1 text-sm text-slate-600">
-              Posted purchase returns can be voided with an audit reason.
+            <p className="mt-1 text-sm text-violet-100">
+              Posted purchase returns can be viewed and printed. Void access
+              depends on the active role.
             </p>
           </div>
 
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[980px]">
+          <div className="hidden max-w-full overflow-x-auto md:block">
+            <table className="w-full min-w-[980px] table-fixed">
               <thead className="bg-slate-50">
                 <tr className="border-b border-slate-200 text-left">
                   <th className="px-6 py-4 text-sm font-bold text-slate-700">
@@ -1372,7 +1411,7 @@ export default function DebitNotesManager() {
                     return (
                       <tr
                         key={note.id}
-                        className="border-b border-slate-100 transition hover:bg-blue-50"
+                        className="border-b border-slate-100 transition hover:bg-violet-50"
                       >
                         <td className="px-6 py-5">
                           <p className="font-bold text-slate-900">
@@ -1388,7 +1427,7 @@ export default function DebitNotesManager() {
                           {purchase ? (
                             <Link
                               href={`/purchase/bill/${purchase.id}`}
-                              className="font-semibold text-blue-600 transition hover:text-blue-800 hover:underline"
+                              className="font-semibold text-violet-600 transition hover:text-violet-800 hover:underline"
                             >
                               {purchase.bill_number}
                             </Link>
@@ -1436,7 +1475,7 @@ export default function DebitNotesManager() {
                           <div className="flex justify-end gap-2">
                             <Link
                               href={`/debit-notes/${note.id}`}
-                              className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+                              className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-700 transition hover:bg-violet-100"
                             >
                               View
                             </Link>
@@ -1450,17 +1489,19 @@ export default function DebitNotesManager() {
                               Print
                             </Link>
 
-                            <button
-                              type="button"
-                              onClick={() => voidDebitNote(note)}
-                              disabled={
-                                note.status !== "POSTED" ||
-                                isSaving
-                              }
-                              className="rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Void
-                            </button>
+                            {canVoid && (
+                              <button
+                                type="button"
+                                onClick={() => voidDebitNote(note)}
+                                disabled={
+                                  note.status !== "POSTED" ||
+                                  isSaving
+                                }
+                                className="rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Void
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1471,7 +1512,7 @@ export default function DebitNotesManager() {
             </table>
           </div>
 
-          <div className="p-4 md:hidden">
+          <div className="min-w-0 p-4 md:hidden">
             {isLoading ? (
               <p className="py-10 text-center text-sm text-slate-500">
                 Loading debit notes...
@@ -1556,7 +1597,7 @@ export default function DebitNotesManager() {
                       <div className="mt-4 grid grid-cols-2 gap-3">
                         <Link
                           href={`/debit-notes/${note.id}`}
-                          className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-center font-semibold text-blue-700 transition hover:bg-blue-100"
+                          className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-center font-semibold text-violet-700 transition hover:bg-violet-100"
                         >
                           View
                         </Link>
@@ -1571,17 +1612,19 @@ export default function DebitNotesManager() {
                         </Link>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => voidDebitNote(note)}
-                        disabled={
-                          note.status !== "POSTED" ||
-                          isSaving
-                        }
-                        className="mt-3 w-full rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Void Debit Note
-                      </button>
+                      {canVoid && (
+                        <button
+                          type="button"
+                          onClick={() => voidDebitNote(note)}
+                          disabled={
+                            note.status !== "POSTED" ||
+                            isSaving
+                          }
+                          className="mt-3 w-full rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Void Debit Note
+                        </button>
+                      )}
                     </article>
                   );
                 })}

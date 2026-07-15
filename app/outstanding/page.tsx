@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { usePermissions } from "@/hooks/usePermissions";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import { createClient } from "@/lib/supabase/client";
@@ -236,6 +237,19 @@ export default function OutstandingPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
 
+  const {
+    access,
+    can,
+    error: permissionError,
+    isLoading: isPermissionLoading,
+  } = usePermissions();
+
+  const canViewOutstanding = can("outstanding.view");
+  const canRecordPayment = can("payments.create");
+  const canViewSales = can("sales.view");
+  const canViewPurchases = can("purchase.view");
+
+
   function showMessage(nextMessage: string) {
     setMessage(nextMessage);
 
@@ -462,6 +476,10 @@ export default function OutstandingPage() {
   }
 
   useEffect(() => {
+    if (isPermissionLoading || !canViewOutstanding) {
+      return;
+    }
+
     loadOutstandingData();
 
     window.addEventListener(
@@ -507,7 +525,7 @@ export default function OutstandingPage() {
         loadOutstandingData
       );
     };
-  }, []);
+  }, [isPermissionLoading, canViewOutstanding]);
 
   const creditSales = useMemo(
     () => sales.filter((sale) => isCreditPayment(sale.paymentMode)),
@@ -650,58 +668,117 @@ export default function OutstandingPage() {
 
   const netOutstanding = totalReceivable - totalPayable;
 
+  if (isPermissionLoading) {
+    return (
+      <div className="flex min-h-screen bg-[#f3f6fb]">
+        <Sidebar />
+        <div className="min-w-0 flex-1 overflow-x-hidden">
+          <Navbar />
+          <main className="min-w-0 p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+            <div className="rounded-3xl border border-violet-100 bg-white p-10 text-center font-semibold text-slate-600 shadow-xl shadow-violet-100/50">
+              Loading Outstanding permissions...
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (!canViewOutstanding) {
+    return (
+      <div className="flex min-h-screen bg-[#f3f6fb]">
+        <Sidebar />
+        <div className="min-w-0 flex-1 overflow-x-hidden">
+          <Navbar />
+          <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+            <div className="rounded-3xl border border-red-200 bg-white p-10 text-center shadow-xl">
+              <div className="text-4xl">🔒</div>
+              <h1 className="mt-4 text-2xl font-black text-slate-900">
+                Outstanding access is restricted
+              </h1>
+              <p className="mx-auto mt-2 max-w-xl text-slate-600">
+                Your current role does not include the{" "}
+                <strong>outstanding.view</strong> permission for the active
+                company.
+              </p>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen bg-slate-100">
+    <div className="flex min-h-screen bg-[#f3f6fb]">
       <Sidebar />
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 overflow-x-hidden">
         <Navbar />
 
         <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
-          <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
-                💰 Outstanding Management
-              </h1>
+          <section className="overflow-hidden rounded-[30px] bg-gradient-to-br from-violet-950 via-violet-800 to-violet-600 p-6 text-white shadow-2xl shadow-violet-900/20 sm:p-8 lg:p-10">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="max-w-3xl">
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-violet-100 backdrop-blur">
+                  <span>💰</span>
+                  Receivable &amp; Payable Center
+                </div>
 
-              <p className="mt-2 text-base text-slate-600 sm:text-lg">
-                Track pending customer payments and supplier dues.
-              </p>
+                <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
+                  Outstanding Management
+                </h1>
+
+                <p className="mt-3 max-w-2xl text-base leading-7 text-violet-100 sm:text-lg">
+                  Track pending customer receipts, supplier dues, return-note
+                  adjustments and net outstanding from one place.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
+                <div className="rounded-2xl border border-white/15 bg-slate-950/25 px-5 py-4 backdrop-blur">
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-200">
+                    Active Access
+                  </p>
+                  <p className="mt-1 text-lg font-black">
+                    {access?.roleName || "No active role"}
+                  </p>
+                  <p className="mt-1 text-sm text-violet-100">
+                    Outstanding viewing enabled
+                  </p>
+                </div>
+
+                {canRecordPayment && (
+                  <Link
+                    href="/payments"
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-white px-6 py-3 font-black text-violet-700 shadow-lg transition hover:-translate-y-0.5 hover:bg-violet-50 sm:w-auto"
+                  >
+                    💳 Record Payment
+                  </Link>
+                )}
+              </div>
             </div>
+          </section>
 
-            <Link
-              href="/payments"
-              className="inline-flex w-full items-center justify-center rounded-xl px-6 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98] sm:w-fit"
-              style={{
-                backgroundColor: "#059669",
-                color: "#ffffff",
-              }}
-            >
-              💳 Record Payment
-            </Link>
-          </div>
+          {permissionError && (
+            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 font-semibold text-red-700">
+              {permissionError}
+            </div>
+          )}
 
           {message && (
-            <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
+            <div className="mt-6 rounded-2xl border border-violet-200 bg-violet-50 px-5 py-4 text-sm font-semibold text-violet-700">
               {message}
             </div>
           )}
 
           <section
-            className="mb-6 rounded-3xl border p-4 shadow-sm sm:mb-8 sm:p-5"
-            style={{
-              backgroundColor: "#fff7ed",
-              borderColor: "#fed7aa",
-            }}
+            className="mt-6 rounded-3xl border border-violet-200 bg-violet-50 p-5 shadow-sm sm:mt-8 sm:p-6"
           >
-            <p className="font-bold" style={{ color: "#9a3412" }}>
+            <p className="font-black text-violet-900">
               Outstanding Summary
             </p>
 
-            <p
-              className="mt-1 text-sm leading-6"
-              style={{ color: "#7c2d12" }}
-            >
+<p className="mt-2 text-sm leading-6 text-violet-800">
               Opening balances and Credit transactions create the due amount.
               Posted Credit Notes, Debit Notes, customer receipts and supplier
               payments automatically reduce the pending balance.
@@ -709,7 +786,7 @@ export default function OutstandingPage() {
           </section>
 
           <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
-            <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-lg sm:p-6">
+            <div className="rounded-3xl border border-violet-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Customer Receivable
               </p>
@@ -726,7 +803,7 @@ export default function OutstandingPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-purple-100 bg-white p-5 shadow-lg sm:p-6">
+            <div className="rounded-3xl border border-violet-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">
                 Supplier Payable
               </p>
@@ -785,18 +862,18 @@ export default function OutstandingPage() {
           </section>
 
           <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8 lg:mt-10">
-            <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
+            <div className="flex flex-col gap-4 border-b border-violet-200 bg-gradient-to-r from-violet-950 via-violet-800 to-violet-600 px-4 py-5 text-white sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">
+                <h2 className="text-2xl font-black text-white">
                   Customer Receivables
                 </h2>
 
-                <p className="mt-1 text-slate-600">
+                <p className="mt-1 text-violet-100">
                   Opening balance + Credit sales − Credit Notes − customer receipts.
                 </p>
               </div>
 
-              <div className="rounded-full bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700">
+              <div className="rounded-full bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700">
                 Customers: {isLoading ? "..." : customerOutstanding.length}
               </div>
             </div>
@@ -859,11 +936,11 @@ export default function OutstandingPage() {
                         </div>
                       </div>
 
-                      <div className="mt-3 rounded-xl bg-blue-50 p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+                      <div className="mt-3 rounded-xl bg-violet-50 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
                           Receivable Amount
                         </p>
-                        <p className="mt-1 text-xl font-bold text-blue-700">
+                        <p className="mt-1 text-xl font-bold text-violet-700">
                           {formatCurrency(customer.outstanding)}
                         </p>
                       </div>
@@ -929,7 +1006,7 @@ export default function OutstandingPage() {
                     customerOutstanding.map((customer) => (
                       <tr
                         key={customer.id}
-                        className="border-b border-slate-100 transition hover:bg-blue-50"
+                        className="border-b border-slate-100 transition hover:bg-violet-50"
                       >
                         <td className="px-6 py-5">
                           <p className="font-bold text-slate-900">
@@ -974,18 +1051,18 @@ export default function OutstandingPage() {
           </section>
 
           <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8 lg:mt-10">
-            <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
+            <div className="flex flex-col gap-4 border-b border-violet-200 bg-gradient-to-r from-violet-950 via-violet-800 to-violet-600 px-4 py-5 text-white sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">
+                <h2 className="text-2xl font-black text-white">
                   Supplier Payables
                 </h2>
 
-                <p className="mt-1 text-slate-600">
+                <p className="mt-1 text-violet-100">
                   Opening balance + Credit purchases − Debit Notes − supplier payments.
                 </p>
               </div>
 
-              <div className="rounded-full bg-purple-50 px-4 py-2 text-sm font-bold text-purple-700">
+              <div className="rounded-full bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700">
                 Suppliers: {isLoading ? "..." : supplierOutstanding.length}
               </div>
             </div>
@@ -1048,11 +1125,11 @@ export default function OutstandingPage() {
                         </div>
                       </div>
 
-                      <div className="mt-3 rounded-xl bg-purple-50 p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-purple-700">
+                      <div className="mt-3 rounded-xl bg-violet-50 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
                           Payable Amount
                         </p>
-                        <p className="mt-1 text-xl font-bold text-purple-700">
+                        <p className="mt-1 text-xl font-bold text-violet-700">
                           {formatCurrency(supplier.outstanding)}
                         </p>
                       </div>
@@ -1118,7 +1195,7 @@ export default function OutstandingPage() {
                     supplierOutstanding.map((supplier) => (
                       <tr
                         key={supplier.id}
-                        className="border-b border-slate-100 transition hover:bg-purple-50"
+                        className="border-b border-slate-100 transition hover:bg-violet-50"
                       >
                         <td className="px-6 py-5">
                           <p className="font-bold text-slate-900">
@@ -1177,12 +1254,18 @@ export default function OutstandingPage() {
                     className="flex items-center justify-between gap-3 px-4 py-4 sm:gap-4 sm:px-6"
                   >
                     <div className="min-w-0">
-                      <Link
-                        href={`/sales/invoice/${sale.id}`}
-                        className="font-bold text-blue-600 transition hover:text-blue-800 hover:underline"
-                      >
-                        {sale.invoiceNumber}
-                      </Link>
+                      {canViewSales ? (
+                        <Link
+                          href={`/sales/invoice/${sale.id}`}
+                          className="font-bold text-violet-700 transition hover:text-violet-900 hover:underline"
+                        >
+                          {sale.invoiceNumber}
+                        </Link>
+                      ) : (
+                        <p className="font-bold text-slate-900">
+                          {sale.invoiceNumber}
+                        </p>
+                      )}
 
                       <p className="mt-1 truncate text-sm text-slate-500">
                         {sale.customerName} · {formatDate(sale.date)}
@@ -1220,12 +1303,18 @@ export default function OutstandingPage() {
                     className="flex items-center justify-between gap-3 px-4 py-4 sm:gap-4 sm:px-6"
                   >
                     <div className="min-w-0">
-                      <Link
-                        href={`/purchase/bill/${purchase.id}`}
-                        className="font-bold text-purple-600 transition hover:text-purple-800 hover:underline"
-                      >
-                        {purchase.billNumber}
-                      </Link>
+                      {canViewPurchases ? (
+                        <Link
+                          href={`/purchase/bill/${purchase.id}`}
+                          className="font-bold text-violet-700 transition hover:text-violet-900 hover:underline"
+                        >
+                          {purchase.billNumber}
+                        </Link>
+                      ) : (
+                        <p className="font-bold text-slate-900">
+                          {purchase.billNumber}
+                        </p>
+                      )}
 
                       <p className="mt-1 truncate text-sm text-slate-500">
                         {purchase.supplierName} · {formatDate(purchase.date)}

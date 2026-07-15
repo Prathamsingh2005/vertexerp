@@ -7,6 +7,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { usePermissions } from "@/hooks/usePermissions";
 import { createClient } from "@/lib/supabase/client";
 
 type CompanyForm = {
@@ -166,6 +167,13 @@ export default function CompanyManager({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUpdatingActive, setIsUpdatingActive] = useState(false);
+  const { can } = usePermissions();
+
+  // Company creation is account-level. Supabase only allows inserts where
+  // owner_id matches the signed-in user, so no company.create code exists.
+  const canCreateCompany = true;
+  const canEditCompany = can("company.edit");
+  const canDeleteCompany = can("company.delete");
 
   function showMessage(text: string) {
     setMessage(text);
@@ -233,7 +241,6 @@ export default function CompanyManager({
         supabase
           .from("companies")
           .select(COMPANY_SELECT)
-          .eq("owner_id", user.id)
           .order("created_at", { ascending: false }),
         supabase
           .from("profiles")
@@ -427,6 +434,16 @@ export default function CompanyManager({
   async function saveCompany(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (editingCompanyId && !canEditCompany) {
+      showMessage("Your role does not allow company editing.");
+      return;
+    }
+
+    if (!editingCompanyId && !canCreateCompany) {
+      showMessage("Your role does not allow company creation.");
+      return;
+    }
+
     const validationMessage = validateForm();
 
     if (validationMessage) {
@@ -469,7 +486,6 @@ export default function CompanyManager({
           .from("companies")
           .update(payload)
           .eq("id", editingCompanyId)
-          .eq("owner_id", user.id)
           .select(COMPANY_SELECT)
           .single();
 
@@ -545,6 +561,11 @@ export default function CompanyManager({
   }
 
   function startEditCompany(company: Company) {
+    if (!canEditCompany) {
+      showMessage("Your role does not allow company editing.");
+      return;
+    }
+
     setEditingCompanyId(company.id);
     setForm({
       name: company.name,
@@ -598,8 +619,17 @@ export default function CompanyManager({
   }
 
   async function deleteCompany(company: Company) {
+    if (!canDeleteCompany) {
+      showMessage("Your role does not allow company deletion.");
+      return;
+    }
+
     const confirmed = window.confirm(
-      `Delete "${company.name}"? All database records linked to this company will also be removed.`
+      `Permanently delete "${company.name}"?\n\n` +
+        "All invoices, purchases, products, ledgers, payments, expenses, " +
+        "GST records, accounting records and team access linked to this " +
+        "company will also be deleted.\n\n" +
+        "This action cannot be undone."
     );
 
     if (!confirmed) {
@@ -609,49 +639,46 @@ export default function CompanyManager({
     try {
       const { supabase } = await getSignedInUser();
 
-      const { error } = await supabase
-        .from("companies")
-        .delete()
-        .eq("id", company.id);
+      const { error } = await supabase.rpc(
+        "delete_company_with_cleanup",
+        {
+          p_company_id: company.id,
+        }
+      );
 
       if (error) {
         throw error;
       }
 
-      const remainingCompanies = companies.filter(
-        (item) => item.id !== company.id
-      );
-
-      setCompanies(remainingCompanies);
-
       if (editingCompanyId === company.id) {
         resetForm();
       }
 
-      if (company.id === activeCompanyId) {
-        await setActiveCompany(
-          remainingCompanies[0]?.id ?? null
-        );
-      } else {
-        notifyCompanyChange();
-      }
+      await loadCompanies();
+      notifyCompanyChange();
 
-      showMessage("Company deleted successfully.");
-    } catch (error) {
       showMessage(
-        error instanceof Error
-          ? error.message
-          : "Company could not be deleted."
+        `${company.name} and all linked records were deleted successfully.`
       );
+    } catch (error) {
+      const errorMessage =
+        error &&
+        typeof error === "object" &&
+        "message" in error &&
+        typeof error.message === "string"
+          ? error.message
+          : "Company could not be deleted.";
+
+      showMessage(errorMessage);
     }
   }
 
   return (
     <>
-      <section className="mt-6 rounded-3xl border border-blue-100 bg-blue-50 p-4 sm:mt-8 sm:p-5">
+      <section className="mt-6 rounded-3xl border border-violet-100 bg-violet-50 p-4 sm:mt-8 sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <p className="text-sm font-bold text-blue-800">
+            <p className="text-sm font-bold text-violet-800">
               Active Company
             </p>
 
@@ -673,7 +700,7 @@ export default function CompanyManager({
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <span className="w-fit rounded-full bg-white px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
+            <span className="w-fit rounded-full bg-white px-3 py-1.5 text-xs font-bold text-violet-700 shadow-sm">
               {activeCompany
                 ? "Ready for transactions"
                 : "Select a company below"}
@@ -779,6 +806,26 @@ export default function CompanyManager({
         )}
       </section>
 
+      {message && (
+        <div className="mt-6 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-medium text-violet-700 sm:mt-8 sm:text-base">
+          {message}
+        </div>
+      )}
+
+      {!canCreateCompany && !canEditCompany && (
+        <section className="mt-6 rounded-3xl border border-violet-100 bg-white p-6 text-center shadow-lg sm:mt-8">
+          <div className="text-3xl">👁️</div>
+          <h2 className="mt-3 text-xl font-black text-slate-900">
+            Read-only company access
+          </h2>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
+            You can view and select available companies, but your role does not
+            allow company editing. New companies are created as your own workspace.
+          </p>
+        </section>
+      )}
+
+      {(canCreateCompany || (editingCompanyId && canEditCompany)) && (
       <form
         id="company-form"
         onSubmit={saveCompany}
@@ -798,18 +845,12 @@ export default function CompanyManager({
             </p>
           </div>
 
-          <div className="w-fit rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+          <div className="w-fit rounded-full bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-700">
             {editingCompanyId
               ? "Updating Cloud Record"
               : "Cloud Database"}
           </div>
         </div>
-
-        {message && (
-          <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
-            {message}
-          </div>
-        )}
 
         <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           Company State is required for automatic CGST/SGST or
@@ -944,7 +985,7 @@ export default function CompanyManager({
               }))
             }
             placeholder="Enter complete registered company address"
-            className="w-full resize-none rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+            className="w-full resize-none rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
           />
         </div>
 
@@ -952,7 +993,7 @@ export default function CompanyManager({
           <button
             type="submit"
             disabled={isSaving || isLoading}
-            className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-7"
+            className="w-full rounded-xl bg-violet-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-7"
           >
             {isSaving
               ? "Saving..."
@@ -974,6 +1015,8 @@ export default function CompanyManager({
         </div>
       </form>
 
+      )}
+
       <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8 lg:mt-10">
         <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
           <div>
@@ -987,7 +1030,7 @@ export default function CompanyManager({
             </p>
           </div>
 
-          <div className="rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+          <div className="rounded-full bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-700">
             Total Companies: {companies.length} / 5
           </div>
         </div>
@@ -1093,15 +1136,15 @@ export default function CompanyManager({
                     )}
 
                     <div className="mt-4 grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          startEditCompany(company)
-                        }
-                        className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-sm font-bold text-violet-700 transition hover:bg-violet-100"
-                      >
-                        Edit
-                      </button>
+                      {canEditCompany && (
+                        <button
+                          type="button"
+                          onClick={() => startEditCompany(company)}
+                          className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-sm font-bold text-violet-700 transition hover:bg-violet-100"
+                        >
+                          Edit
+                        </button>
+                      )}
 
                       <button
                         type="button"
@@ -1111,20 +1154,20 @@ export default function CompanyManager({
                         onClick={() =>
                           handleSetActive(company)
                         }
-                        className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-bold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-sm font-bold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                       >
                         {isActive ? "Selected" : "Set Active"}
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          deleteCompany(company)
-                        }
-                        className="col-span-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
-                      >
-                        Delete
-                      </button>
+                      {canDeleteCompany && (
+                        <button
+                          type="button"
+                          onClick={() => deleteCompany(company)}
+                          className="col-span-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </article>
                 );
@@ -1172,7 +1215,7 @@ export default function CompanyManager({
                   return (
                     <tr
                       key={company.id}
-                      className="border-b border-slate-100 transition hover:bg-blue-50"
+                      className="border-b border-slate-100 transition hover:bg-violet-50"
                     >
                       <td className="px-6 py-5">
                         <p className="font-bold text-slate-900">
@@ -1237,15 +1280,15 @@ export default function CompanyManager({
 
                       <td className="px-6 py-5">
                         <div className="flex items-center gap-4">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              startEditCompany(company)
-                            }
-                            className="font-semibold text-violet-600 transition hover:text-violet-800"
-                          >
-                            Edit
-                          </button>
+                          {canEditCompany && (
+                            <button
+                              type="button"
+                              onClick={() => startEditCompany(company)}
+                              className="font-semibold text-violet-600 transition hover:text-violet-800"
+                            >
+                              Edit
+                            </button>
+                          )}
 
                           <button
                             type="button"
@@ -1255,22 +1298,22 @@ export default function CompanyManager({
                             onClick={() =>
                               handleSetActive(company)
                             }
-                            className="font-semibold text-blue-600 transition hover:text-blue-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                            className="font-semibold text-violet-600 transition hover:text-violet-800 disabled:cursor-not-allowed disabled:text-slate-400"
                           >
                             {isActive
                               ? "Selected"
                               : "Set Active"}
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              deleteCompany(company)
-                            }
-                            className="font-semibold text-red-500 transition hover:text-red-700"
-                          >
-                            Delete
-                          </button>
+                          {canDeleteCompany && (
+                            <button
+                              type="button"
+                              onClick={() => deleteCompany(company)}
+                              className="font-semibold text-red-500 transition hover:text-red-700"
+                            >
+                              Delete
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1320,7 +1363,7 @@ function Field({
         className={`w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none transition ${
           readOnly
             ? "cursor-not-allowed bg-slate-200 text-slate-600"
-            : "bg-slate-50 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+            : "bg-slate-50 focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
         }`}
       />
     </div>
@@ -1345,7 +1388,7 @@ function StateField({
         onChange={(event) =>
           onChange(event.target.value)
         }
-        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
       >
         <option value="">Select state</option>
 

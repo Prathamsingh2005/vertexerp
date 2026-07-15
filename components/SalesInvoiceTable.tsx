@@ -109,7 +109,17 @@ function mapSaleRow(row: SaleRow): Sale {
   };
 }
 
-export default function SalesInvoiceTable() {
+type SalesInvoiceTableProps = {
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+};
+
+export default function SalesInvoiceTable({
+  canCreate,
+  canEdit,
+  canDelete,
+}: SalesInvoiceTableProps) {
   const [sales, setSales] = useState<Sale[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -214,6 +224,11 @@ export default function SalesInvoiceTable() {
   }, []);
 
   function startEditingInvoice(invoice: Sale) {
+    if (!canEdit) {
+      showMessage("You do not have permission to edit sales invoices.");
+      return;
+    }
+
     window.dispatchEvent(
       new CustomEvent("vertexerp-edit-sale", {
         detail: invoice,
@@ -222,6 +237,11 @@ export default function SalesInvoiceTable() {
   }
 
   async function deleteInvoice(invoice: Sale) {
+    if (!canDelete) {
+      showMessage("You do not have permission to delete sales invoices.");
+      return;
+    }
+
     const shouldDelete = window.confirm(
       `Delete invoice ${invoice.invoiceNumber}? Product stock will be restored.`
     );
@@ -258,24 +278,24 @@ export default function SalesInvoiceTable() {
   }
 
   return (
-    <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8 lg:mt-10">
-      <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
+    <section className="mt-6 overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl shadow-slate-200/70 sm:mt-8 lg:mt-10">
+      <div className="flex flex-col gap-4 bg-gradient-to-r from-violet-950 via-violet-800 to-violet-700 px-4 py-5 text-white sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">
+          <h2 className="text-2xl font-black text-white">
             Recent Sales Invoices
           </h2>
-          <p className="mt-1 text-slate-600">
+          <p className="mt-1 text-violet-100">
             View saved invoices, customer details and payment status.
           </p>
         </div>
 
-        <div className="rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+        <div className="rounded-full bg-white/15 px-4 py-2 text-sm font-black text-white ring-1 ring-white/20">
           Total Invoices: {sales.length}
         </div>
       </div>
 
       {message && (
-        <div className="mx-4 mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mx-6 sm:mt-6 sm:text-base">
+        <div className="mx-4 mt-5 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-medium text-violet-700 sm:mx-6 sm:mt-6 sm:text-base">
           {message}
         </div>
       )}
@@ -292,7 +312,9 @@ export default function SalesInvoiceTable() {
             </p>
 
             <p className="mt-2 text-sm">
-              Create an invoice using the form above.
+              {canCreate
+                ? "Create an invoice using the form above."
+                : "Your current role has read-only access to sales invoices."}
             </p>
           </div>
         ) : (
@@ -303,13 +325,13 @@ export default function SalesInvoiceTable() {
               return (
                 <article
                   key={sale.id}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                  className="rounded-2xl border border-violet-100 bg-violet-50/40 p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <Link
                         href={`/sales/invoice/${sale.id}`}
-                        className="block truncate text-lg font-bold text-blue-600 transition hover:text-blue-800 hover:underline"
+                        className="block truncate text-lg font-bold text-violet-700 transition hover:text-violet-900 hover:underline"
                       >
                         {sale.invoiceNumber}
                       </Link>
@@ -359,29 +381,41 @@ export default function SalesInvoiceTable() {
                     </div>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-3 gap-3">
+                  <div
+                    className={`mt-4 grid gap-3 ${
+                      1 + Number(canEdit) + Number(canDelete) === 3
+                        ? "grid-cols-3"
+                        : 1 + Number(canEdit) + Number(canDelete) === 2
+                          ? "grid-cols-2"
+                          : "grid-cols-1"
+                    }`}
+                  >
                     <Link
                       href={`/sales/invoice/${sale.id}`}
-                      className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-center text-sm font-bold text-blue-700 transition hover:bg-blue-100"
+                      className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-center text-sm font-bold text-violet-700 transition hover:bg-violet-100"
                     >
                       View
                     </Link>
 
-                    <button
-                      type="button"
-                      onClick={() => startEditingInvoice(sale)}
-                      className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-bold text-amber-700 transition hover:bg-amber-100"
-                    >
-                      Edit
-                    </button>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => startEditingInvoice(sale)}
+                        className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-bold text-amber-700 transition hover:bg-amber-100"
+                      >
+                        Edit
+                      </button>
+                    )}
 
-                    <button
-                      type="button"
-                      onClick={() => deleteInvoice(sale)}
-                      className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
-                    >
-                      Delete
-                    </button>
+                    {canDelete && (
+                      <button
+                        type="button"
+                        onClick={() => deleteInvoice(sale)}
+                        className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </article>
               );
@@ -392,7 +426,7 @@ export default function SalesInvoiceTable() {
 
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[1000px]">
-          <thead className="bg-slate-50">
+          <thead className="bg-violet-50">
             <tr className="border-b border-slate-200 text-left">
               <th className="px-6 py-4 text-sm font-bold text-slate-700">Invoice No.</th>
               <th className="px-6 py-4 text-sm font-bold text-slate-700">Customer</th>
@@ -417,7 +451,9 @@ export default function SalesInvoiceTable() {
                   <p className="text-lg font-semibold text-slate-700">
                     No sales invoices saved yet
                   </p>
-                  <p className="mt-2">Create an invoice using the form above.</p>
+                  <p className="mt-2">{canCreate
+                ? "Create an invoice using the form above."
+                : "Your current role has read-only access to sales invoices."}</p>
                 </td>
               </tr>
             ) : (
@@ -425,11 +461,11 @@ export default function SalesInvoiceTable() {
                 const status = getPaymentStatus(sale.paymentMode);
 
                 return (
-                  <tr key={sale.id} className="border-b border-slate-100 transition hover:bg-blue-50">
+                  <tr key={sale.id} className="border-b border-slate-100 transition hover:bg-violet-50/70">
                     <td className="px-6 py-5">
                       <Link
                         href={`/sales/invoice/${sale.id}`}
-                        className="font-bold text-blue-600 transition hover:text-blue-800 hover:underline"
+                        className="font-bold text-violet-700 transition hover:text-violet-900 hover:underline"
                       >
                         {sale.invoiceNumber}
                       </Link>
@@ -461,24 +497,30 @@ export default function SalesInvoiceTable() {
                       <div className="flex items-center gap-4">
                         <Link
                           href={`/sales/invoice/${sale.id}`}
-                          className="font-semibold text-blue-600 transition hover:text-blue-800"
+                          className="font-semibold text-violet-700 transition hover:text-violet-900"
                         >
                           View
                         </Link>
-                        <button
-                          type="button"
-                          onClick={() => startEditingInvoice(sale)}
-                          className="font-semibold text-amber-600 transition hover:text-amber-800"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => deleteInvoice(sale)}
-                          className="font-semibold text-red-500 transition hover:text-red-700"
-                        >
-                          Delete
-                        </button>
+
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={() => startEditingInvoice(sale)}
+                            className="font-semibold text-amber-600 transition hover:text-amber-800"
+                          >
+                            Edit
+                          </button>
+                        )}
+
+                        {canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => deleteInvoice(sale)}
+                            className="font-semibold text-red-500 transition hover:text-red-700"
+                          >
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

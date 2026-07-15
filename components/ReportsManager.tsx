@@ -824,11 +824,11 @@ export default function ReportsManager() {
     isLoading || isAccountingLoading ? "Loading..." : getPeriodText();
 
   return (
-    <>
+    <div className="min-w-0 space-y-6">
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
-        <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
+        <article className="rounded-3xl border border-violet-100 bg-white p-5 shadow-xl shadow-violet-100/40 sm:p-6">
           <p className="font-medium text-slate-600">Sales Revenue</p>
-          <h2 className="mt-3 break-words text-3xl font-bold text-blue-600 sm:text-4xl">
+          <h2 className="mt-3 break-words text-3xl font-bold text-violet-600 sm:text-4xl">
             {isLoading ? "..." : formatCurrency(reportData.totalSales)}
           </h2>
           <p className="mt-2 text-sm text-slate-500">
@@ -836,7 +836,7 @@ export default function ReportsManager() {
           </p>
         </article>
 
-        <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
+        <article className="rounded-3xl border border-violet-100 bg-white p-5 shadow-xl shadow-violet-100/40 sm:p-6">
           <p className="font-medium text-slate-600">Purchase Value</p>
           <h2 className="mt-3 break-words text-3xl font-bold text-purple-600 sm:text-4xl">
             {isLoading ? "..." : formatCurrency(reportData.totalPurchase)}
@@ -846,7 +846,7 @@ export default function ReportsManager() {
           </p>
         </article>
 
-        <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
+        <article className="rounded-3xl border border-violet-100 bg-white p-5 shadow-xl shadow-violet-100/40 sm:p-6">
           <p className="font-medium text-slate-600">Customer Receivable</p>
           <h2 className="mt-3 break-words text-3xl font-bold text-orange-500 sm:text-4xl">
             {isLoading ? "..." : formatCurrency(reportData.customerReceivable)}
@@ -857,7 +857,7 @@ export default function ReportsManager() {
           </p>
         </article>
 
-        <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
+        <article className="rounded-3xl border border-violet-100 bg-white p-5 shadow-xl shadow-violet-100/40 sm:p-6">
           <p className="font-medium text-slate-600">Stock Value</p>
           <h2 className="mt-3 break-words text-3xl font-bold text-green-600 sm:text-4xl">
             {isLoading ? "..." : formatCurrency(reportData.stockValue)}
@@ -884,18 +884,18 @@ export default function ReportsManager() {
           </p>
         </article>
 
-        <article className="rounded-3xl border border-blue-100 bg-blue-50 p-5 sm:p-6">
-          <p className="font-semibold text-blue-800">Inventory Alert</p>
-          <p className="mt-2 text-3xl font-bold text-blue-600">
+        <article className="rounded-3xl border border-violet-100 bg-violet-50 p-5 sm:p-6">
+          <p className="font-semibold text-violet-800">Inventory Alert</p>
+          <p className="mt-2 text-3xl font-bold text-violet-600">
             {isLoading ? "..." : reportData.lowStockCount}
           </p>
-          <p className="mt-2 text-sm text-blue-700">
+          <p className="mt-2 text-sm text-violet-700">
             Products currently at or below their low-stock alert level
           </p>
         </article>
       </section>
 
-      <section className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:mt-8 sm:p-6">
+      <section className="mt-6 rounded-3xl border border-violet-100 bg-white p-4 shadow-xl shadow-violet-100/40 sm:mt-8 sm:p-6">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
@@ -906,13 +906,13 @@ export default function ReportsManager() {
             </p>
           </div>
 
-          <span className="w-fit max-w-full break-words rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+          <span className="w-fit max-w-full break-words rounded-full bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-700">
             {dataStatus}
           </span>
         </div>
 
         {message && (
-          <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:text-base">
+          <div className="mb-5 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-medium text-violet-700 sm:text-base">
             {message}
           </div>
         )}
@@ -926,7 +926,7 @@ export default function ReportsManager() {
               type="date"
               value={fromDate}
               onChange={(event) => setFromDate(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
             />
           </div>
 
@@ -938,7 +938,7 @@ export default function ReportsManager() {
               type="date"
               value={toDate}
               onChange={(event) => setToDate(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
             />
           </div>
 
@@ -946,7 +946,7 @@ export default function ReportsManager() {
             type="button"
             onClick={handleGenerateReport}
             disabled={isLoading || isAccountingLoading}
-            className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto lg:px-7"
+            className="w-full rounded-xl bg-violet-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-violet-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto lg:px-7"
           >
             Generate Report
           </button>
@@ -962,7 +962,7 @@ export default function ReportsManager() {
         </div>
       </section>
 
-      <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8">
+      <section className="mt-6 min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl shadow-violet-100/40 sm:mt-8">
         <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
           <div>
             <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
@@ -1019,14 +1019,14 @@ export default function ReportsManager() {
           <article
             className={`rounded-2xl border p-5 ${
               profitLossSummary.netProfit >= 0
-                ? "border-blue-100 bg-blue-50"
+                ? "border-violet-100 bg-violet-50"
                 : "border-red-100 bg-red-50"
             }`}
           >
             <p
               className={`font-semibold ${
                 profitLossSummary.netProfit >= 0
-                  ? "text-blue-800"
+                  ? "text-violet-800"
                   : "text-red-800"
               }`}
             >
@@ -1035,7 +1035,7 @@ export default function ReportsManager() {
             <p
               className={`mt-2 break-words text-3xl font-bold ${
                 profitLossSummary.netProfit >= 0
-                  ? "text-blue-600"
+                  ? "text-violet-600"
                   : "text-red-600"
               }`}
             >
@@ -1046,7 +1046,7 @@ export default function ReportsManager() {
             <p
               className={`mt-2 text-sm ${
                 profitLossSummary.netProfit >= 0
-                  ? "text-blue-700"
+                  ? "text-violet-700"
                   : "text-red-700"
               }`}
             >
@@ -1138,7 +1138,7 @@ export default function ReportsManager() {
         </div>
       </section>
 
-      <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8">
+      <section className="mt-6 min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl shadow-violet-100/40 sm:mt-8">
         <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
           <div>
             <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
@@ -1230,9 +1230,9 @@ export default function ReportsManager() {
           )}
         </div>
 
-        <div className="hidden overflow-x-auto md:block">
+        <div className="hidden max-w-full overflow-x-auto md:block">
           <table className="w-full min-w-[960px]">
-            <thead className="bg-slate-50">
+            <thead className="bg-violet-50/70">
               <tr className="border-b border-slate-200 text-left">
                 <th className="px-6 py-4 text-sm font-bold text-slate-700">
                   Account
@@ -1278,7 +1278,7 @@ export default function ReportsManager() {
                   {trialBalance.map((account) => (
                     <tr
                       key={account.account_id}
-                      className="border-b border-slate-100 transition hover:bg-blue-50"
+                      className="border-b border-slate-100 transition hover:bg-violet-50"
                     >
                       <td className="px-6 py-5">
                         <p className="font-bold text-slate-900">
@@ -1298,7 +1298,7 @@ export default function ReportsManager() {
                       <td className="px-6 py-5 text-right font-semibold text-slate-900">
                         {formatCurrency(toNumber(account.total_credit))}
                       </td>
-                      <td className="px-6 py-5 text-right font-semibold text-blue-700">
+                      <td className="px-6 py-5 text-right font-semibold text-violet-700">
                         {toNumber(account.closing_debit) > 0
                           ? formatCurrency(toNumber(account.closing_debit))
                           : "—"}
@@ -1333,7 +1333,7 @@ export default function ReportsManager() {
         </div>
       </section>
 
-      <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8">
+      <section className="mt-6 min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl shadow-violet-100/40 sm:mt-8">
         <div className="border-b border-slate-200 px-4 py-5 sm:px-6 sm:py-6">
           <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
             General Ledger
@@ -1353,7 +1353,7 @@ export default function ReportsManager() {
                 setSelectedLedgerAccountId(event.target.value)
               }
               disabled={isAccountingLoading || trialBalance.length === 0}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {trialBalance.length === 0 ? (
                 <option value="">No posted accounts available</option>
@@ -1369,7 +1369,7 @@ export default function ReportsManager() {
         </div>
 
         {selectedLedgerAccount && (
-          <div className="border-b border-blue-100 bg-blue-50 px-4 py-4 text-sm text-blue-800 sm:px-6">
+          <div className="border-b border-violet-100 bg-violet-50 px-4 py-4 text-sm text-violet-800 sm:px-6">
             Showing ledger for{" "}
             <strong>
               {selectedLedgerAccount.account_code} —{" "}
@@ -1447,9 +1447,9 @@ export default function ReportsManager() {
           )}
         </div>
 
-        <div className="hidden overflow-x-auto md:block">
+        <div className="hidden max-w-full overflow-x-auto md:block">
           <table className="w-full min-w-[1080px]">
-            <thead className="bg-slate-50">
+            <thead className="bg-violet-50/70">
               <tr className="border-b border-slate-200 text-left">
                 <th className="px-6 py-4 text-sm font-bold text-slate-700">
                   Date
@@ -1503,7 +1503,7 @@ export default function ReportsManager() {
                 generalLedger.map((entry, index) => (
                   <tr
                     key={`${entry.voucher_number}-${index}`}
-                    className="border-b border-slate-100 transition hover:bg-blue-50"
+                    className="border-b border-slate-100 transition hover:bg-violet-50"
                   >
                     <td className="px-6 py-5 text-slate-700">
                       {formatDate(entry.voucher_date)}
@@ -1535,7 +1535,7 @@ export default function ReportsManager() {
                         : "—"}
                     </td>
                     <td className="px-6 py-5 text-right">
-                      <p className="font-bold text-blue-700">
+                      <p className="font-bold text-violet-700">
                         {formatCurrency(toNumber(entry.running_balance))}
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
@@ -1549,6 +1549,6 @@ export default function ReportsManager() {
           </table>
         </div>
       </section>
-    </>
+    </div>
   );
 }

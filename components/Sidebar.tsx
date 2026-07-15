@@ -123,6 +123,7 @@ const navigationItems: NavigationItem[] = [
       "/reports/sales",
       "/reports/purchase",
       "/reports/stock",
+      "/reports/profit",
       "/reports/payments",
       "/reports/statements",
     ],
@@ -392,7 +393,7 @@ export default function Sidebar() {
 
   if (isDesktop) {
     return (
-      <aside className="sticky top-0 flex h-screen w-[272px] shrink-0 flex-col border-r border-slate-800 bg-slate-950 p-4 text-white">
+      <aside className="sticky top-0 self-start flex h-[100dvh] w-[272px] shrink-0 flex-col border-r border-slate-800 bg-slate-950 p-4 text-white">
         <div className="border-b border-slate-800 px-2 pb-5 pt-2">
           <Brand />
         </div>

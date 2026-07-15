@@ -180,7 +180,15 @@ function getTaxTypeLabel(taxType: TaxType) {
   return "GST Setup Pending";
 }
 
-export default function PurchaseForm() {
+type PurchaseFormProps = {
+  canCreate: boolean;
+  canEdit: boolean;
+};
+
+export default function PurchaseForm({
+  canCreate,
+  canEdit,
+}: PurchaseFormProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
@@ -329,6 +337,11 @@ export default function PurchaseForm() {
 
   useEffect(() => {
     function handleEditPurchase(event: Event) {
+      if (!canEdit) {
+        showMessage("You do not have permission to edit purchase bills.");
+        return;
+      }
+
       const purchase = (event as CustomEvent<EditablePurchase>).detail;
 
       if (!purchase?.id) {
@@ -367,7 +380,7 @@ export default function PurchaseForm() {
     return () => {
       window.removeEventListener("vertexerp-edit-purchase", handleEditPurchase);
     };
-  }, []);
+  }, [canEdit]);
 
   const selectedSupplier = suppliers.find(
     (supplier) => supplier.id === form.supplierId,
@@ -538,6 +551,16 @@ export default function PurchaseForm() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (editingPurchase && !canEdit) {
+      showMessage("You do not have permission to edit purchase bills.");
+      return;
+    }
+
+    if (!editingPurchase && !canCreate) {
+      showMessage("You do not have permission to create purchase bills.");
+      return;
+    }
+
     if (!activeCompanyId) {
       showMessage("Select an active company before saving a purchase bill.");
       return;
@@ -694,23 +717,27 @@ export default function PurchaseForm() {
     }
   }
 
-  const isFormDisabled = isLoading || !activeCompanyId || isSaving;
+  const isFormDisabled =
+    isLoading ||
+    !activeCompanyId ||
+    isSaving ||
+    (editingPurchase ? !canEdit : !canCreate);
 
   return (
     <form
       id="purchase-bill-form"
       onSubmit={handleSubmit}
-      className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:mt-8 sm:p-6 lg:p-8"
+      className="mt-6 min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white p-4 shadow-xl shadow-slate-200/70 sm:mt-8 sm:p-6 lg:p-8"
     >
-      <div className="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-6 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mb-6 flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-violet-950 via-violet-800 to-violet-700 p-5 text-white lg:mb-8 lg:flex-row lg:items-center lg:justify-between sm:p-6">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+          <h2 className="text-xl font-black text-white sm:text-2xl">
             {editingPurchase
               ? "Edit GST Purchase Bill"
               : "Create GST Purchase Bill"}
           </h2>
 
-          <p className="mt-1 text-sm text-slate-600 sm:text-base">
+          <p className="mt-1 text-sm text-violet-100 sm:text-base">
             Automatic supplier-state classification, HSN snapshots and CGST/SGST
             or IGST input-tax split.
           </p>
@@ -719,8 +746,8 @@ export default function PurchaseForm() {
         <div
           className={`w-fit rounded-full px-4 py-2 text-sm font-semibold ${
             editingPurchase
-              ? "bg-amber-50 text-amber-700"
-              : "bg-blue-50 text-blue-700"
+              ? "bg-amber-100 text-amber-800"
+              : "bg-white/15 text-white ring-1 ring-white/20"
           }`}
         >
           {editingPurchase ? "Editing Bill" : "GST Classification Active"}
@@ -728,7 +755,7 @@ export default function PurchaseForm() {
       </div>
 
       {message && (
-        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-medium text-blue-700">
+        <div className="mb-6 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 font-medium text-violet-700">
           {message}
         </div>
       )}
@@ -850,7 +877,7 @@ export default function PurchaseForm() {
                   supplierId: event.target.value,
                 }))
               }
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
             >
               <option value="">Select supplier</option>
 
@@ -878,7 +905,7 @@ export default function PurchaseForm() {
           />
         </div>
 
-        <div className="mt-8 sm:mt-10">
+        <div className="mt-8 min-w-0 sm:mt-10">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-xl font-bold text-slate-900">
@@ -893,7 +920,7 @@ export default function PurchaseForm() {
             <button
               type="button"
               onClick={addItem}
-              className="w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 font-semibold text-blue-700 transition hover:bg-blue-100 sm:w-fit"
+              className="w-full rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 font-semibold text-violet-700 transition hover:bg-violet-100 sm:w-fit"
             >
               + Add Item
             </button>
@@ -977,9 +1004,20 @@ export default function PurchaseForm() {
             })}
           </div>
 
-          <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 md:block">
-            <table className="w-full min-w-[1120px]">
-              <thead className="bg-slate-50">
+          <div className="hidden max-w-full overflow-x-auto rounded-2xl border border-slate-200 md:block">
+            <table className="w-full min-w-[980px] table-fixed">
+              <colgroup>
+                <col className="w-[250px]" />
+                <col className="w-[75px]" />
+                <col className="w-[85px]" />
+                <col className="w-[105px]" />
+                <col className="w-[90px]" />
+                <col className="w-[105px]" />
+                <col className="w-[105px]" />
+                <col className="w-[105px]" />
+                <col className="w-[85px]" />
+              </colgroup>
+              <thead className="bg-violet-50">
                 <tr className="text-left">
                   {[
                     "Product",
@@ -1079,7 +1117,7 @@ export default function PurchaseForm() {
           </div>
         </div>
 
-        <div className="mt-6 max-w-none rounded-2xl bg-slate-50 p-5 sm:mt-8 sm:p-6 md:ml-auto md:max-w-lg">
+        <div className="mt-6 max-w-none rounded-2xl border border-violet-100 bg-violet-50/70 p-5 sm:mt-8 sm:p-6 md:ml-auto md:max-w-lg">
           <TotalRow label="Gross Subtotal" value={totals.subtotal} />
           <TotalRow label="Discount" value={totals.discountTotal} />
           <TotalRow label="Taxable Value" value={totals.taxableTotal} />
@@ -1100,7 +1138,7 @@ export default function PurchaseForm() {
               Grand Total
             </span>
 
-            <span className="text-2xl font-bold text-blue-600">
+            <span className="text-2xl font-bold text-violet-600">
               {formatCurrency(totals.grandTotal)}
             </span>
           </div>
@@ -1109,7 +1147,7 @@ export default function PurchaseForm() {
         <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:gap-4">
           <button
             type="submit"
-            className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 sm:w-auto sm:px-7"
+            className="w-full rounded-xl bg-violet-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-violet-700 sm:w-auto sm:px-7"
           >
             {isSaving
               ? "Saving..."
@@ -1153,7 +1191,7 @@ function Field({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
       />
     </div>
   );
@@ -1200,7 +1238,7 @@ function SelectField({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+        className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
       >
         {options.map((option) => (
           <option key={option}>{option}</option>
@@ -1223,7 +1261,7 @@ function ProductSelect({
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="w-full min-w-[210px] rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-800 outline-none focus:border-blue-500"
+      className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-800 outline-none focus:border-violet-500"
     >
       <option value="">Select product</option>
 
@@ -1260,7 +1298,7 @@ function MiniField({
         min="0"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-900 outline-none focus:border-blue-500"
+        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-900 outline-none focus:border-violet-500"
       />
     </div>
   );
@@ -1279,7 +1317,7 @@ function TableInput({
       min="0"
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="w-24 rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-500"
+      className="w-full min-w-[68px] rounded-xl border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-violet-500"
     />
   );
 }

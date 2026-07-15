@@ -1,19 +1,19 @@
-import Sidebar from "@/components/Sidebar";
-import Navbar from "@/components/Navbar";
+"use client";
+
 import GSTReportsManager from "@/components/GSTReportsManager";
+import ReportPageShell from "@/components/ReportPageShell";
 
 export default function GSTReportsPage() {
   return (
-    <div className="flex min-h-screen bg-slate-100">
-      <Sidebar />
-
-      <div className="min-w-0 flex-1">
-        <Navbar />
-
-        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
-          <GSTReportsManager />
-        </main>
-      </div>
-    </div>
+    <ReportPageShell
+      requiredPermission="gst_reports.view"
+      title="GST Reports"
+      eyebrow="GST Review Center"
+      description="Review GST summaries, transactions, reconciliation findings and HSN/SAC data."
+      icon="🧮"
+      showHero={false}
+    >
+      <GSTReportsManager />
+    </ReportPageShell>
   );
 }

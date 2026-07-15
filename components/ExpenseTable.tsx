@@ -18,6 +18,11 @@ type ProfileRow = {
   active_company_id: string | null;
 };
 
+type ExpenseTableProps = {
+  canEditExpense: boolean;
+  canDeleteExpense: boolean;
+};
+
 type ExpenseRow = {
   id: string;
   expense_date: string;
@@ -64,7 +69,10 @@ function mapExpense(row: ExpenseRow): Expense {
   };
 }
 
-export default function ExpenseTable() {
+export default function ExpenseTable({
+  canEditExpense,
+  canDeleteExpense,
+}: ExpenseTableProps) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeletingExpense, setIsDeletingExpense] = useState(false);
@@ -163,6 +171,11 @@ export default function ExpenseTable() {
   }, []);
 
   function startEditingExpense(expense: Expense) {
+    if (!canEditExpense) {
+      showMessage("You do not have permission to edit expense entries.");
+      return;
+    }
+
     window.dispatchEvent(
       new CustomEvent("vertexerp-edit-expense", {
         detail: expense,
@@ -170,7 +183,22 @@ export default function ExpenseTable() {
     );
   }
 
+  function requestDeleteExpense(expense: Expense) {
+    if (!canDeleteExpense) {
+      showMessage("You do not have permission to delete expense entries.");
+      return;
+    }
+
+    setExpensePendingDeletion(expense);
+  }
+
   async function confirmDeleteExpense() {
+    if (!canDeleteExpense) {
+      setExpensePendingDeletion(null);
+      showMessage("You do not have permission to delete expense entries.");
+      return;
+    }
+
     const expense = expensePendingDeletion;
 
     if (!expense || isDeletingExpense) {
@@ -220,10 +248,10 @@ export default function ExpenseTable() {
 
   return (
     <>
-      <section className="mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm sm:mt-8">
+      <section className="mt-6 min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl shadow-slate-200/60 sm:mt-8">
       <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 md:px-8 md:py-6">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-600">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-600">
             Expense History
           </p>
 
@@ -232,19 +260,19 @@ export default function ExpenseTable() {
           </h2>
         </div>
 
-        <div className="w-fit rounded-2xl bg-blue-50 px-4 py-3 sm:px-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">
+        <div className="w-fit rounded-2xl bg-violet-50 px-4 py-3 sm:px-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-violet-700">
             Total Saved Expenses
           </p>
 
-          <p className="mt-1 text-xl font-bold text-blue-700">
+          <p className="mt-1 text-xl font-bold text-violet-700">
             {isLoading ? "..." : formatCurrency(totalExpenses)}
           </p>
         </div>
       </div>
 
       {message && (
-        <div className="mx-4 mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mx-6 sm:mt-6 sm:text-base md:mx-8">
+        <div className="mx-4 mt-5 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-medium text-violet-700 sm:mx-6 sm:mt-6 sm:text-base md:mx-8">
           {message}
         </div>
       )}
@@ -284,7 +312,7 @@ export default function ExpenseTable() {
                     </p>
                   </div>
 
-                  <span className="shrink-0 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
+                  <span className="shrink-0 rounded-full bg-violet-50 px-3 py-1 text-xs font-bold text-violet-700">
                     {expense.category}
                   </span>
                 </div>
@@ -321,30 +349,42 @@ export default function ExpenseTable() {
                   </p>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => startEditingExpense(expense)}
-                    className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-bold text-blue-700 transition hover:bg-blue-100"
+                {(canEditExpense || canDeleteExpense) && (
+                  <div
+                    className={`mt-4 grid gap-3 ${
+                      canEditExpense && canDeleteExpense
+                        ? "grid-cols-2"
+                        : "grid-cols-1"
+                    }`}
                   >
-                    Edit
-                  </button>
+                    {canEditExpense && (
+                      <button
+                        type="button"
+                        onClick={() => startEditingExpense(expense)}
+                        className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-bold text-violet-700 transition hover:bg-violet-100"
+                      >
+                        Edit
+                      </button>
+                    )}
 
-                  <button
-                    type="button"
-                    onClick={() => setExpensePendingDeletion(expense)}
-                    className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
-                  >
-                    Delete
-                  </button>
-                </div>
+                    {canDeleteExpense && (
+                      <button
+                        type="button"
+                        onClick={() => requestDeleteExpense(expense)}
+                        className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                )}
               </article>
             ))}
           </div>
 
-          <div className="hidden overflow-x-auto md:block">
+          <div className="hidden max-w-full overflow-x-auto md:block">
             <table className="w-full min-w-[850px]">
-              <thead className="bg-slate-50">
+              <thead className="bg-violet-50">
                 <tr className="text-left">
                   <th className="px-6 py-4 text-sm font-bold text-slate-700">
                     Date
@@ -366,9 +406,11 @@ export default function ExpenseTable() {
                     Amount
                   </th>
 
-                  <th className="px-6 py-4 text-right text-sm font-bold text-slate-700">
-                    Action
-                  </th>
+                  {(canEditExpense || canDeleteExpense) && (
+                    <th className="px-6 py-4 text-right text-sm font-bold text-slate-700">
+                      Action
+                    </th>
+                  )}
                 </tr>
               </thead>
 
@@ -376,14 +418,14 @@ export default function ExpenseTable() {
                 {expenses.map((expense) => (
                   <tr
                     key={expense.id}
-                    className="border-t border-slate-100 transition hover:bg-slate-50"
+                    className="border-t border-slate-100 transition hover:bg-violet-50/60"
                   >
                     <td className="px-6 py-5 font-medium text-slate-700">
                       {formatDate(expense.date)}
                     </td>
 
                     <td className="px-6 py-5">
-                      <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
+                      <span className="rounded-full bg-violet-50 px-3 py-1 text-sm font-semibold text-violet-700">
                         {expense.category}
                       </span>
                     </td>
@@ -400,25 +442,31 @@ export default function ExpenseTable() {
                       {formatCurrency(expense.amount)}
                     </td>
 
-                    <td className="px-6 py-5">
-                      <div className="flex justify-end gap-3">
-                        <button
-                          type="button"
-                          onClick={() => startEditingExpense(expense)}
-                          className="font-semibold text-blue-600 transition hover:text-blue-800"
-                        >
-                          Edit
-                        </button>
+                    {(canEditExpense || canDeleteExpense) && (
+                      <td className="px-6 py-5">
+                        <div className="flex justify-end gap-3">
+                          {canEditExpense && (
+                            <button
+                              type="button"
+                              onClick={() => startEditingExpense(expense)}
+                              className="font-semibold text-violet-600 transition hover:text-violet-800"
+                            >
+                              Edit
+                            </button>
+                          )}
 
-                        <button
-                          type="button"
-                          onClick={() => setExpensePendingDeletion(expense)}
-                          className="font-semibold text-red-500 transition hover:text-red-700"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
+                          {canDeleteExpense && (
+                            <button
+                              type="button"
+                              onClick={() => requestDeleteExpense(expense)}
+                              className="font-semibold text-red-500 transition hover:text-red-700"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -429,7 +477,7 @@ export default function ExpenseTable() {
       </section>
 
       <ConfirmDeleteModal
-        isOpen={Boolean(expensePendingDeletion)}
+        isOpen={canDeleteExpense && Boolean(expensePendingDeletion)}
         title="Delete expense?"
         description={
           expensePendingDeletion

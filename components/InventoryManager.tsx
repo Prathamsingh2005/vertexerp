@@ -36,6 +36,9 @@ type CompanyRow = {
 
 type InventoryManagerProps = {
   searchQuery: string;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
 };
 
 const PRODUCT_SELECT =
@@ -65,6 +68,9 @@ function isValidHsnSac(value: string) {
 
 export default function InventoryManager({
   searchQuery,
+  canCreate,
+  canEdit,
+  canDelete,
 }: InventoryManagerProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
@@ -245,6 +251,16 @@ export default function InventoryManager({
   }
 
   async function saveProduct(productInput: ProductInput) {
+    if (editingProductId && !canEdit) {
+      showMessage("You do not have permission to edit inventory products.");
+      return false;
+    }
+
+    if (!editingProductId && !canCreate) {
+      showMessage("You do not have permission to create inventory products.");
+      return false;
+    }
+
     if (!activeCompanyId) {
       showMessage("Select an active company before adding a product.");
       return false;
@@ -345,6 +361,11 @@ export default function InventoryManager({
   }
 
   function startEditProduct(product: Product) {
+    if (!canEdit) {
+      showMessage("You do not have permission to edit inventory products.");
+      return;
+    }
+
     setEditingProductId(product.id);
     setMessage("");
 
@@ -362,6 +383,11 @@ export default function InventoryManager({
   }
 
   async function deleteProduct(productId: string) {
+    if (!canDelete) {
+      showMessage("You do not have permission to delete inventory products.");
+      return;
+    }
+
     try {
       const supabase = createClient();
 
@@ -398,6 +424,11 @@ export default function InventoryManager({
     productId: string,
     nextQuantity: number
   ) {
+    if (!canEdit) {
+      showMessage("You do not have permission to adjust inventory stock.");
+      return;
+    }
+
     const product = products.find((item) => item.id === productId);
 
     if (product?.isService) {
@@ -443,12 +474,14 @@ export default function InventoryManager({
 
   return (
     <>
-      <section className="mt-6 rounded-3xl border border-blue-100 bg-blue-50 p-4 sm:mt-8 sm:p-5">
+      <section className="mt-6 overflow-hidden rounded-3xl border border-violet-200 bg-gradient-to-r from-violet-950 via-violet-800 to-violet-700 p-5 text-white shadow-xl shadow-violet-900/15 sm:mt-8 sm:p-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <p className="text-sm font-bold text-blue-800">Active Company</p>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-200">
+              Active Company
+            </p>
 
-            <p className="mt-2 break-words text-lg font-bold text-slate-900 sm:text-xl">
+            <p className="mt-2 break-words text-xl font-black sm:text-2xl">
               {isLoading
                 ? "Loading company..."
                 : activeCompanyName || "No active company selected"}
@@ -456,7 +489,7 @@ export default function InventoryManager({
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <span className="w-fit rounded-full bg-white px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
+            <span className="w-fit rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-black text-white backdrop-blur">
               {activeCompanyId
                 ? "Products are saved in cloud"
                 : "Select a company first"}
@@ -464,7 +497,7 @@ export default function InventoryManager({
 
             {activeCompanyId && (
               <span
-                className={`w-fit rounded-full px-3 py-1.5 text-xs font-bold shadow-sm ${
+                className={`w-fit rounded-full px-3 py-1.5 text-xs font-black shadow-sm ${
                   hsnReadiness.missing === 0
                     ? "bg-emerald-100 text-emerald-700"
                     : "bg-amber-100 text-amber-700"
@@ -480,28 +513,32 @@ export default function InventoryManager({
       </section>
 
       {message && (
-        <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mt-6 sm:text-base">
+        <div className="mt-5 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-800 sm:mt-6 sm:text-base">
           {message}
         </div>
       )}
 
-      <div
-        className={
-          !activeCompanyId && !isLoading
-            ? "pointer-events-none opacity-60"
-            : ""
-        }
-      >
-        <ProductForm
-          onSaveProduct={saveProduct}
-          editingProduct={editingProduct}
-          onCancelEdit={cancelEditProduct}
-          isSaving={isSaving}
-        />
-      </div>
+      {(canCreate || editingProduct) && (
+        <div
+          className={
+            !activeCompanyId && !isLoading
+              ? "pointer-events-none opacity-60"
+              : ""
+          }
+        >
+          <ProductForm
+            onSaveProduct={saveProduct}
+            editingProduct={editingProduct}
+            onCancelEdit={cancelEditProduct}
+            isSaving={isSaving}
+            canCreate={canCreate}
+            canEdit={canEdit}
+          />
+        </div>
+      )}
 
       {isLoading ? (
-        <div className="mt-6 rounded-3xl border border-slate-100 bg-white p-6 text-center text-slate-500 shadow-xl sm:mt-10 sm:p-10">
+        <div className="mt-6 rounded-3xl border border-violet-100 bg-white p-6 text-center text-slate-500 shadow-xl shadow-slate-200/60 sm:mt-10 sm:p-10">
           Loading products from the cloud database...
         </div>
       ) : (
@@ -510,6 +547,9 @@ export default function InventoryManager({
           onEditProduct={startEditProduct}
           onDeleteProduct={deleteProduct}
           onUpdateStock={updateProductStock}
+          canCreate={canCreate}
+          canEdit={canEdit}
+          canDelete={canDelete}
         />
       )}
     </>

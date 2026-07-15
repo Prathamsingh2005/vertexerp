@@ -26,6 +26,9 @@ type ProductTableProps = {
     productId: string,
     nextQuantity: number
   ) => void | Promise<void>;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
 };
 
 function formatCurrency(amount: number) {
@@ -82,8 +85,16 @@ export default function ProductTable({
   onEditProduct,
   onDeleteProduct,
   onUpdateStock,
+  canCreate,
+  canEdit,
+  canDelete,
 }: ProductTableProps) {
   async function handleDelete(product: Product) {
+    if (!canDelete) {
+      window.alert("You do not have permission to delete inventory products.");
+      return;
+    }
+
     const shouldDelete = window.confirm(
       `Delete "${product.name}" from inventory?`
     );
@@ -94,6 +105,11 @@ export default function ProductTable({
   }
 
   async function handleAdjustStock(product: Product) {
+    if (!canEdit) {
+      window.alert("You do not have permission to adjust inventory stock.");
+      return;
+    }
+
     if (product.isService) {
       window.alert(
         "Stock adjustment is not available for service items."
@@ -123,19 +139,19 @@ export default function ProductTable({
   }
 
   return (
-    <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8 lg:mt-10">
-      <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
+    <section className="mt-6 min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl shadow-slate-200/60 sm:mt-8 lg:mt-10">
+      <div className="flex flex-col gap-4 bg-gradient-to-r from-violet-950 via-violet-800 to-violet-700 px-4 py-5 text-white sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+          <h2 className="text-xl font-black text-white sm:text-2xl">
             Inventory Products
           </h2>
 
-          <p className="mt-1 text-sm text-slate-600 sm:text-base">
-            Edit existing items to complete their HSN/SAC and GST setup.
+          <p className="mt-1 text-sm text-violet-100 sm:text-base">
+            Review product, stock, HSN/SAC and GST setup for the active company.
           </p>
         </div>
 
-        <div className="w-fit rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+        <div className="w-fit rounded-full bg-white/15 px-4 py-2 text-sm font-black text-white ring-1 ring-white/20">
           Total Products: {products.length}
         </div>
       </div>
@@ -147,7 +163,9 @@ export default function ProductTable({
           </p>
 
           <p className="mt-2 text-sm">
-            Add your first product using the form above.
+            {canCreate
+              ? "Add your first product using the form above."
+              : "Your current role has read-only access to inventory products."}
           </p>
         </div>
       ) : (
@@ -160,14 +178,14 @@ export default function ProductTable({
               return (
                 <article
                   key={product.id}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                  className="rounded-2xl border border-violet-100 bg-violet-50/40 p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-lg font-bold text-slate-900">
                         {product.name}
                       </p>
-                      <p className="mt-1 text-sm font-semibold text-blue-600">
+                      <p className="mt-1 text-sm font-semibold text-violet-600">
                         {product.sku || "No SKU"}
                       </p>
                     </div>
@@ -238,42 +256,58 @@ export default function ProductTable({
                     </div>
                   )}
 
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => onEditProduct(product)}
-                      className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-sm font-bold text-violet-700 transition hover:bg-violet-100"
+                  {canEdit || canDelete ? (
+                    <div
+                      className={`mt-4 grid gap-3 ${
+                        canEdit && canDelete ? "grid-cols-2" : "grid-cols-1"
+                      }`}
                     >
-                      Edit Product
-                    </button>
+                      {canEdit && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => onEditProduct(product)}
+                            className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-sm font-bold text-violet-700 transition hover:bg-violet-100"
+                          >
+                            Edit Product
+                          </button>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void handleAdjustStock(product)
-                      }
-                      disabled={product.isService}
-                      className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-bold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                    >
-                      Adjust Stock
-                    </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleAdjustStock(product)}
+                            disabled={product.isService}
+                            className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            Adjust Stock
+                          </button>
+                        </>
+                      )}
 
-                    <button
-                      type="button"
-                      onClick={() => void handleDelete(product)}
-                      className="col-span-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
-                    >
-                      Delete Product
-                    </button>
-                  </div>
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(product)}
+                          className={`rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100 ${
+                            canEdit ? "col-span-2" : ""
+                          }`}
+                        >
+                          Delete Product
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-xl border border-violet-100 bg-white px-4 py-3 text-center text-sm font-bold text-violet-700">
+                      View-only access
+                    </div>
+                  )}
                 </article>
               );
             })}
           </div>
 
           <div className="hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[1350px]">
-              <thead className="bg-slate-50">
+            <table className="w-full min-w-[1180px]">
+              <thead className="bg-violet-50">
                 <tr className="border-b border-slate-200 text-left">
                   <Header>Product</Header>
                   <Header>SKU</Header>
@@ -295,7 +329,7 @@ export default function ProductTable({
                   return (
                     <tr
                       key={product.id}
-                      className="border-b border-slate-100 transition hover:bg-blue-50"
+                      className="border-b border-slate-100 transition hover:bg-violet-50"
                     >
                       <td className="px-6 py-5">
                         <p className="font-bold text-slate-900">
@@ -307,7 +341,7 @@ export default function ProductTable({
                         </p>
                       </td>
 
-                      <td className="px-6 py-5 font-semibold text-blue-600">
+                      <td className="px-6 py-5 font-semibold text-violet-600">
                         {product.sku}
                       </td>
 
@@ -369,36 +403,42 @@ export default function ProductTable({
 
                       <td className="px-6 py-5">
                         <div className="flex items-center gap-4">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onEditProduct(product)
-                            }
-                            className="font-semibold text-violet-600 transition hover:text-violet-800"
-                          >
-                            Edit
-                          </button>
+                          {canEdit && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => onEditProduct(product)}
+                                className="font-semibold text-violet-600 transition hover:text-violet-800"
+                              >
+                                Edit
+                              </button>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void handleAdjustStock(product)
-                            }
-                            disabled={product.isService}
-                            className="font-semibold text-blue-600 transition hover:text-blue-800 disabled:cursor-not-allowed disabled:text-slate-400"
-                          >
-                            Adjust Stock
-                          </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleAdjustStock(product)}
+                                disabled={product.isService}
+                                className="font-semibold text-indigo-600 transition hover:text-indigo-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                              >
+                                Adjust Stock
+                              </button>
+                            </>
+                          )}
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void handleDelete(product)
-                            }
-                            className="font-semibold text-red-500 transition hover:text-red-700"
-                          >
-                            Delete
-                          </button>
+                          {canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => void handleDelete(product)}
+                              className="font-semibold text-red-500 transition hover:text-red-700"
+                            >
+                              Delete
+                            </button>
+                          )}
+
+                          {!canEdit && !canDelete && (
+                            <span className="font-semibold text-violet-600">
+                              View only
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>

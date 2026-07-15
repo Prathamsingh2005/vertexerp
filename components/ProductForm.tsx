@@ -26,6 +26,8 @@ type ProductFormProps = {
   editingProduct: EditableProduct | null;
   onCancelEdit: () => void;
   isSaving: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
 };
 
 type ProductFormState = {
@@ -63,6 +65,8 @@ export default function ProductForm({
   editingProduct,
   onCancelEdit,
   isSaving,
+  canCreate,
+  canEdit,
 }: ProductFormProps) {
   const [form, setForm] = useState<ProductFormState>(INITIAL_FORM);
   const [message, setMessage] = useState("");
@@ -100,6 +104,16 @@ export default function ProductForm({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (isEditing && !canEdit) {
+      showMessage("You do not have permission to edit inventory products.");
+      return;
+    }
+
+    if (!isEditing && !canCreate) {
+      showMessage("You do not have permission to create inventory products.");
+      return;
+    }
 
     if (!form.name.trim() || !form.sku.trim()) {
       showMessage("Product Name and SKU are required.");
@@ -149,28 +163,29 @@ export default function ProductForm({
     <form
       id="product-form"
       onSubmit={handleSubmit}
-      className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:mt-8 sm:p-6 lg:p-8"
+      className="mt-6 overflow-hidden rounded-3xl border border-violet-100 bg-white p-4 shadow-xl shadow-slate-200/60 sm:mt-8 sm:p-6 lg:p-8"
     >
-      <div className="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-center sm:justify-between lg:mb-8">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+      <div className="relative mb-6 overflow-hidden rounded-2xl bg-gradient-to-r from-violet-950 via-violet-800 to-violet-700 p-5 text-white shadow-lg sm:flex sm:items-center sm:justify-between sm:gap-4 lg:mb-8">
+        <div className="absolute left-0 top-0 h-1.5 w-full bg-gradient-to-r from-fuchsia-500 via-violet-400 to-indigo-400" />
+        <div className="relative z-10">
+          <h2 className="text-xl font-black text-white sm:text-2xl">
             {isEditing ? "Edit Product & GST Setup" : "Add New Product"}
           </h2>
 
-          <p className="mt-1 text-sm text-slate-600 sm:text-base">
+          <p className="mt-1 text-sm text-violet-100 sm:text-base">
             {isEditing
               ? "Update product identity, HSN/SAC and tax details."
               : "Enter product, HSN/SAC, pricing and opening stock details."}
           </p>
         </div>
 
-        <div className="w-fit rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+        <div className="relative z-10 mt-4 w-fit rounded-full bg-white/95 px-4 py-2 text-sm font-black text-violet-700 ring-1 ring-white/30 sm:mt-0">
           {isEditing ? "Updating Product" : "New Inventory Item"}
         </div>
       </div>
 
       {message && (
-        <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
+        <div className="mb-5 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-800 sm:mb-6 sm:text-base">
           {message}
         </div>
       )}
@@ -363,7 +378,7 @@ export default function ProductForm({
             }))
           }
           placeholder="Write a short description about this item..."
-          className="w-full resize-none rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+          className="w-full resize-none rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
         />
       </div>
 
@@ -378,8 +393,10 @@ export default function ProductForm({
       <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:gap-4">
         <button
           type="submit"
-          disabled={isSaving}
-          className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-7"
+          disabled={
+            isSaving || (isEditing ? !canEdit : !canCreate)
+          }
+          className="w-full rounded-xl bg-gradient-to-r from-violet-700 to-fuchsia-600 px-5 py-3 font-black text-white shadow-lg shadow-violet-500/20 transition hover:-translate-y-0.5 hover:from-violet-800 hover:to-fuchsia-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-7"
         >
           {isSaving
             ? "Saving..."
@@ -440,7 +457,7 @@ function Field({
         className={`w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none transition ${
           disabled
             ? "cursor-not-allowed bg-slate-200 text-slate-600"
-            : "bg-slate-50 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+            : "bg-slate-50 focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
         }`}
       />
     </div>
@@ -475,7 +492,7 @@ function SelectField({
         className={`w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-800 outline-none transition ${
           disabled
             ? "cursor-not-allowed bg-slate-200"
-            : "bg-slate-50 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+            : "bg-slate-50 focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
         }`}
       >
         {options.map((option) => (

@@ -5,6 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SalesInvoiceForm from "@/components/SalesInvoiceForm";
 import SalesInvoiceTable from "@/components/SalesInvoiceTable";
+import { usePermissions } from "@/hooks/usePermissions";
 import { createClient } from "@/lib/supabase/client";
 
 type Sale = {
@@ -30,7 +31,10 @@ function toNumber(value: unknown) {
 }
 
 function formatCurrency(amount: number) {
-  return `₹${toNumber(amount).toLocaleString("en-IN")}`;
+  return `₹${toNumber(amount).toLocaleString("en-IN", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function getToday() {
@@ -49,9 +53,17 @@ function isCurrentMonth(dateValue: string) {
 }
 
 export default function SalesPage() {
+  const { access, can, error: permissionError, isLoading: isPermissionLoading } =
+    usePermissions();
+
   const [sales, setSales] = useState<Sale[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const canCreateSale = can("sales.create");
+  const canEditSale = can("sales.edit");
+  const canDeleteSale = can("sales.delete");
+  const hasWriteAccess = canCreateSale || canEditSale || canDeleteSale;
 
   async function loadSalesData() {
     setIsLoading(true);
@@ -197,6 +209,10 @@ export default function SalesPage() {
   }, [sales, payments]);
 
   function scrollToInvoiceForm() {
+    if (!canCreateSale) {
+      return;
+    }
+
     document.getElementById("create-sales-invoice")?.scrollIntoView({
       behavior: "smooth",
       block: "start",
@@ -204,116 +220,199 @@ export default function SalesPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-100">
-      <Sidebar />
+    <div className="flex min-h-screen bg-[#f3f6fb]">
+  <Sidebar />
 
-      <div className="min-w-0 flex-1">
-        <Navbar />
+  <div className="min-w-0 flex-1 overflow-x-hidden">
+    <Navbar />
 
-        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
-          <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
-                🛒 Sales & Billing
-              </h1>
+    <main className="min-w-0 p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          <section className="overflow-hidden rounded-[30px] bg-gradient-to-br from-violet-950 via-violet-800 to-violet-600 p-6 text-white shadow-2xl shadow-violet-900/20 sm:p-8 lg:p-10">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="max-w-3xl">
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-violet-100 backdrop-blur">
+                  <span>🛒</span>
+                  Sales Control Center
+                </div>
 
-              <p className="mt-2 max-w-3xl text-base text-slate-600 sm:text-lg">
-                Create invoices, manage sales and track customer payments.
-              </p>
-            </div>
+                <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
+                  Sales &amp; Billing
+                </h1>
 
-            <button
-              type="button"
-              onClick={scrollToInvoiceForm}
-              className="w-full rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl active:scale-[0.98] sm:w-fit"
-            >
-              + Create Invoice
-            </button>
-          </div>
+                <p className="mt-3 max-w-2xl text-base leading-7 text-violet-100 sm:text-lg">
+                  Create GST invoices, review sales and track customer payment
+                  exposure from one permission-aware workspace.
+                </p>
+              </div>
 
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
-            <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-lg sm:p-6">
-              <p className="font-medium text-slate-600">Today&apos;s Sales</p>
+              <div className="flex flex-col gap-3 sm:flex-row lg:flex-col lg:items-end">
+                <div className="rounded-2xl border border-white/15 bg-slate-950/25 px-5 py-4 backdrop-blur">
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-200">
+                    Active Access
+                  </p>
+                  <p className="mt-1 text-lg font-black">
+                    {isPermissionLoading
+                      ? "Loading..."
+                      : access?.roleName || "No active role"}
+                  </p>
+                  <p className="mt-1 text-sm text-violet-100">
+                    {hasWriteAccess ? "Operational access" : "Read-only access"}
+                  </p>
+                </div>
 
-              <h2 className="mt-3 break-words text-3xl font-bold text-blue-600 sm:text-4xl">
-                {isLoading ? "..." : formatCurrency(salesStats.todaySales)}
-              </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                Total sales recorded today
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-lg sm:p-6">
-              <p className="font-medium text-slate-600">Total Invoices</p>
-
-              <h2 className="mt-3 text-3xl font-bold text-emerald-600 sm:text-4xl">
-                {isLoading ? "..." : salesStats.totalInvoices}
-              </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                All saved sales invoices
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-orange-100 bg-white p-5 shadow-lg sm:p-6">
-              <p className="font-medium text-slate-600">Pending Payments</p>
-
-              <h2 className="mt-3 break-words text-3xl font-bold text-orange-600 sm:text-4xl">
-                {isLoading
-                  ? "..."
-                  : formatCurrency(salesStats.pendingPayments)}
-              </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                Credit amount still to receive
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-purple-100 bg-white p-5 shadow-lg sm:p-6">
-              <p className="font-medium text-slate-600">
-                This Month&apos;s Sales
-              </p>
-
-              <h2 className="mt-3 break-words text-3xl font-bold text-purple-700 sm:text-4xl">
-                {isLoading ? "..." : formatCurrency(salesStats.monthlySales)}
-              </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                Total invoice value for current month
-              </p>
+                {!isPermissionLoading && canCreateSale && (
+                  <button
+                    type="button"
+                    onClick={scrollToInvoiceForm}
+                    className="w-full rounded-2xl bg-white px-6 py-3.5 font-black text-violet-800 shadow-xl transition hover:-translate-y-0.5 hover:bg-violet-50 active:translate-y-0 sm:w-fit"
+                  >
+                    + Create Invoice
+                  </button>
+                )}
+              </div>
             </div>
           </section>
 
-          <section className="mt-6 rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:mt-8">
+          {permissionError && (
+            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 font-semibold text-red-700">
+              {permissionError}
+            </div>
+          )}
+
+          {!isPermissionLoading && !hasWriteAccess && (
+            <div className="mt-6 rounded-2xl border border-violet-200 bg-violet-50 px-5 py-4 text-violet-900">
+              <p className="font-black">Read-only sales access</p>
+              <p className="mt-1 text-sm leading-6 text-violet-700">
+                You can view and print invoices. Create, edit and delete actions
+                are hidden for your current role.
+              </p>
+            </div>
+          )}
+
+          <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
+            <StatCard
+              eyebrow="Today"
+              label="Today's Sales"
+              value={
+                isLoading ? "..." : formatCurrency(salesStats.todaySales)
+              }
+              detail="Total sales recorded today"
+              tone="violet"
+            />
+
+            <StatCard
+              eyebrow="Invoices"
+              label="Total Invoices"
+              value={isLoading ? "..." : String(salesStats.totalInvoices)}
+              detail="All saved sales invoices"
+              tone="indigo"
+            />
+
+            <StatCard
+              eyebrow="Receivables"
+              label="Pending Payments"
+              value={
+                isLoading
+                  ? "..."
+                  : formatCurrency(salesStats.pendingPayments)
+              }
+              detail="Credit amount still to receive"
+              tone="amber"
+            />
+
+            <StatCard
+              eyebrow="Current Month"
+              label="This Month's Sales"
+              value={
+                isLoading ? "..." : formatCurrency(salesStats.monthlySales)
+              }
+              detail="Total invoice value for current month"
+              tone="purple"
+            />
+          </section>
+
+          <section className="mt-6 rounded-3xl border border-violet-100 bg-white p-5 shadow-lg shadow-slate-200/70 sm:mt-8">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3">
-                <span className="pt-0.5 text-xl">📄</span>
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-xl">
+                  📄
+                </span>
 
                 <div>
-                  <p className="font-bold text-slate-900">
+                  <p className="font-black text-slate-950">
                     Sales Invoice Register
                   </p>
-
                   <p className="mt-1 text-sm text-slate-600">
-                    Saved invoices appear in the table below.
+                    Saved invoices appear in the permission-aware table below.
                   </p>
                 </div>
               </div>
 
-              <span className="w-fit rounded-full bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700">
+              <span className="w-fit rounded-full bg-violet-100 px-4 py-2 text-sm font-black text-violet-800">
                 Invoices: {isLoading ? "..." : salesStats.totalInvoices}
               </span>
             </div>
           </section>
 
-          <div id="create-sales-invoice">
-            <SalesInvoiceForm />
-          </div>
+          {(canCreateSale || canEditSale) && (
+            <div id="create-sales-invoice">
+              <SalesInvoiceForm
+                canCreate={canCreateSale}
+                canEdit={canEditSale}
+              />
+            </div>
+          )}
 
-          <SalesInvoiceTable />
+          <SalesInvoiceTable
+            canCreate={canCreateSale}
+            canEdit={canEditSale}
+            canDelete={canDeleteSale}
+          />
         </main>
       </div>
     </div>
+  );
+}
+
+function StatCard({
+  eyebrow,
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  eyebrow: string;
+  label: string;
+  value: string;
+  detail: string;
+  tone: "violet" | "indigo" | "amber" | "purple";
+}) {
+  const tones = {
+    violet: "border-violet-100 bg-violet-50 text-violet-800",
+    indigo: "border-indigo-100 bg-indigo-50 text-indigo-800",
+    amber: "border-amber-100 bg-amber-50 text-amber-800",
+    purple: "border-purple-100 bg-purple-50 text-purple-800",
+  } as const;
+
+  return (
+    <article className="min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-lg shadow-slate-200/60 sm:p-6">
+      <span
+        className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] ${tones[tone]}`}
+      >
+        {eyebrow}
+      </span>
+
+      <p className="mt-4 font-bold text-slate-600">
+        {label}
+      </p>
+
+      <h2 className="mt-2 whitespace-nowrap text-[clamp(1.65rem,2vw,2.5rem)] font-black leading-tight tracking-tight text-slate-950 tabular-nums">
+        {value}
+      </h2>
+
+      <p className="mt-2 text-sm leading-6 text-slate-500">
+        {detail}
+      </p>
+    </article>
   );
 }

@@ -2,6 +2,7 @@
 
 import {
   type FormEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -407,24 +408,24 @@ export default function TeamManagementManager() {
   }
 
   return (
-    <div className="space-y-6">
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-950 p-5 text-white shadow-xl sm:p-7 lg:p-8">
+    <div className="min-w-0 space-y-6">
+      <section className="overflow-hidden rounded-[30px] border border-violet-500/20 bg-gradient-to-br from-violet-950 via-violet-800 to-violet-600 p-5 text-white shadow-2xl shadow-violet-900/20 sm:p-7 lg:p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
               <Users className="h-6 w-6" />
             </span>
             <h1 className="mt-5 text-3xl font-black tracking-tight sm:text-4xl">
               Team Management
             </h1>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-violet-100 sm:text-base">
               Invite employees, assign controlled roles and deactivate access
               without sharing the company Owner account.
             </p>
           </div>
 
-          <div className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-4">
-            <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-400">
+          <div className="rounded-2xl border border-white/15 bg-slate-950/25 px-5 py-4">
+            <p className="text-xs font-bold uppercase tracking-[0.15em] text-violet-200">
               Active Company
             </p>
             <p className="mt-1 font-black text-white">
@@ -438,7 +439,7 @@ export default function TeamManagementManager() {
       </section>
 
       {message && (
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700">
+        <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-700">
           {message}
         </div>
       )}
@@ -453,10 +454,10 @@ export default function TeamManagementManager() {
       {canManageTeam ? (
         <form
           onSubmit={handleInvite}
-          className="rounded-3xl border border-slate-200 bg-white p-5 shadow-xl sm:p-6"
+          className="rounded-3xl border border-violet-100 bg-white p-5 shadow-xl sm:p-6"
         >
           <div className="flex items-start gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-50 text-violet-700">
               <UserPlus className="h-5 w-5" />
             </span>
             <div>
@@ -485,7 +486,7 @@ export default function TeamManagementManager() {
                   }))
                 }
                 placeholder="employee@example.com"
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               />
             </div>
 
@@ -501,7 +502,7 @@ export default function TeamManagementManager() {
                     roleCode: event.target.value,
                   }))
                 }
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               >
                 {assignableRoles.map((role) => (
                   <option key={role.code} value={role.code}>
@@ -523,7 +524,7 @@ export default function TeamManagementManager() {
                     expiresInDays: event.target.value,
                   }))
                 }
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               >
                 <option value="3">3 days</option>
                 <option value="7">7 days</option>
@@ -536,7 +537,7 @@ export default function TeamManagementManager() {
           <button
             type="submit"
             disabled={isSaving}
-            className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 font-bold text-white shadow-lg transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+            className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 py-3 font-bold text-white shadow-lg transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {isSaving ? (
               <RefreshCw className="h-5 w-5 animate-spin" />
@@ -585,8 +586,8 @@ export default function TeamManagementManager() {
         </section>
       )}
 
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
-        <div className="flex items-center justify-between gap-4 border-b border-slate-200 p-5 sm:p-6">
+      <section className="overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl">
+        <div className="flex items-center justify-between gap-4 border-b border-violet-100 p-5 sm:p-6">
           <div>
             <h2 className="text-xl font-black text-slate-950">
               Company Members
@@ -599,7 +600,7 @@ export default function TeamManagementManager() {
             type="button"
             onClick={loadTeamData}
             disabled={isLoading}
-            className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+            className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition hover:bg-violet-50 disabled:opacity-50"
             aria-label="Refresh team"
           >
             <RefreshCw
@@ -608,7 +609,7 @@ export default function TeamManagementManager() {
           </button>
         </div>
 
-        <div className="divide-y divide-slate-100">
+        <div className="divide-y divide-violet-100">
           {isLoading ? (
             <p className="px-6 py-14 text-center text-slate-500">
               Loading company members...
@@ -625,7 +626,7 @@ export default function TeamManagementManager() {
               return (
                 <article
                   key={member.id}
-                  className="flex flex-col gap-4 p-5 transition hover:bg-slate-50 sm:p-6 xl:flex-row xl:items-center xl:justify-between"
+                  className="flex flex-col gap-4 p-5 transition hover:bg-violet-50 sm:p-6 xl:flex-row xl:items-center xl:justify-between"
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -668,7 +669,7 @@ export default function TeamManagementManager() {
                           onChange={(event) =>
                             updateMemberRole(member, event.target.value)
                           }
-                          className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                          className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-100"
                         >
                           {assignableRoles.map((role) => (
                             <option key={role.code} value={role.code}>
@@ -711,8 +712,8 @@ export default function TeamManagementManager() {
       </section>
 
       {canManageTeam && (
-        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
-          <div className="border-b border-slate-200 p-5 sm:p-6">
+        <section className="overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl">
+          <div className="border-b border-violet-100 p-5 sm:p-6">
             <h2 className="text-xl font-black text-slate-950">
               Pending Invitations
             </h2>
@@ -721,7 +722,7 @@ export default function TeamManagementManager() {
             </p>
           </div>
 
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-violet-100">
             {invitations.length === 0 ? (
               <p className="px-6 py-12 text-center text-slate-500">
                 No pending invitations.
@@ -755,7 +756,7 @@ export default function TeamManagementManager() {
                         onClick={() =>
                           copyText(link, "Invitation link copied successfully.")
                         }
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-bold text-blue-700 hover:bg-blue-100"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-bold text-violet-700 hover:bg-violet-100"
                       >
                         <Clipboard className="h-4 w-4" />
                         Copy
@@ -764,7 +765,7 @@ export default function TeamManagementManager() {
                       <button
                         type="button"
                         onClick={() => emailInvitation(invitation)}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-violet-50"
                       >
                         <Mail className="h-4 w-4" />
                         Email
@@ -788,14 +789,14 @@ export default function TeamManagementManager() {
       )}
 
       {isOwner && (
-        <section className="rounded-3xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
+        <section className="rounded-3xl border border-violet-200 bg-violet-50 p-5 shadow-sm">
           <div className="flex items-start gap-3">
-            <ShieldCheck className="mt-0.5 h-6 w-6 text-blue-700" />
+            <ShieldCheck className="mt-0.5 h-6 w-6 text-violet-700" />
             <div>
-              <h2 className="font-black text-blue-950">
+              <h2 className="font-black text-violet-950">
                 Owner Protection Enabled
               </h2>
-              <p className="mt-1 text-sm leading-6 text-blue-800">
+              <p className="mt-1 text-sm leading-6 text-violet-800">
                 Your Owner membership is synchronized with the company record
                 and cannot be removed, downgraded or deactivated from this page.
               </p>
@@ -814,11 +815,11 @@ function SummaryCard({
 }: {
   label: string;
   value: number;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }) {
   return (
-    <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-700 [&>svg]:h-5 [&>svg]:w-5">
+    <article className="rounded-3xl border border-violet-100 bg-white p-5 shadow-sm">
+      <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-50 text-violet-700 [&>svg]:h-5 [&>svg]:w-5">
         {icon}
       </span>
       <p className="mt-4 text-sm font-bold text-slate-600">{label}</p>

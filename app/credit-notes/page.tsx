@@ -1,32 +1,108 @@
+"use client";
+
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import CreditNotesManager from "@/components/CreditNotesManager";
+import { usePermissions } from "@/hooks/usePermissions";
 
 export default function CreditNotesPage() {
+  const {
+    access,
+    can,
+    error: permissionError,
+    isLoading: isPermissionLoading,
+  } = usePermissions();
+
+  const canViewCreditNotes = can("credit_notes.view");
+  const canCreateCreditNote = can("credit_notes.create");
+  const canVoidCreditNote = can("credit_notes.void");
+  const hasWriteAccess = canCreateCreditNote || canVoidCreditNote;
+
   return (
-    <div className="flex min-h-screen bg-slate-100">
+    <div className="flex min-h-screen bg-[#f3f6fb]">
       <Sidebar />
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 overflow-x-hidden">
         <Navbar />
 
-        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
-          <section className="mb-6 rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:mb-8 sm:p-7">
-            <p className="text-sm font-bold uppercase tracking-[0.2em] text-blue-600">
-              Sales Return
-            </p>
+        <main className="min-w-0 p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          <section className="overflow-hidden rounded-[30px] bg-gradient-to-br from-violet-950 via-violet-800 to-violet-600 p-6 text-white shadow-2xl shadow-violet-900/20 sm:p-8 lg:p-10">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="max-w-3xl">
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-violet-100 backdrop-blur">
+                  <span>↩️</span>
+                  Sales Return Control Center
+                </div>
 
-            <h1 className="mt-3 text-3xl font-bold text-slate-950 sm:text-4xl">
-              Credit Notes
-            </h1>
+                <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
+                  Credit Notes
+                </h1>
 
-            <p className="mt-2 max-w-3xl text-sm text-slate-600 sm:text-base">
-              Process customer returns professionally without deleting invoices.
-              Credit notes adjust stock, COGS, revenue, GST and receivables.
-            </p>
+                <p className="mt-3 max-w-2xl text-base leading-7 text-violet-100 sm:text-lg">
+                  Process customer returns without deleting invoices. Credit
+                  notes safely adjust stock, COGS, revenue, GST and customer
+                  receivables.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-white/15 bg-slate-950/25 px-5 py-4 backdrop-blur">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-200">
+                  Active Access
+                </p>
+
+                <p className="mt-1 text-lg font-black">
+                  {isPermissionLoading
+                    ? "Loading..."
+                    : access?.roleName || "No active role"}
+                </p>
+
+                <p className="mt-1 text-sm text-violet-100">
+                  {hasWriteAccess ? "Operational access" : "Read-only access"}
+                </p>
+              </div>
+            </div>
           </section>
 
-          <CreditNotesManager />
+          {permissionError && (
+            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 font-semibold text-red-700">
+              {permissionError}
+            </div>
+          )}
+
+          {isPermissionLoading ? (
+            <div className="mt-6 rounded-3xl border border-violet-100 bg-white p-8 text-center font-semibold text-slate-600 shadow-xl shadow-violet-100/50">
+              Loading credit-note permissions...
+            </div>
+          ) : !canViewCreditNotes ? (
+            <div className="mt-6 rounded-3xl border border-red-200 bg-white p-8 text-center shadow-xl">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-2xl">
+                🔒
+              </div>
+              <h2 className="mt-4 text-2xl font-black text-slate-900">
+                Credit Notes Access Restricted
+              </h2>
+              <p className="mx-auto mt-2 max-w-xl text-slate-600">
+                Your active role does not include permission to view customer
+                credit notes for this company.
+              </p>
+            </div>
+          ) : (
+            <>
+              {!hasWriteAccess && (
+                <div className="mt-6 rounded-2xl border border-violet-200 bg-violet-50 px-5 py-4 text-sm font-semibold text-violet-800">
+                  Read-only access is active. You can view and print credit
+                  notes, but creating or voiding them is disabled.
+                </div>
+              )}
+
+              <div className="mt-6 min-w-0">
+                <CreditNotesManager
+                  canCreate={canCreateCreditNote}
+                  canVoid={canVoidCreditNote}
+                />
+              </div>
+            </>
+          )}
         </main>
       </div>
     </div>

@@ -1045,7 +1045,7 @@ export default function GSTReportsManager() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <section className="rounded-3xl border border-violet-100 bg-gradient-to-br from-[#2f1c6a] to-[#673de6] p-5 text-white shadow-xl sm:p-7">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -1071,7 +1071,7 @@ export default function GSTReportsManager() {
             type="button"
             onClick={() => loadGstReports()}
             disabled={isLoading}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 font-black text-[#5025d1] shadow-lg transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 font-black text-[#5025d1] shadow-xl shadow-violet-100/40 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto"
           >
             <RefreshCw
               className={`h-5 w-5 ${
@@ -1110,7 +1110,7 @@ export default function GSTReportsManager() {
 
             <Link
               href="/reports/gst/transactions"
-              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-violet-700 sm:w-fit"
+              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 py-3 font-black text-white shadow-xl shadow-violet-100/40 transition hover:-translate-y-0.5 hover:bg-violet-700 sm:w-fit"
             >
               Open Transaction Register
               <ArrowUpRight className="h-5 w-5" />
@@ -1144,7 +1144,7 @@ export default function GSTReportsManager() {
 
             <Link
               href="/reports/gst/reconciliation"
-              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-rose-600 px-6 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-rose-700 sm:w-fit"
+              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-rose-600 px-6 py-3 font-black text-white shadow-xl shadow-violet-100/40 transition hover:-translate-y-0.5 hover:bg-rose-700 sm:w-fit"
             >
               Run GST Error Checker
               <ArrowUpRight className="h-5 w-5" />
@@ -1159,7 +1159,7 @@ export default function GSTReportsManager() {
         </div>
       )}
 
-      <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
+      <section className="rounded-3xl border border-violet-100 bg-white p-5 shadow-xl shadow-violet-100/40 sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
           <div className="flex-1">
             <label className="mb-2 block font-bold text-slate-800">
@@ -1321,14 +1321,14 @@ export default function GSTReportsManager() {
         </section>
       )}
 
-      <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
+      <section className="overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl">
         <ReportHeader
           title="GSTR-1 Review Summary"
           description="Net outward supplies after posted Credit Note reversals."
           onExport={exportGstr1Csv}
         />
 
-        <div className="overflow-x-auto">
+        <div className="max-w-full overflow-x-auto">
           <table className="w-full min-w-[1100px]">
             <thead className="bg-slate-50">
               <tr>
@@ -1397,7 +1397,7 @@ export default function GSTReportsManager() {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
+      <section className="overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl">
         <ReportHeader
           title="GSTR-3B Review Summary"
           description="Operational GST summary before statutory eligibility and set-off adjustments."
@@ -1433,14 +1433,14 @@ export default function GSTReportsManager() {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
+      <section className="overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl">
         <ReportHeader
           title="HSN/SAC Summary"
           description="Net outward and inward tax snapshots grouped by HSN/SAC."
           onExport={exportHsnCsv}
         />
 
-        <div className="overflow-x-auto">
+        <div className="max-w-full overflow-x-auto">
           <table className="w-full min-w-[1250px]">
             <thead className="bg-slate-50">
               <tr>
@@ -1608,7 +1608,7 @@ function TaxHeadCard({
   const position = roundMoney(output - input);
 
   return (
-    <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg">
+    <article className="rounded-3xl border border-violet-100 bg-white p-5 shadow-xl shadow-violet-100/40">
       <p className="font-bold text-slate-900">{label}</p>
 
       <div className="mt-4 space-y-3 text-sm">

@@ -1,19 +1,19 @@
-import Sidebar from "@/components/Sidebar";
-import Navbar from "@/components/Navbar";
+"use client";
+
 import PartyStatementManager from "@/components/PartyStatementManager";
+import ReportPageShell from "@/components/ReportPageShell";
 
 export default function PartyStatementsPage() {
   return (
-    <div className="flex min-h-screen bg-slate-100">
-      <Sidebar />
-
-      <div className="min-w-0 flex-1">
-        <Navbar />
-
-        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
-          <PartyStatementManager />
-        </main>
-      </div>
-    </div>
+    <ReportPageShell
+      requiredPermission="reports.view"
+      title="Party Statements"
+      eyebrow="Party Accounts"
+      description="Generate customer and supplier statements with documents, payments, return notes and running balances."
+      icon="📖"
+      showHero={false}
+    >
+      <PartyStatementManager />
+    </ReportPageShell>
   );
 }

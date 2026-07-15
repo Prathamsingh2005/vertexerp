@@ -162,7 +162,15 @@ function proportion(sourceAmount: number, originalQuantity: number, returnQuanti
   return Number(((sourceAmount * returnQuantity) / originalQuantity).toFixed(2));
 }
 
-export default function CreditNotesManager() {
+type CreditNotesManagerProps = {
+  canCreate: boolean;
+  canVoid: boolean;
+};
+
+export default function CreditNotesManager({
+  canCreate,
+  canVoid,
+}: CreditNotesManagerProps) {
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [creditNotes, setCreditNotes] = useState<CreditNoteRow[]>([]);
@@ -502,6 +510,11 @@ export default function CreditNotesManager() {
   }
 
   async function createCreditNote() {
+    if (!canCreate) {
+      showMessage("You do not have permission to create credit notes.");
+      return;
+    }
+
     if (!activeCompanyId) {
       showMessage("Select an active company first.");
       return;
@@ -584,6 +597,11 @@ export default function CreditNotesManager() {
   }
 
   async function voidCreditNote(note: CreditNoteRow) {
+    if (!canVoid) {
+      showMessage("You do not have permission to void credit notes.");
+      return;
+    }
+
     const voidReason = window.prompt(`Enter a reason to void ${note.credit_note_number}:`);
     if (!voidReason?.trim()) return;
 
@@ -612,7 +630,7 @@ export default function CreditNotesManager() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
+      <section className="overflow-hidden rounded-3xl border border-violet-100 bg-white p-4 shadow-xl shadow-violet-100/50 sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
@@ -624,20 +642,30 @@ export default function CreditNotesManager() {
             </p>
           </div>
 
-          <div className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
-            Sales Return Safe
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full bg-violet-100 px-4 py-2 text-sm font-bold text-violet-700">
+              Sales Return Safe
+            </span>
+            <span className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700">
+              {canCreate || canVoid ? "Operational" : "Read Only"}
+            </span>
           </div>
         </div>
 
         {message && (
-          <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700">
+          <div className="mt-5 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-medium text-violet-700">
             {message}
           </div>
         )}
       </section>
 
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
+      <section
+        className={`grid min-w-0 grid-cols-1 gap-6 ${
+          canCreate ? "xl:grid-cols-[1.05fr_0.95fr]" : ""
+        }`}
+      >
+        {canCreate && (
+        <div className="min-w-0 rounded-3xl border border-violet-100 bg-white p-4 shadow-xl shadow-violet-100/40 sm:p-6">
           <h3 className="text-xl font-bold text-slate-900">Create Credit Note</h3>
           <p className="mt-1 text-sm text-slate-600">
             Select a COGS-enabled invoice and enter returned quantities.
@@ -651,7 +679,7 @@ export default function CreditNotesManager() {
               <select
                 value={selectedSaleId}
                 onChange={(event) => handleSaleChange(event.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               >
                 <option value="">Select invoice</option>
                 {sales.map((sale) => {
@@ -676,7 +704,7 @@ export default function CreditNotesManager() {
               <input
                 value={creditNoteNumber}
                 onChange={(event) => setCreditNoteNumber(event.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               />
             </div>
 
@@ -688,7 +716,7 @@ export default function CreditNotesManager() {
                 type="date"
                 value={creditNoteDate}
                 onChange={(event) => setCreditNoteDate(event.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               />
             </div>
 
@@ -699,7 +727,7 @@ export default function CreditNotesManager() {
                 onChange={(event) => setReason(event.target.value)}
                 rows={3}
                 placeholder="Customer returned goods"
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               />
             </div>
           </div>
@@ -780,7 +808,7 @@ export default function CreditNotesManager() {
                             type="button"
                             onClick={() => fillRemainingQuantity(index)}
                             disabled={line.remainingQuantity <= 0}
-                            className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             Return Full
                           </button>
@@ -799,7 +827,7 @@ export default function CreditNotesManager() {
                               value={line.returnQuantity}
                               onChange={(event) => updateReturnQuantity(index, event.target.value)}
                               disabled={line.remainingQuantity <= 0}
-                              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
                             />
                           </div>
 
@@ -868,21 +896,22 @@ export default function CreditNotesManager() {
             type="button"
             onClick={createCreditNote}
             disabled={isSaving || isLoading || totals.itemCount === 0}
-            className="mt-5 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-5 w-full rounded-xl bg-gradient-to-r from-violet-700 to-fuchsia-600 px-5 py-3 font-semibold text-white shadow-lg shadow-violet-700/20 transition hover:from-violet-800 hover:to-fuchsia-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSaving ? "Saving..." : "Post Credit Note"}
           </button>
         </div>
+        )}
 
-        <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-lg">
-          <div className="border-b border-slate-200 p-4 sm:p-6">
-            <h3 className="text-xl font-bold text-slate-900">Credit Note History</h3>
-            <p className="mt-1 text-sm text-slate-600">
-              Posted credit notes can be voided with audit reason.
+        <div className="min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl shadow-violet-100/40">
+          <div className="border-b border-violet-200 bg-gradient-to-r from-violet-950 via-violet-800 to-violet-700 p-4 text-white sm:p-6">
+            <h3 className="text-xl font-bold">Credit Note History</h3>
+            <p className="mt-1 text-sm text-violet-100">
+              View, print and—when permitted—void posted credit notes with an audit reason.
             </p>
           </div>
 
-          <div className="hidden overflow-x-auto md:block">
+          <div className="hidden max-w-full overflow-x-auto md:block">
             <table className="w-full min-w-[920px]">
               <thead className="bg-slate-50">
                 <tr className="border-b border-slate-200 text-left">
@@ -913,7 +942,7 @@ export default function CreditNotesManager() {
                     const sale = saleById.get(note.source_sale_id);
 
                     return (
-                      <tr key={note.id} className="border-b border-slate-100 transition hover:bg-blue-50">
+                      <tr key={note.id} className="border-b border-slate-100 transition hover:bg-violet-50">
                         <td className="px-6 py-5">
                           <p className="font-bold text-slate-900">{note.credit_note_number}</p>
                           <p className="mt-1 text-xs text-slate-500">{formatDate(note.credit_note_date)}</p>
@@ -923,7 +952,7 @@ export default function CreditNotesManager() {
                           {sale ? (
                             <Link
                               href={`/sales/invoice/${sale.id}`}
-                              className="font-semibold text-blue-600 transition hover:text-blue-800 hover:underline"
+                              className="font-semibold text-violet-600 transition hover:text-violet-800 hover:underline"
                             >
                               {sale.invoice_number}
                             </Link>
@@ -942,7 +971,7 @@ export default function CreditNotesManager() {
                           </p>
                         </td>
 
-                        <td className="px-6 py-5 text-right font-bold text-purple-700">
+                        <td className="px-6 py-5 text-right font-bold text-violet-700">
                           {formatCurrency(toNumber(note.cogs_total))}
                         </td>
 
@@ -962,7 +991,7 @@ export default function CreditNotesManager() {
                           <div className="flex justify-end gap-2">
                             <Link
                               href={`/credit-notes/${note.id}`}
-                              className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+                              className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-700 transition hover:bg-violet-100"
                             >
                               View
                             </Link>
@@ -976,14 +1005,16 @@ export default function CreditNotesManager() {
                               Print
                             </Link>
 
-                            <button
-                              type="button"
-                              onClick={() => voidCreditNote(note)}
-                              disabled={note.status !== "POSTED" || isSaving}
-                              className="rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Void
-                            </button>
+                            {canVoid && (
+                              <button
+                                type="button"
+                                onClick={() => voidCreditNote(note)}
+                                disabled={note.status !== "POSTED" || isSaving}
+                                className="rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Void
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1047,7 +1078,7 @@ export default function CreditNotesManager() {
                       <div className="mt-4 grid grid-cols-2 gap-3">
                         <Link
                           href={`/credit-notes/${note.id}`}
-                          className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-center font-semibold text-blue-700 transition hover:bg-blue-100"
+                          className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-center font-semibold text-violet-700 transition hover:bg-violet-100"
                         >
                           View
                         </Link>
@@ -1062,14 +1093,16 @@ export default function CreditNotesManager() {
                         </Link>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => voidCreditNote(note)}
-                        disabled={note.status !== "POSTED" || isSaving}
-                        className="mt-3 w-full rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Void Credit Note
-                      </button>
+                      {canVoid && (
+                        <button
+                          type="button"
+                          onClick={() => voidCreditNote(note)}
+                          disabled={note.status !== "POSTED" || isSaving}
+                          className="mt-3 w-full rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Void Credit Note
+                        </button>
+                      )}
                     </article>
                   );
                 })}

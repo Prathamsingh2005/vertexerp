@@ -818,10 +818,10 @@ export default function BackupExportManager() {
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-950 text-white shadow-xl">
+      <section className="overflow-hidden rounded-3xl border border-violet-200 bg-gradient-to-br from-violet-950 via-violet-800 to-violet-600 text-white shadow-xl shadow-violet-900/20">
         <div className="grid gap-6 p-5 sm:p-7 lg:grid-cols-[1.2fr_0.8fr] lg:p-8">
           <div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 shadow-lg shadow-blue-950/50">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 shadow-lg shadow-violet-950/40">
               <HardDriveDownload className="h-6 w-6" />
             </div>
 
@@ -829,7 +829,7 @@ export default function BackupExportManager() {
               Backup &amp; Data Export Center
             </h1>
 
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-violet-100 sm:text-base">
               Create a secure, active-company-only backup of business,
               inventory, GST, payment, accounting and audit data.
             </p>
@@ -839,7 +839,7 @@ export default function BackupExportManager() {
                 type="button"
                 onClick={downloadFullBackup}
                 disabled={!canDownloadFullBackup}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-bold text-white shadow-lg transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 font-bold text-violet-700 shadow-lg transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
               >
                 <FileArchive className="h-5 w-5" />
                 Download Complete JSON
@@ -849,7 +849,7 @@ export default function BackupExportManager() {
                 type="button"
                 onClick={loadBackupData}
                 disabled={isLoading}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 font-bold text-slate-100 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-5 py-3 font-bold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
               >
                 <RefreshCw
                   className={`h-5 w-5 ${isLoading ? "animate-spin" : ""}`}
@@ -859,8 +859,8 @@ export default function BackupExportManager() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
+          <div className="rounded-3xl border border-white/20 bg-white/10/80 p-5">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-violet-200">
               Active Company
             </p>
             <p className="mt-2 break-words text-xl font-black text-white">
@@ -882,20 +882,20 @@ export default function BackupExportManager() {
       </section>
 
       {message && (
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700">
+        <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-700">
           {message}
         </div>
       )}
 
       {isLoading && (
-        <section className="rounded-3xl border border-blue-100 bg-blue-50 p-5 shadow-sm">
+        <section className="rounded-3xl border border-violet-100 bg-violet-50 p-5 shadow-sm">
           <div className="flex items-center gap-3">
-            <RefreshCw className="h-5 w-5 animate-spin text-blue-600" />
+            <RefreshCw className="h-5 w-5 animate-spin text-violet-600" />
             <div>
               <p className="font-bold text-blue-900">
                 Preparing export data
               </p>
-              <p className="mt-1 text-sm text-blue-700">{progressText}</p>
+              <p className="mt-1 text-sm text-violet-700">{progressText}</p>
             </div>
           </div>
         </section>
@@ -1032,7 +1032,7 @@ export default function BackupExportManager() {
         </section>
       )}
 
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
+      <section className="overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl shadow-violet-100/40">
         <div className="flex flex-col gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
           <div>
             <h2 className="text-xl font-black text-slate-950 sm:text-2xl">
@@ -1109,7 +1109,7 @@ export default function BackupExportManager() {
                     type="button"
                     onClick={() => downloadDatasetCsv(definition)}
                     disabled={isLoading || Boolean(error) || count === 0}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Download className="h-4 w-4" />
                     CSV
@@ -1135,7 +1135,7 @@ function InfoRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-4 rounded-xl bg-white/[0.05] px-4 py-3">
-      <span className="text-slate-400">{label}</span>
+      <span className="text-violet-200">{label}</span>
       <span
         className={`text-right font-bold ${
           green ? "text-emerald-300" : "text-white"
@@ -1172,7 +1172,7 @@ function MetricCard({
         className={`flex h-10 w-10 items-center justify-center rounded-2xl ${
           warning
             ? "bg-amber-100 text-amber-700"
-            : "bg-blue-50 text-blue-700"
+            : "bg-violet-50 text-violet-700"
         }`}
       >
         {icon}

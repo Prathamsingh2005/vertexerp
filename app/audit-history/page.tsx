@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { usePermissions } from "@/hooks/usePermissions";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import { createClient } from "@/lib/supabase/client";
@@ -107,7 +108,7 @@ function getActionClassName(action: AuditAction) {
     case "RESTORE":
       return "bg-emerald-100 text-emerald-700";
     default:
-      return "bg-blue-100 text-blue-700";
+      return "bg-violet-100 text-violet-700";
   }
 }
 
@@ -129,6 +130,16 @@ export default function AuditHistoryPage() {
   const [ledgers, setLedgers] = useState<LedgerRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
+
+  const {
+    access,
+    can,
+    error: permissionError,
+    isLoading: isPermissionLoading,
+  } = usePermissions();
+
+  const canViewAudit = can("audit.view");
+
   const [searchTerm, setSearchTerm] = useState("");
   const [entityFilter, setEntityFilter] = useState("All");
 
@@ -218,6 +229,10 @@ export default function AuditHistoryPage() {
   }
 
   useEffect(() => {
+    if (isPermissionLoading || !canViewAudit) {
+      return;
+    }
+
     loadAuditHistory();
 
     window.addEventListener(
@@ -231,7 +246,7 @@ export default function AuditHistoryPage() {
         loadAuditHistory
       );
     };
-  }, []);
+  }, [isPermissionLoading, canViewAudit]);
 
   const ledgerNameById = useMemo(
     () => new Map(ledgers.map((ledger) => [ledger.id, ledger.name])),
@@ -369,38 +384,104 @@ export default function AuditHistoryPage() {
     };
   }, [displayRows]);
 
+  if (isPermissionLoading) {
+    return (
+      <div className="flex min-h-screen bg-[#f3f6fb]">
+        <Sidebar />
+        <div className="min-w-0 flex-1 overflow-x-hidden">
+          <Navbar />
+          <main className="min-w-0 p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+            <div className="rounded-3xl border border-violet-100 bg-white p-10 text-center font-semibold text-slate-600 shadow-xl shadow-violet-100/50">
+              Loading Audit History permissions...
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (!canViewAudit) {
+    return (
+      <div className="flex min-h-screen bg-[#f3f6fb]">
+        <Sidebar />
+        <div className="min-w-0 flex-1 overflow-x-hidden">
+          <Navbar />
+          <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+            <div className="rounded-3xl border border-red-200 bg-white p-10 text-center shadow-xl">
+              <div className="text-4xl">🔒</div>
+              <h1 className="mt-4 text-2xl font-black text-slate-900">
+                Audit History access is restricted
+              </h1>
+              <p className="mx-auto mt-2 max-w-xl text-slate-600">
+                Your current role does not include the{" "}
+                <strong>audit.view</strong> permission for the active company.
+              </p>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen bg-slate-100">
+    <div className="flex min-h-screen bg-[#f3f6fb]">
       <Sidebar />
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 overflow-x-hidden">
         <Navbar />
 
         <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
-          <div className="mb-6 flex flex-col gap-5 lg:mb-8 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
-                🛡️ Audit History
-              </h1>
+          <section className="overflow-hidden rounded-[30px] bg-gradient-to-br from-violet-950 via-violet-800 to-violet-600 p-6 text-white shadow-2xl shadow-violet-900/20 sm:p-8 lg:p-10">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="max-w-3xl">
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-violet-100 backdrop-blur">
+                  <span>🛡️</span>
+                  Protected Activity Center
+                </div>
 
-              <p className="mt-2 max-w-3xl text-base text-slate-600 sm:text-lg">
-                Review protected records for deleted, updated and restored
-                business transactions.
-              </p>
+                <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
+                  Audit History
+                </h1>
+
+                <p className="mt-3 max-w-2xl text-base leading-7 text-violet-100 sm:text-lg">
+                  Review protected create, update, delete and restore events
+                  for business and accounting transactions.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
+                <div className="rounded-2xl border border-white/15 bg-slate-950/25 px-5 py-4 backdrop-blur">
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-200">
+                    Active Access
+                  </p>
+                  <p className="mt-1 text-lg font-black">
+                    {access?.roleName || "No active role"}
+                  </p>
+                  <p className="mt-1 text-sm text-violet-100">
+                    Audit viewing enabled
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={loadAuditHistory}
+                  disabled={isLoading}
+                  className="w-full rounded-xl bg-white px-5 py-3 font-black text-violet-700 shadow-lg transition hover:-translate-y-0.5 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                >
+                  {isLoading ? "Refreshing..." : "Refresh History"}
+                </button>
+              </div>
             </div>
+          </section>
 
-            <button
-              type="button"
-              onClick={loadAuditHistory}
-              disabled={isLoading}
-              className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-            >
-              {isLoading ? "Refreshing..." : "Refresh History"}
-            </button>
-          </div>
+          {permissionError && (
+            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 font-semibold text-red-700">
+              {permissionError}
+            </div>
+          )}
 
           {message && (
-            <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
+            <div className="mt-6 rounded-2xl border border-violet-200 bg-violet-50 px-5 py-4 text-sm font-semibold text-violet-700">
               {message}
             </div>
           )}
@@ -408,7 +489,7 @@ export default function AuditHistoryPage() {
           <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
             <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Total Records</p>
-              <p className="mt-3 text-3xl font-bold text-blue-600 sm:text-4xl">
+              <p className="mt-3 text-3xl font-bold text-violet-700 sm:text-4xl">
                 {isLoading ? "..." : summary.total}
               </p>
               <p className="mt-2 text-sm text-slate-500">
@@ -426,9 +507,9 @@ export default function AuditHistoryPage() {
               </p>
             </div>
 
-            <div className="rounded-3xl border border-purple-100 bg-white p-5 shadow-lg sm:p-6">
+            <div className="rounded-3xl border border-violet-100 bg-white p-5 shadow-lg sm:p-6">
               <p className="font-medium text-slate-600">Purchase Records</p>
-              <p className="mt-3 text-3xl font-bold text-purple-600 sm:text-4xl">
+              <p className="mt-3 text-3xl font-bold text-violet-700 sm:text-4xl">
                 {isLoading ? "..." : summary.purchases}
               </p>
               <p className="mt-2 text-sm text-slate-500">
@@ -454,13 +535,13 @@ export default function AuditHistoryPage() {
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 placeholder="Search invoice, bill, category or party..."
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none placeholder:text-slate-500 transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none placeholder:text-slate-500 transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               />
 
               <select
                 value={entityFilter}
                 onChange={(event) => setEntityFilter(event.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               >
                 <option value="All">All Record Types</option>
                 <option value="sale">Sales Invoices</option>
@@ -472,13 +553,13 @@ export default function AuditHistoryPage() {
           </section>
 
           <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8">
-            <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
+            <div className="flex flex-col gap-3 border-b border-violet-200 bg-gradient-to-r from-violet-950 via-violet-800 to-violet-600 px-4 py-5 text-white sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
               <div>
-                <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+                <h2 className="text-xl font-black text-white sm:text-2xl">
                   Protected Activity
                 </h2>
 
-                <p className="mt-1 text-sm text-slate-600 sm:text-base">
+                <p className="mt-1 text-sm text-violet-100 sm:text-base">
                   Audit records are retained even after the original entry is
                   deleted.
                 </p>
@@ -572,7 +653,7 @@ export default function AuditHistoryPage() {
                       </div>
 
                       <details className="mt-3 rounded-xl bg-white p-3">
-                        <summary className="cursor-pointer text-sm font-bold text-blue-700">
+                        <summary className="cursor-pointer text-sm font-bold text-violet-700">
                           View audit details
                         </summary>
 
@@ -652,7 +733,7 @@ export default function AuditHistoryPage() {
                     filteredRows.map((row) => (
                       <tr
                         key={row.id}
-                        className="border-b border-slate-100 align-top transition hover:bg-slate-50"
+                        className="border-b border-slate-100 align-top transition hover:bg-violet-50"
                       >
                         <td className="px-6 py-5 text-sm text-slate-700">
                           {formatDateTime(row.created_at)}

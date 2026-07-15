@@ -15,6 +15,7 @@ import {
   TriangleAlert,
   WalletCards,
 } from "lucide-react";
+import { usePermissions } from "@/hooks/usePermissions";
 import { createClient } from "@/lib/supabase/client";
 
 type ProductRow = {
@@ -214,6 +215,13 @@ export default function DashboardOverview() {
     useState<DashboardData>(initialDashboardData);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const { can } = usePermissions();
+
+  const canCreateSale = can("sales.create");
+  const canCreateExpense = can("expenses.create");
+  const canViewReports = can("reports.view");
+  const canViewSales = can("sales.view");
+  const canViewPurchases = can("purchase.view");
 
   function showMessage(nextMessage: string) {
     setMessage(nextMessage);
@@ -522,19 +530,19 @@ export default function DashboardOverview() {
   return (
     <>
       {message && (
-        <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mb-6 sm:text-base">
+        <div className="mb-5 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-medium text-violet-700 sm:mb-6 sm:text-base">
           {message}
         </div>
       )}
 
-      <section className="relative overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-white via-blue-50 to-indigo-100 p-4 shadow-xl shadow-blue-950/5 sm:p-6 md:p-8">
-        <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-blue-300/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-32 left-1/3 h-64 w-64 rounded-full bg-indigo-300/20 blur-3xl" />
+      <section className="relative overflow-hidden rounded-3xl border border-violet-100 bg-gradient-to-br from-white via-violet-50 to-violet-100 p-4 shadow-xl shadow-violet-950/5 sm:p-6 md:p-8">
+        <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-violet-300/20 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 left-1/3 h-64 w-64 rounded-full bg-violet-300/20 blur-3xl" />
 
         <div className="relative flex flex-col gap-5 sm:gap-7">
           <div className="flex flex-col gap-5 sm:gap-6 xl:flex-row xl:items-end xl:justify-between">
             <div className="max-w-2xl">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-700">
+              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-violet-700">
                 Business Pulse
               </p>
 
@@ -548,49 +556,48 @@ export default function DashboardOverview() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Link
-                href="/sales"
-                className="min-w-0 rounded-2xl border border-blue-200 bg-white/90 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
-              >
-                <div className="flex items-center gap-2 text-slate-900">
-                  <ShoppingCart className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm font-semibold">New Sale</span>
-                </div>
+            {(canCreateSale || canCreateExpense || canViewReports) && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {canCreateSale && (
+                  <Link
+                    href="/sales"
+                    className="min-w-0 rounded-2xl border border-violet-200 bg-white/90 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md"
+                  >
+                    <div className="flex items-center gap-2 text-slate-900">
+                      <ShoppingCart className="h-4 w-4 text-violet-600" />
+                      <span className="text-sm font-semibold">New Sale</span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">Create invoice</p>
+                  </Link>
+                )}
 
-                <p className="mt-2 text-xs text-slate-500">
-                  Create invoice
-                </p>
-              </Link>
+                {canCreateExpense && (
+                  <Link
+                    href="/expenses"
+                    className="min-w-0 rounded-2xl border border-orange-200 bg-white/90 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-md"
+                  >
+                    <div className="flex items-center gap-2 text-slate-900">
+                      <WalletCards className="h-4 w-4 text-orange-600" />
+                      <span className="text-sm font-semibold">Add Expense</span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">Record cost</p>
+                  </Link>
+                )}
 
-              <Link
-                href="/expenses"
-                className="min-w-0 rounded-2xl border border-orange-200 bg-white/90 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-md"
-              >
-                <div className="flex items-center gap-2 text-slate-900">
-                  <WalletCards className="h-4 w-4 text-orange-600" />
-                  <span className="text-sm font-semibold">Add Expense</span>
-                </div>
-
-                <p className="mt-2 text-xs text-slate-500">
-                  Record cost
-                </p>
-              </Link>
-
-              <Link
-                href="/reports"
-                className="min-w-0 rounded-2xl border border-emerald-200 bg-white/90 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md"
-              >
-                <div className="flex items-center gap-2 text-slate-900">
-                  <TrendingUp className="h-4 w-4 text-emerald-600" />
-                  <span className="text-sm font-semibold">View Reports</span>
-                </div>
-
-                <p className="mt-2 text-xs text-slate-500">
-                  Analyze profit
-                </p>
-              </Link>
-            </div>
+                {canViewReports && (
+                  <Link
+                    href="/reports"
+                    className="min-w-0 rounded-2xl border border-emerald-200 bg-white/90 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md"
+                  >
+                    <div className="flex items-center gap-2 text-slate-900">
+                      <TrendingUp className="h-4 w-4 text-emerald-600" />
+                      <span className="text-sm font-semibold">View Reports</span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">Analyze profit</p>
+                  </Link>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 gap-3 border-t border-slate-200 pt-5 sm:grid-cols-3 sm:pt-6">
@@ -599,7 +606,7 @@ export default function DashboardOverview() {
                 Monthly Revenue
               </p>
 
-              <p className="mt-1 text-2xl font-bold text-blue-700">
+              <p className="mt-1 text-2xl font-bold text-violet-700">
                 {loadingValue(formatCurrency(dashboardData.monthlyRevenue))}
               </p>
             </div>
@@ -635,13 +642,13 @@ export default function DashboardOverview() {
       </section>
 
       <section className="mt-6 grid grid-cols-1 gap-4 sm:mt-8 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3">
-        <div className="group rounded-3xl border border-blue-100 bg-white p-4 shadow-lg shadow-blue-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
+        <div className="group rounded-3xl border border-violet-100 bg-white p-4 shadow-lg shadow-violet-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
           <div className="flex items-start justify-between">
-            <div className="rounded-2xl bg-blue-50 p-3 text-blue-600">
+            <div className="rounded-2xl bg-violet-50 p-3 text-violet-600">
               <TrendingUp className="h-6 w-6" />
             </div>
 
-            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
+            <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-bold text-violet-700">
               This Month
             </span>
           </div>
@@ -728,13 +735,13 @@ export default function DashboardOverview() {
           </p>
         </div>
 
-        <div className="group rounded-3xl border border-purple-100 bg-white p-4 shadow-lg shadow-purple-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
+        <div className="group rounded-3xl border border-violet-100 bg-white p-4 shadow-lg shadow-violet-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
           <div className="flex items-start justify-between">
-            <div className="rounded-2xl bg-purple-50 p-3 text-purple-600">
+            <div className="rounded-2xl bg-violet-50 p-3 text-violet-600">
               <ReceiptText className="h-6 w-6" />
             </div>
 
-            <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-bold text-purple-700">
+            <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-bold text-violet-700">
               This Month
             </span>
           </div>
@@ -752,13 +759,13 @@ export default function DashboardOverview() {
           </p>
         </div>
 
-        <div className="group rounded-3xl border border-indigo-100 bg-white p-4 shadow-lg shadow-indigo-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
+        <div className="group rounded-3xl border border-violet-100 bg-white p-4 shadow-lg shadow-violet-950/5 transition duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
           <div className="flex items-start justify-between">
             <div
               className="rounded-2xl p-3"
               style={{
-                backgroundColor: "#eef2ff",
-                color: "#4f46e5",
+                backgroundColor: "#f5f3ff",
+                color: "#7c3aed",
               }}
             >
               <Package className="h-6 w-6" />
@@ -767,8 +774,8 @@ export default function DashboardOverview() {
             <span
               className="rounded-full px-3 py-1 text-xs font-bold"
               style={{
-                backgroundColor: "#eef2ff",
-                color: "#4338ca",
+                backgroundColor: "#f5f3ff",
+                color: "#6d28d9",
               }}
             >
               Inventory
@@ -825,7 +832,7 @@ export default function DashboardOverview() {
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-950/5 xl:col-span-2">
           <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 md:px-8 md:py-6">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet-600">
                 Live Activity
               </p>
 
@@ -870,19 +877,20 @@ export default function DashboardOverview() {
                 {dashboardData.recentTransactions.map((transaction) => {
                   const isSale = transaction.type === "sale";
                   const isPurchase = transaction.type === "purchase";
-                  const linkHref = isSale
-                    ? `/sales/invoice/${transaction.targetId}`
-                    : isPurchase
-                      ? `/purchase/bill/${transaction.targetId}`
-                      : null;
+                  const linkHref =
+                    isSale && canViewSales
+                      ? `/sales/invoice/${transaction.targetId}`
+                      : isPurchase && canViewPurchases
+                        ? `/purchase/bill/${transaction.targetId}`
+                        : null;
 
                   const transactionTitle = linkHref ? (
                     <Link
                       href={linkHref}
                       className={`block truncate font-bold transition hover:underline ${
                         isSale
-                          ? "text-blue-600 hover:text-blue-800"
-                          : "text-purple-600 hover:text-purple-800"
+                          ? "text-violet-600 hover:text-violet-800"
+                          : "text-violet-600 hover:text-violet-800"
                       }`}
                     >
                       {transaction.title}
@@ -904,7 +912,7 @@ export default function DashboardOverview() {
                             isSale
                               ? "bg-emerald-100 text-emerald-700"
                               : isPurchase
-                                ? "bg-purple-100 text-purple-700"
+                                ? "bg-violet-100 text-violet-700"
                                 : "bg-orange-100 text-orange-700"
                           }`}
                         >
@@ -932,7 +940,7 @@ export default function DashboardOverview() {
                             color: isSale
                               ? "#16a34a"
                               : isPurchase
-                                ? "#9333ea"
+                                ? "#7c3aed"
                                 : "#ea580c",
                           }}
                         >
@@ -957,7 +965,7 @@ export default function DashboardOverview() {
             <div>
               <p
                 className="text-sm font-semibold uppercase tracking-[0.18em]"
-                style={{ color: "#4f46e5" }}
+                style={{ color: "#7c3aed" }}
               >
                 Business Health
               </p>
@@ -970,8 +978,8 @@ export default function DashboardOverview() {
             <div
               className="rounded-2xl p-3"
               style={{
-                backgroundColor: "#eef2ff",
-                color: "#4f46e5",
+                backgroundColor: "#f5f3ff",
+                color: "#7c3aed",
               }}
             >
               <Box className="h-5 w-5" />
@@ -984,7 +992,7 @@ export default function DashboardOverview() {
                 Sales Revenue
               </span>
 
-              <span className="font-bold text-blue-700">
+              <span className="font-bold text-violet-700">
                 {loadingValue(formatCurrency(dashboardData.monthlyRevenue))}
               </span>
             </div>
@@ -994,7 +1002,7 @@ export default function DashboardOverview() {
                 Cost of Goods Sold
               </span>
 
-              <span className="font-bold text-purple-700">
+              <span className="font-bold text-violet-700">
                 {loadingValue(
                   formatCurrency(dashboardData.monthlyCogs)
                 )}
@@ -1036,37 +1044,39 @@ export default function DashboardOverview() {
           <div
             className="mt-5 rounded-2xl border p-4 sm:mt-6 sm:p-5"
             style={{
-              backgroundColor: "#eff6ff",
-              borderColor: "#bfdbfe",
+              backgroundColor: "#f5f3ff",
+              borderColor: "#ddd6fe",
             }}
           >
-            <p className="font-semibold" style={{ color: "#1e3a8a" }}>
+            <p className="font-semibold" style={{ color: "#4c1d95" }}>
               Inventory Value
             </p>
 
             <p
               className="mt-2 text-3xl font-bold"
-              style={{ color: "#2563eb" }}
+              style={{ color: "#7c3aed" }}
             >
               {loadingValue(formatCurrency(dashboardData.stockValue))}
             </p>
 
             <p
               className="mt-2 text-sm leading-6"
-              style={{ color: "#1d4ed8" }}
+              style={{ color: "#6d28d9" }}
             >
               Current stock value based on weighted-average inventory
               value.
             </p>
           </div>
 
-          <Link
-            href="/reports"
-            className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 px-5 py-3 font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 sm:mt-6"
-          >
-            Open Accounting Reports
-            <ArrowUpRight className="h-4 w-4" />
-          </Link>
+          {canViewReports && (
+            <Link
+              href="/reports"
+              className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-violet-200 px-5 py-3 font-semibold text-violet-700 transition hover:border-violet-300 hover:bg-violet-50 sm:mt-6"
+            >
+              Open Accounting Reports
+              <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          )}
         </aside>
       </section>
     </>

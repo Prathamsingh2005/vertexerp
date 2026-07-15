@@ -36,6 +36,9 @@ type CompanyRow = {
 
 type LedgerManagerProps = {
   searchQuery?: string;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
 };
 
 const LEDGER_SELECT =
@@ -69,6 +72,9 @@ function isValidGstin(value: string) {
 
 export default function LedgerManager({
   searchQuery = "",
+  canCreate,
+  canEdit,
+  canDelete,
 }: LedgerManagerProps) {
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(
@@ -276,6 +282,16 @@ export default function LedgerManager({
   }
 
   async function saveLedger(ledgerInput: LedgerInput) {
+    if (editingLedgerId && !canEdit) {
+      showMessage("You do not have permission to edit ledgers.");
+      return false;
+    }
+
+    if (!editingLedgerId && !canCreate) {
+      showMessage("You do not have permission to create ledgers.");
+      return false;
+    }
+
     if (!activeCompanyId) {
       showMessage("Select an active company before creating a ledger.");
       return false;
@@ -367,6 +383,11 @@ export default function LedgerManager({
   }
 
   function startEditLedger(ledger: Ledger) {
+    if (!canEdit) {
+      showMessage("You do not have permission to edit ledgers.");
+      return;
+    }
+
     setEditingLedgerId(ledger.id);
     setMessage("");
 
@@ -384,6 +405,11 @@ export default function LedgerManager({
   }
 
   async function deleteLedger(ledgerId: string) {
+    if (!canDelete) {
+      showMessage("You do not have permission to delete ledgers.");
+      return;
+    }
+
     const shouldDelete = window.confirm(
       "Delete this ledger? This action cannot be undone."
     );
@@ -426,21 +452,21 @@ export default function LedgerManager({
 
   return (
     <>
-      <section className="mt-6 rounded-3xl border border-blue-100 bg-blue-50 p-4 sm:mt-8 sm:p-5">
+      <section className="mt-6 overflow-hidden rounded-3xl border border-violet-200 bg-gradient-to-r from-violet-950 via-violet-800 to-violet-700 p-5 text-white shadow-xl shadow-violet-900/15 sm:mt-8 sm:p-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <p className="text-sm font-bold text-blue-800">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-200">
               Active Company
             </p>
 
-            <p className="mt-2 break-words text-lg font-bold text-slate-900 sm:text-xl">
+            <p className="mt-2 break-words text-xl font-black text-white sm:text-2xl">
               {isLoading
                 ? "Loading company..."
                 : activeCompanyName || "No active company selected"}
             </p>
 
             {activeCompanyId && (
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 text-sm text-violet-100">
                 {activeCompanyState || "Company state not configured"}
                 {activeCompanyStateCode
                   ? ` · State Code ${activeCompanyStateCode}`
@@ -450,7 +476,7 @@ export default function LedgerManager({
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <span className="w-fit rounded-full bg-white px-3 py-1.5 text-xs font-bold text-blue-700 shadow-sm">
+            <span className="w-fit rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-black text-white backdrop-blur">
               {activeCompanyId
                 ? "Ledgers are saved in cloud"
                 : "Select a company first"}
@@ -474,28 +500,32 @@ export default function LedgerManager({
       </section>
 
       {message && (
-        <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mt-6 sm:text-base">
+        <div className="mt-5 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-800 sm:mt-6 sm:text-base">
           {message}
         </div>
       )}
 
-      <div
-        className={
-          !activeCompanyId && !isLoading
-            ? "pointer-events-none opacity-60"
-            : ""
-        }
-      >
-        <LedgerForm
-          onSaveLedger={saveLedger}
-          editingLedger={editingLedger}
-          onCancelEdit={cancelEditLedger}
-          isSaving={isSaving}
-        />
-      </div>
+      {(canCreate || editingLedger) && (
+        <div
+          className={
+            !activeCompanyId && !isLoading
+              ? "pointer-events-none opacity-60"
+              : ""
+          }
+        >
+          <LedgerForm
+            onSaveLedger={saveLedger}
+            editingLedger={editingLedger}
+            onCancelEdit={cancelEditLedger}
+            isSaving={isSaving}
+            canCreate={canCreate}
+            canEdit={canEdit}
+          />
+        </div>
+      )}
 
       {isLoading ? (
-        <div className="mt-6 rounded-3xl border border-slate-100 bg-white p-6 text-center text-slate-500 shadow-xl sm:mt-10 sm:p-10">
+        <div className="mt-6 rounded-3xl border border-violet-100 bg-white p-6 text-center text-slate-500 shadow-xl shadow-slate-200/60 sm:mt-10 sm:p-10">
           Loading ledgers from the cloud database...
         </div>
       ) : (
@@ -503,6 +533,9 @@ export default function LedgerManager({
           ledgers={filteredLedgers}
           onEditLedger={startEditLedger}
           onDeleteLedger={deleteLedger}
+          canCreate={canCreate}
+          canEdit={canEdit}
+          canDelete={canDelete}
         />
       )}
     </>

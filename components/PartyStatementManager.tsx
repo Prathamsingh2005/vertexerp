@@ -14,6 +14,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { usePermissions } from "@/hooks/usePermissions";
 import { createClient } from "@/lib/supabase/client";
 
 type PartyType = "Customer" | "Supplier";
@@ -284,6 +285,14 @@ function getDocumentBadgeClass(documentType: StatementTransaction["documentType"
 }
 
 export default function PartyStatementManager() {
+  const { can } = usePermissions();
+  const canViewLedgers = can("ledgers.view");
+  const canViewSales = can("sales.view");
+  const canViewPurchases = can("purchase.view");
+  const canViewPayments = can("payments.view");
+  const canViewCreditNotes = can("credit_notes.view");
+  const canViewDebitNotes = can("debit_notes.view");
+
   const financialYear = useMemo(() => getCurrentFinancialYearDates(), []);
 
   const [company, setCompany] = useState<CompanyRow | null>(null);
@@ -891,6 +900,40 @@ export default function PartyStatementManager() {
     window.print();
   }
 
+  function canOpenTransaction(row: StatementRow) {
+    if (!row.href) {
+      return false;
+    }
+
+    if (row.documentType === "INVOICE") {
+      return canViewSales;
+    }
+
+    if (row.documentType === "BILL") {
+      return canViewPurchases;
+    }
+
+    if (row.documentType === "RECEIPT" || row.documentType === "PAYMENT") {
+      return canViewPayments;
+    }
+
+    if (row.documentType === "CREDIT_NOTE") {
+      return canViewCreditNotes;
+    }
+
+    if (row.documentType === "DEBIT_NOTE") {
+      return canViewDebitNotes;
+    }
+
+    if (row.documentType === "SETTLEMENT") {
+      return row.href.startsWith("/sales/")
+        ? canViewSales
+        : canViewPurchases;
+    }
+
+    return false;
+  }
+
   const contactLine = selectedParty
     ? [selectedParty.mobile, selectedParty.email].filter(Boolean).join(" · ")
     : "";
@@ -905,7 +948,7 @@ export default function PartyStatementManager() {
     : "";
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <style jsx global>{`
         @media print {
           @page {
@@ -949,10 +992,10 @@ export default function PartyStatementManager() {
         }
       `}</style>
 
-      <section className="party-statement-no-print rounded-3xl border border-indigo-100 bg-gradient-to-br from-slate-950 via-indigo-950 to-indigo-700 p-5 text-white shadow-xl sm:p-7">
+      <section className="party-statement-no-print rounded-3xl border border-violet-100 bg-gradient-to-br from-slate-950 via-violet-950 to-violet-700 p-5 text-white shadow-xl sm:p-7">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="flex items-center gap-2 text-indigo-200">
+            <div className="flex items-center gap-2 text-violet-200">
               <BookOpenCheck className="h-5 w-5" />
               <p className="text-sm font-black uppercase tracking-[0.18em]">
                 Party Accounts
@@ -963,7 +1006,7 @@ export default function PartyStatementManager() {
               Customer &amp; Supplier Statements
             </h1>
 
-            <p className="mt-3 max-w-3xl leading-7 text-indigo-100">
+            <p className="mt-3 max-w-3xl leading-7 text-violet-100">
               Review opening balance, invoices, bills, receipts, payments,
               return notes and running balances from one statement center.
             </p>
@@ -973,7 +1016,7 @@ export default function PartyStatementManager() {
             type="button"
             onClick={loadStatementData}
             disabled={isLoading}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 font-black text-indigo-700 shadow-lg transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 font-black text-violet-700 shadow-lg transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto"
           >
             <RefreshCw
               className={`h-5 w-5 ${isLoading ? "animate-spin" : ""}`}
@@ -998,7 +1041,7 @@ export default function PartyStatementManager() {
             <select
               value={partyType}
               onChange={(event) => changePartyType(event.target.value as PartyType)}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
             >
               <option value="Customer">Customer</option>
               <option value="Supplier">Supplier</option>
@@ -1013,7 +1056,7 @@ export default function PartyStatementManager() {
               value={selectedPartyId}
               onChange={(event) => setSelectedPartyId(event.target.value)}
               disabled={isLoading || visibleParties.length === 0}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {visibleParties.length === 0 ? (
                 <option value="">No {partyType.toLowerCase()} ledger found</option>
@@ -1029,13 +1072,20 @@ export default function PartyStatementManager() {
           </div>
 
           <div className="flex items-end">
-            <Link
-              href="/ledger"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 font-bold text-slate-700 transition hover:bg-slate-50"
-            >
-              <Users className="h-5 w-5" />
-              Manage Ledgers
-            </Link>
+            {canViewLedgers ? (
+              <Link
+                href="/ledger"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-5 py-3 font-bold text-violet-700 transition hover:bg-violet-100"
+              >
+                <Users className="h-5 w-5" />
+                Manage Ledgers
+              </Link>
+            ) : (
+              <div className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-5 py-3 font-bold text-slate-500">
+                <Users className="h-5 w-5" />
+                Ledger access restricted
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -1050,7 +1100,7 @@ export default function PartyStatementManager() {
               type="date"
               value={fromDate}
               onChange={(event) => setFromDate(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
             />
           </div>
 
@@ -1062,14 +1112,14 @@ export default function PartyStatementManager() {
               type="date"
               value={toDate}
               onChange={(event) => setToDate(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
             />
           </div>
 
           <button
             type="button"
             onClick={applyDateFilter}
-            className="rounded-xl bg-indigo-600 px-6 py-3 font-bold text-white transition hover:bg-indigo-700"
+            className="rounded-xl bg-violet-600 px-6 py-3 font-bold text-white transition hover:bg-violet-700"
           >
             Generate Statement
           </button>
@@ -1142,7 +1192,7 @@ export default function PartyStatementManager() {
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 placeholder="Document number, description, mode or reference"
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 py-3 pl-12 pr-4 text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 py-3 pl-12 pr-4 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
               />
             </div>
           </div>
@@ -1156,7 +1206,7 @@ export default function PartyStatementManager() {
               onChange={(event) =>
                 setDocumentFilter(event.target.value as DocumentFilter)
               }
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
             >
               <option value="ALL">All Transactions</option>
               {partyType === "Customer" ? (
@@ -1201,7 +1251,7 @@ export default function PartyStatementManager() {
         <div className="border-b border-slate-200 p-5 sm:p-7">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-sm font-black uppercase tracking-[0.18em] text-indigo-600">
+              <p className="text-sm font-black uppercase tracking-[0.18em] text-violet-600">
                 {company?.name || "VertexERP Company"}
               </p>
               <h2 className="mt-2 text-2xl font-black text-slate-900 sm:text-3xl">
@@ -1255,8 +1305,8 @@ export default function PartyStatementManager() {
               </p>
             </div>
 
-            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-indigo-600">
+            <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-violet-600">
                 Statement For
               </p>
               <p className="mt-2 text-lg font-black text-slate-900">
@@ -1297,7 +1347,7 @@ export default function PartyStatementManager() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="max-w-full overflow-x-auto">
           <table className="party-statement-table w-full min-w-[1250px]">
             <thead className="bg-slate-50">
               <tr>
@@ -1373,7 +1423,7 @@ export default function PartyStatementManager() {
                 filteredRows.map((row) => (
                   <tr
                     key={row.key}
-                    className="border-b border-slate-100 transition hover:bg-indigo-50/50"
+                    className="border-b border-slate-100 transition hover:bg-violet-50/50"
                   >
                     <td className="whitespace-nowrap px-5 py-4 text-slate-700">
                       {formatDate(row.date)}
@@ -1414,10 +1464,10 @@ export default function PartyStatementManager() {
                       {formatBalance(row.runningBalance)}
                     </td>
                     <td className="party-statement-no-print px-5 py-4">
-                      {row.href ? (
+                      {row.href && canOpenTransaction(row) ? (
                         <Link
                           href={row.href}
-                          className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                          className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-700 transition hover:bg-violet-100"
                         >
                           View
                           <ExternalLink className="h-4 w-4" />
@@ -1442,7 +1492,7 @@ export default function PartyStatementManager() {
                 <td className="px-5 py-5 text-right font-black text-emerald-700">
                   {formatCurrency(periodTotals.credit)}
                 </td>
-                <td className="px-5 py-5 text-right font-black text-indigo-700">
+                <td className="px-5 py-5 text-right font-black text-violet-700">
                   {formatBalance(closingBalance)}
                 </td>
                 <td className="party-statement-no-print px-5 py-5" />
@@ -1511,7 +1561,7 @@ function StatementSummaryBox({
     <div
       className={`rounded-2xl border p-4 ${
         emphasized
-          ? "border-indigo-200 bg-indigo-50"
+          ? "border-violet-200 bg-violet-50"
           : "border-slate-200 bg-slate-50"
       }`}
     >
@@ -1520,7 +1570,7 @@ function StatementSummaryBox({
       </p>
       <p
         className={`mt-2 font-black ${
-          emphasized ? "text-indigo-700" : "text-slate-900"
+          emphasized ? "text-violet-700" : "text-slate-900"
         }`}
       >
         {value}

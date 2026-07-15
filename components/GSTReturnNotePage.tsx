@@ -13,6 +13,7 @@ import ProfessionalGSTReturnDocument, {
   type GSTReturnTotals,
 } from "@/components/ProfessionalGSTReturnDocument";
 import Sidebar from "@/components/Sidebar";
+import { usePermissions } from "@/hooks/usePermissions";
 import { createClient } from "@/lib/supabase/client";
 
 type ProfileRow = {
@@ -247,7 +248,31 @@ export default function GSTReturnNotePage({
   const backHref = isCredit ? "/credit-notes" : "/debit-notes";
   const documentName = isCredit ? "Credit Note" : "Debit Note";
 
+  const {
+    can,
+    error: permissionError,
+    isLoading: isPermissionLoading,
+  } = usePermissions();
+
+  const canViewDocument = isCredit
+    ? can("credit_notes.view")
+    : can("debit_notes.view");
+
   useEffect(() => {
+    if (isPermissionLoading) {
+      return;
+    }
+
+    if (!canViewDocument) {
+      setDocumentData(null);
+      setErrorMessage(
+        permissionError ||
+          `You do not have permission to view this ${documentName.toLowerCase()}.`
+      );
+      setIsLoading(false);
+      return;
+    }
+
     async function loadDocument() {
       setIsLoading(true);
       setErrorMessage("");
@@ -587,7 +612,14 @@ export default function GSTReturnNotePage({
     }
 
     loadDocument();
-  }, [documentName, isCredit, noteId]);
+  }, [
+    canViewDocument,
+    documentName,
+    isCredit,
+    isPermissionLoading,
+    noteId,
+    permissionError,
+  ]);
 
   useEffect(() => {
     if (!documentData || hasAutoPrinted.current) {
@@ -610,7 +642,7 @@ export default function GSTReturnNotePage({
     return () => window.clearTimeout(timer);
   }, [documentData]);
 
-  if (isLoading) {
+  if (isPermissionLoading || isLoading) {
     return (
       <ApplicationShell>
         <StatusCard
@@ -623,7 +655,7 @@ export default function GSTReturnNotePage({
   if (!documentData) {
     return (
       <ApplicationShell>
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-lg sm:p-10">
+        <div className="rounded-3xl border border-violet-100 bg-white p-6 text-center shadow-lg sm:p-10">
           <h1 className="text-2xl font-bold text-slate-900">
             {documentName} Not Found
           </h1>
@@ -635,7 +667,7 @@ export default function GSTReturnNotePage({
 
           <Link
             href={backHref}
-            className="mt-6 inline-block rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700"
+            className="mt-6 inline-block rounded-xl bg-violet-700 px-6 py-3 font-semibold text-white transition hover:bg-violet-800"
           >
             Back to {isCredit ? "Credit Notes" : "Debit Notes"}
           </Link>
@@ -695,12 +727,12 @@ function ApplicationShell({
         }
       `}</style>
 
-      <div className="erp-return-page flex min-h-screen bg-slate-100">
+      <div className="erp-return-page flex min-h-screen bg-[#f3f6fb]">
         <div className="erp-return-sidebar">
           <Sidebar />
         </div>
 
-        <div className="erp-return-content min-w-0 flex-1">
+        <div className="erp-return-content min-w-0 flex-1 overflow-x-hidden">
           <div className="erp-return-navbar">
             <Navbar />
           </div>
@@ -722,7 +754,7 @@ function ApplicationShell({
 
 function StatusCard({ text }: { text: string }) {
   return (
-    <div className="rounded-3xl border border-slate-100 bg-white p-6 text-center shadow-xl sm:p-10">
+    <div className="rounded-3xl border border-violet-100 bg-white p-6 text-center shadow-xl sm:p-10">
       <p className="text-lg font-semibold text-slate-700">
         {text}
       </p>

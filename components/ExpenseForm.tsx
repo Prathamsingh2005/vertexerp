@@ -29,6 +29,11 @@ type EditableExpense = {
   description: string;
 };
 
+type ExpenseFormProps = {
+  canCreateExpense: boolean;
+  canEditExpense: boolean;
+};
+
 function getTodayDate() {
   return new Date().toISOString().split("T")[0];
 }
@@ -39,7 +44,10 @@ function formatCurrency(amount: number) {
   })}`;
 }
 
-export default function ExpenseForm() {
+export default function ExpenseForm({
+  canCreateExpense,
+  canEditExpense,
+}: ExpenseFormProps) {
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [activeCompanyName, setActiveCompanyName] = useState("");
   const [isLoadingCompany, setIsLoadingCompany] = useState(true);
@@ -172,6 +180,14 @@ export default function ExpenseForm() {
         return;
       }
 
+      if (!canEditExpense) {
+        showMessage(
+          "error",
+          "You do not have permission to edit expense entries."
+        );
+        return;
+      }
+
       setEditingExpense(expense);
       setDate(expense.date);
       setCategory(expense.category || "Other");
@@ -194,10 +210,20 @@ export default function ExpenseForm() {
         handleEditExpense
       );
     };
-  }, []);
+  }, [canEditExpense]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (editingExpense ? !canEditExpense : !canCreateExpense) {
+      showMessage(
+        "error",
+        editingExpense
+          ? "You do not have permission to edit expense entries."
+          : "You do not have permission to create expense entries."
+      );
+      return;
+    }
 
     if (!activeCompanyId) {
       showMessage(
@@ -265,18 +291,29 @@ export default function ExpenseForm() {
     ? categories
     : [category, ...categories];
 
+  const canSubmitCurrentExpense = editingExpense
+    ? canEditExpense
+    : canCreateExpense;
+
   const isFormDisabled =
-    isLoadingCompany || !activeCompanyId || isSaving;
+    isLoadingCompany ||
+    !activeCompanyId ||
+    isSaving ||
+    !canSubmitCurrentExpense;
+
+  if (!canCreateExpense && !editingExpense) {
+    return null;
+  }
 
   return (
     <section
       id="expense-entry-form"
-      className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
+      className="min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl shadow-slate-200/60"
     >
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-900 px-4 py-5 text-white sm:px-6 sm:py-6 md:px-8 md:py-7">
+      <div className="bg-gradient-to-r from-violet-950 via-violet-900 to-violet-700 px-4 py-5 text-white sm:px-6 sm:py-6 md:px-8 md:py-7">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-200">
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-200">
               Expense Entry
             </p>
 
@@ -319,8 +356,8 @@ export default function ExpenseForm() {
         )}
 
         {activeCompanyId && (
-          <div className="mb-5 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 sm:mb-6">
-            <p className="text-sm font-semibold text-blue-700">
+          <div className="mb-5 rounded-xl border border-violet-100 bg-violet-50 px-4 py-3 sm:mb-6">
+            <p className="text-sm font-semibold text-violet-700">
               Saving expense for
             </p>
 
@@ -346,7 +383,7 @@ export default function ExpenseForm() {
                     type="date"
                     value={date}
                     onChange={(event) => setDate(event.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-violet-500 focus:ring-4 focus:ring-violet-100"
                   />
                 </div>
 
@@ -358,7 +395,7 @@ export default function ExpenseForm() {
                   <select
                     value={category}
                     onChange={(event) => setCategory(event.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-violet-500 focus:ring-4 focus:ring-violet-100"
                   >
                     {categoryOptions.map((item) => (
                       <option key={item}>{item}</option>
@@ -374,7 +411,7 @@ export default function ExpenseForm() {
                     </span>
                   </label>
 
-                  <div className="flex overflow-hidden rounded-xl border border-slate-300 bg-white transition focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-100">
+                  <div className="flex overflow-hidden rounded-xl border border-slate-300 bg-white transition focus-within:border-violet-500 focus-within:ring-4 focus-within:ring-violet-100">
                     <span className="flex items-center border-r border-slate-200 bg-slate-50 px-4 font-bold text-slate-600">
                       ₹
                     </span>
@@ -399,7 +436,7 @@ export default function ExpenseForm() {
                   <select
                     value={paymentMode}
                     onChange={(event) => setPaymentMode(event.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition focus:border-violet-500 focus:ring-4 focus:ring-violet-100"
                   >
                     {paymentModes.map((item) => (
                       <option key={item}>{item}</option>
@@ -418,7 +455,7 @@ export default function ExpenseForm() {
                   placeholder="Example: Office electricity bill for July"
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
-                  className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-100"
                 />
               </div>
             </div>
@@ -457,8 +494,8 @@ export default function ExpenseForm() {
                   </p>
                 </div>
 
-                <div className="rounded-xl bg-blue-600 p-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-100">
+                <div className="rounded-xl bg-violet-600 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-100">
                     Total
                   </p>
                   <p className="mt-1 text-lg font-bold text-white">
@@ -509,7 +546,7 @@ export default function ExpenseForm() {
                     Total Expense
                   </p>
 
-                  <p className="mt-1 text-2xl font-bold text-blue-600">
+                  <p className="mt-1 text-2xl font-bold text-violet-600">
                     {formatCurrency(expenseAmount)}
                   </p>
                 </div>
@@ -552,7 +589,7 @@ export default function ExpenseForm() {
             <button
               type="submit"
               disabled={isFormDisabled}
-              className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-7"
+              className="w-full rounded-xl bg-violet-600 px-5 py-3 font-semibold text-white shadow-lg shadow-violet-600/20 transition hover:bg-violet-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-7"
             >
               {isSaving
                 ? editingExpense

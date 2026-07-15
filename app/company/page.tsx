@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Sidebar from "@/components/Sidebar";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Navbar from "@/components/Navbar";
+import Sidebar from "@/components/Sidebar";
 import CompanyManager from "@/components/CompanyManager";
+import { usePermissions } from "@/hooks/usePermissions";
 import { createClient } from "@/lib/supabase/client";
 
 type CompanyStatRow = {
@@ -17,7 +18,25 @@ export default function CompanyPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
-  async function loadCompanyStats() {
+  const {
+    access,
+    can,
+    error: permissionError,
+    isLoading: isPermissionLoading,
+  } = usePermissions();
+
+  const canViewCompanies = can("company.view");
+  // Creating a new company is account-level and protected by the
+  // companies_owner_insert RLS policy, not by an active-company permission.
+  const canCreateCompany = true;
+
+  const loadCompanyStats = useCallback(async () => {
+    if (!canViewCompanies) {
+      setCompanies([]);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -35,28 +54,35 @@ export default function CompanyPage() {
       const { data, error } = await supabase
         .from("companies")
         .select("id, gst_number, created_at")
-        .eq("owner_id", user.id);
+        .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      setCompanies(data || []);
+      if (error) {
+        throw error;
+      }
+
+      setCompanies((data || []) as CompanyStatRow[]);
     } catch {
       setCompanies([]);
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [canViewCompanies]);
 
   useEffect(() => {
+    if (isPermissionLoading || !canViewCompanies) {
+      return;
+    }
+
     loadCompanyStats();
     window.addEventListener("smarterp-companies-updated", loadCompanyStats);
 
     return () => {
       window.removeEventListener(
         "smarterp-companies-updated",
-        loadCompanyStats
+        loadCompanyStats,
       );
     };
-  }, []);
+  }, [canViewCompanies, isPermissionLoading, loadCompanyStats]);
 
   const currentMonthCompanies = useMemo(() => {
     const today = new Date();
@@ -72,8 +98,9 @@ export default function CompanyPage() {
   }, [companies]);
 
   const gstRegisteredCompanies = useMemo(
-    () => companies.filter((company) => Boolean(company.gst_number?.trim())).length,
-    [companies]
+    () =>
+      companies.filter((company) => Boolean(company.gst_number?.trim())).length,
+    [companies],
   );
 
   function scrollToCompanyForm() {
@@ -84,81 +111,128 @@ export default function CompanyPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-100">
+    <div className="flex min-h-screen bg-[#f3f6fb]">
       <Sidebar />
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 overflow-x-hidden">
         <Navbar />
 
-        <main className="p-4 sm:p-6 lg:p-8">
-          <section className="mb-6 lg:mb-8">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
-                  🏢 Company Management
+        <main className="min-w-0 p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+          <section className="overflow-hidden rounded-[30px] bg-gradient-to-br from-violet-950 via-violet-800 to-violet-600 p-6 text-white shadow-2xl shadow-violet-900/20 sm:p-8 lg:p-10">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="max-w-3xl">
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-violet-100 backdrop-blur">
+                  <span>🏢</span>
+                  Workspace Administration
+                </div>
+
+                <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
+                  Company Management
                 </h1>
 
-                <p className="mt-2 max-w-3xl text-base text-slate-600 sm:text-lg">
-                  Create, manage and organize all your companies from one place.
+                <p className="mt-3 max-w-2xl text-base leading-7 text-violet-100 sm:text-lg">
+                  Create, organize and manage every company available to your
+                  current role.
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={scrollToCompanyForm}
-                className="w-full rounded-xl bg-blue-600 px-6 py-3 font-bold text-white shadow-lg transition hover:bg-blue-700 hover:shadow-xl active:scale-[0.98] sm:w-fit"
-              >
-                + Add Company
-              </button>
+              <div className="flex flex-col gap-3 sm:flex-row lg:flex-col lg:items-stretch">
+                <div className="rounded-2xl border border-white/15 bg-slate-950/25 px-5 py-4 backdrop-blur">
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-200">
+                    Active Access
+                  </p>
+                  <p className="mt-1 text-lg font-black">
+                    {isPermissionLoading
+                      ? "Loading..."
+                      : access?.roleName || "No active role"}
+                  </p>
+                  <p className="mt-1 text-sm text-violet-100">
+                    {canViewCompanies
+                      ? "Company viewing enabled"
+                      : "Create your own company"}
+                  </p>
+                </div>
+
+                {canCreateCompany && !isPermissionLoading && (
+                  <button
+                    type="button"
+                    onClick={scrollToCompanyForm}
+                    className="w-full rounded-xl border border-white/25 bg-white/10 px-6 py-3 text-center font-bold text-white backdrop-blur transition hover:bg-white/20 sm:w-auto"
+                  >
+                    + Add Company
+                  </button>
+                )}
+              </div>
             </div>
           </section>
 
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
-            <StatCard
-              label="Total Companies"
-              value={isLoading ? "..." : companies.length}
-              detail="Companies saved in your cloud account"
-              valueClassName="text-blue-600"
-              borderClassName="border-blue-100"
-            />
-            <StatCard
-              label="Active Companies"
-              value={isLoading ? "..." : companies.length}
-              detail="Companies ready for business transactions"
-              valueClassName="text-emerald-600"
-              borderClassName="border-emerald-100"
-            />
-            <StatCard
-              label="GST Registered"
-              value={isLoading ? "..." : gstRegisteredCompanies}
-              detail="Companies with GST details added"
-              valueClassName="text-purple-700"
-              borderClassName="border-purple-100"
-            />
-            <StatCard
-              label="This Month"
-              value={isLoading ? "..." : currentMonthCompanies}
-              detail="Companies added during the current month"
-              valueClassName="text-orange-600"
-              borderClassName="border-orange-100"
-            />
-          </section>
+          {permissionError && (
+            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 font-semibold text-red-700">
+              {permissionError}
+            </div>
+          )}
 
-          <section className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:mt-8 sm:p-5 lg:mt-10 lg:p-6">
-            <label className="mb-3 block font-semibold text-slate-800">
-              Search Companies
-            </label>
+          {isPermissionLoading ? (
+            <div className="mt-6 rounded-3xl border border-violet-100 bg-white p-8 text-center font-semibold text-slate-600 shadow-xl shadow-violet-100/50">
+              Loading company permissions...
+            </div>
+          ) : !canViewCompanies && !canCreateCompany ? (
+            <div className="mt-6 rounded-3xl border border-red-200 bg-white p-8 text-center shadow-xl">
+              <div className="text-4xl">🔒</div>
+              <h2 className="mt-4 text-2xl font-black text-slate-900">
+                Company access is restricted
+              </h2>
+              <p className="mx-auto mt-2 max-w-xl text-slate-600">
+                Your current role does not include the company.view permission
+                for this workspace.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-6 min-w-0 space-y-6 sm:mt-8">
+              <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
+                <StatCard
+                  label="Total Companies"
+                  value={isLoading ? "..." : companies.length}
+                  detail="Companies available to your current account"
+                  valueClassName="text-violet-700"
+                />
+                <StatCard
+                  label="Active Companies"
+                  value={isLoading ? "..." : companies.length}
+                  detail="Companies ready for business transactions"
+                  valueClassName="text-emerald-600"
+                />
+                <StatCard
+                  label="GST Registered"
+                  value={isLoading ? "..." : gstRegisteredCompanies}
+                  detail="Companies with GST details added"
+                  valueClassName="text-violet-700"
+                />
+                <StatCard
+                  label="This Month"
+                  value={isLoading ? "..." : currentMonthCompanies}
+                  detail="Companies added during the current month"
+                  valueClassName="text-orange-600"
+                />
+              </section>
 
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search by company name, GST, PAN, city, email or phone..."
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-sm placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 sm:px-5 sm:py-4 sm:placeholder:text-base"
-            />
-          </section>
+              <section className="rounded-3xl border border-violet-100 bg-white p-4 shadow-xl shadow-violet-100/40 sm:p-5 lg:p-6">
+                <label className="mb-3 block font-semibold text-slate-800">
+                  Search Companies
+                </label>
 
-          <CompanyManager searchQuery={searchQuery} />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search by company name, GST, PAN, city, email or phone..."
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition placeholder:text-sm placeholder:text-slate-500 focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100 sm:px-5 sm:py-4 sm:placeholder:text-base"
+                />
+              </section>
+
+              <CompanyManager searchQuery={searchQuery} />
+            </div>
+          )}
         </main>
       </div>
     </div>
@@ -170,18 +244,16 @@ function StatCard({
   value,
   detail,
   valueClassName,
-  borderClassName,
 }: {
   label: string;
   value: string | number;
   detail: string;
   valueClassName: string;
-  borderClassName: string;
 }) {
   return (
-    <div className={`rounded-3xl border bg-white p-5 shadow-lg sm:p-6 ${borderClassName}`}>
+    <div className="rounded-3xl border border-violet-100 bg-white p-5 shadow-lg shadow-violet-100/40 sm:p-6">
       <p className="font-medium text-slate-600">{label}</p>
-      <h2 className={`mt-3 text-3xl font-bold sm:text-4xl ${valueClassName}`}>
+      <h2 className={`mt-3 break-words text-3xl font-bold sm:text-4xl ${valueClassName}`}>
         {value}
       </h2>
       <p className="mt-2 text-sm text-slate-500">{detail}</p>

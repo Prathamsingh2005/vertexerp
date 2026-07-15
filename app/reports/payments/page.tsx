@@ -1,23 +1,26 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
-import Sidebar from "@/components/Sidebar";
-import Navbar from "@/components/Navbar";
+import Link from "next/link";
+import {
+  Download,
+  RefreshCw,
+  Search,
+  WalletCards,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import ReportPageShell from "@/components/ReportPageShell";
+import { usePermissions } from "@/hooks/usePermissions";
 import { createClient } from "@/lib/supabase/client";
-import ConfirmDeleteModal from "@/components/ConfirmDeleteModal";
 
 type PaymentType = "Customer Receipt" | "Supplier Payment";
 
-type SaleRow = {
-  customer_id: string | null;
-  payment_mode: string;
-  grand_total: number | string | null;
+type ProfileRow = {
+  active_company_id: string | null;
 };
 
-type PurchaseRow = {
-  supplier_id: string | null;
-  payment_mode: string;
-  grand_total: number | string | null;
+type LedgerRow = {
+  id: string;
+  name: string;
 };
 
 type PaymentRow = {
@@ -32,16 +35,9 @@ type PaymentRow = {
   created_at: string;
 };
 
-type LedgerRow = {
-  id: string;
-  name: string;
-  ledger_type: string;
-};
-
-type Payment = {
+type PaymentReportItem = {
   id: string;
   type: PaymentType;
-  partyId: string;
   partyName: string;
   date: string;
   amount: number;
@@ -51,44 +47,26 @@ type Payment = {
   createdAt: string;
 };
 
-type PartyBalance = {
-  id: string;
-  name: string;
-  totalCredit: number;
-  paidAmount: number;
-  outstanding: number;
-};
-
-type ProfileRow = {
-  active_company_id: string | null;
-};
-
 function toNumber(value: unknown) {
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function formatCurrency(amount: number) {
-  return `₹${toNumber(amount).toLocaleString("en-IN")}`;
+function formatCurrency(value: number) {
+  return `₹${toNumber(value).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
 }
 
-function isCreditPayment(paymentMode: string) {
-  return String(paymentMode || "").trim().toLowerCase() === "credit";
-}
-
-function getToday() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function formatDate(dateValue: string) {
-  if (!dateValue) {
-    return "Not available";
+function formatDate(value: string) {
+  if (!value) {
+    return "—";
   }
 
-  const date = new Date(`${dateValue}T00:00:00`);
+  const date = new Date(`${value}T00:00:00`);
 
   if (Number.isNaN(date.getTime())) {
-    return dateValue;
+    return value;
   }
 
   return date.toLocaleDateString("en-IN", {
@@ -98,104 +76,76 @@ function formatDate(dateValue: string) {
   });
 }
 
-function getBalances(
-  entries: {
-    partyId: string;
-    partyName: string;
-    amount: number;
-  }[],
-  paymentType: PaymentType,
-  payments: Payment[]
-) {
-  const balanceMap = new Map<string, PartyBalance>();
+function csvEscape(value: unknown) {
+  const text = String(value ?? "");
 
-  entries.forEach((entry) => {
-    const existingParty = balanceMap.get(entry.partyId);
+  if (text.includes(",") || text.includes('"') || text.includes("\n")) {
+    return `"${text.replaceAll('"', '""')}"`;
+  }
 
-    if (existingParty) {
-      existingParty.totalCredit += entry.amount;
-      return;
-    }
-
-    balanceMap.set(entry.partyId, {
-      id: entry.partyId,
-      name: entry.partyName,
-      totalCredit: entry.amount,
-      paidAmount: 0,
-      outstanding: 0,
-    });
-  });
-
-  payments
-    .filter((payment) => payment.type === paymentType)
-    .forEach((payment) => {
-      const party = balanceMap.get(payment.partyId);
-
-      if (party) {
-        party.paidAmount += toNumber(payment.amount);
-      }
-    });
-
-  return Array.from(balanceMap.values())
-    .map((party) => ({
-      ...party,
-      paidAmount: Math.min(party.paidAmount, party.totalCredit),
-      outstanding: Math.max(0, party.totalCredit - party.paidAmount),
-    }))
-    .sort((first, second) => second.outstanding - first.outstanding);
+  return text;
 }
 
-export default function PaymentsPage() {
-  const [sales, setSales] = useState<SaleRow[]>([]);
-  const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [ledgers, setLedgers] = useState<LedgerRow[]>([]);
-  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
-  const [isDeletingPayment, setIsDeletingPayment] = useState(false);
-  const [paymentPendingDeletion, setPaymentPendingDeletion] =
-    useState<Payment | null>(null);
-  const [message, setMessage] = useState("");
-
-  const [form, setForm] = useState({
-    type: "Customer Receipt" as PaymentType,
-    partyId: "",
-    date: getToday(),
-    amount: "",
-    paymentMode: "Cash",
-    referenceNumber: "",
-    notes: "",
+function downloadCsv(filename: string, rows: unknown[][]) {
+  const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+  const blob = new Blob(["\uFEFF", csv], {
+    type: "text/csv;charset=utf-8",
   });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+export default function PaymentReportPage() {
+  return (
+    <ReportPageShell
+      requiredPermission="reports.view"
+      title="Payment Report"
+      eyebrow="Cash Flow Analytics"
+      description="Review customer receipts, supplier payments, payment modes, references and filtered cash movement."
+      icon="💳"
+    >
+      <PaymentReportContent />
+    </ReportPageShell>
+  );
+}
+
+function PaymentReportContent() {
+  const { can } = usePermissions();
+  const canViewPayments = can("payments.view");
+
+  const [payments, setPayments] = useState<PaymentReportItem[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"ALL" | PaymentType>("ALL");
+  const [modeFilter, setModeFilter] = useState("ALL");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [message, setMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
   function showMessage(nextMessage: string) {
     setMessage(nextMessage);
-
-    window.setTimeout(() => {
-      setMessage("");
-    }, 4000);
+    window.setTimeout(() => setMessage(""), 4500);
   }
 
-  async function loadData() {
+  async function loadPayments() {
     setIsLoading(true);
 
     try {
       const supabase = createClient();
-
       const {
         data: { user },
         error: userError,
       } = await supabase.auth.getUser();
 
       if (userError || !user) {
-        setSales([]);
-        setPurchases([]);
-        setPayments([]);
-        setLedgers([]);
-        setActiveCompanyId(null);
-        showMessage("Please sign in before recording payments.");
-        return;
+        throw new Error("Please sign in to view the payment report.");
       }
 
       const { data: profile, error: profileError } = await supabase
@@ -211,51 +161,26 @@ export default function PaymentsPage() {
       const companyId =
         (profile as ProfileRow | null)?.active_company_id || null;
 
-      setActiveCompanyId(companyId);
-
       if (!companyId) {
-        setSales([]);
-        setPurchases([]);
-        setPayments([]);
-        setLedgers([]);
-        showMessage("Select an active company from the Companies page first.");
-        return;
+        throw new Error(
+          "Select an active company from the Companies page first."
+        );
       }
 
-      const [
-        salesResponse,
-        purchasesResponse,
-        paymentsResponse,
-        ledgersResponse,
-      ] = await Promise.all([
-        supabase
-          .from("sales")
-          .select("customer_id, payment_mode, grand_total")
-          .eq("company_id", companyId),
-        supabase
-          .from("purchases")
-          .select("supplier_id, payment_mode, grand_total")
-          .eq("company_id", companyId),
+      const [paymentsResponse, ledgersResponse] = await Promise.all([
         supabase
           .from("payments")
           .select(
             "id, payment_type, party_id, payment_date, amount, payment_mode, reference_number, notes, created_at"
           )
           .eq("company_id", companyId)
+          .order("payment_date", { ascending: false })
           .order("created_at", { ascending: false }),
         supabase
           .from("ledgers")
-          .select("id, name, ledger_type")
+          .select("id, name")
           .eq("company_id", companyId),
       ]);
-
-      if (salesResponse.error) {
-        throw salesResponse.error;
-      }
-
-      if (purchasesResponse.error) {
-        throw purchasesResponse.error;
-      }
 
       if (paymentsResponse.error) {
         throw paymentsResponse.error;
@@ -265,21 +190,18 @@ export default function PaymentsPage() {
         throw ledgersResponse.error;
       }
 
-      const nextLedgers = (ledgersResponse.data || []) as LedgerRow[];
-      const ledgerNameById = new Map(
-        nextLedgers.map((ledger) => [ledger.id, ledger.name])
+      const ledgerNames = new Map(
+        ((ledgersResponse.data || []) as LedgerRow[]).map((ledger) => [
+          ledger.id,
+          ledger.name,
+        ])
       );
 
-      setSales((salesResponse.data || []) as SaleRow[]);
-      setPurchases((purchasesResponse.data || []) as PurchaseRow[]);
-      setLedgers(nextLedgers);
       setPayments(
         ((paymentsResponse.data || []) as PaymentRow[]).map((payment) => ({
           id: payment.id,
           type: payment.payment_type,
-          partyId: payment.party_id,
-          partyName:
-            ledgerNameById.get(payment.party_id) || "Unknown Party",
+          partyName: ledgerNames.get(payment.party_id) || "Unknown Party",
           date: payment.payment_date,
           amount: toNumber(payment.amount),
           paymentMode: payment.payment_mode || "Cash",
@@ -289,15 +211,11 @@ export default function PaymentsPage() {
         }))
       );
     } catch (error) {
-      setSales([]);
-      setPurchases([]);
       setPayments([]);
-      setLedgers([]);
-
       showMessage(
         error instanceof Error
           ? error.message
-          : "Payment data could not be loaded from the cloud database."
+          : "Payment report data could not be loaded."
       );
     } finally {
       setIsLoading(false);
@@ -305,949 +223,447 @@ export default function PaymentsPage() {
   }
 
   useEffect(() => {
-    loadData();
+    loadPayments();
 
-    window.addEventListener(
-      "vertexerp-sales-updated",
-      loadData
-    );
-    window.addEventListener(
-      "vertexerp-purchases-updated",
-      loadData
-    );
-    window.addEventListener(
+    const refreshEvents = [
       "vertexerp-payments-updated",
-      loadData
-    );
-    window.addEventListener(
       "vertexerp-active-company-updated",
-      loadData
-    );
+    ];
+
+    refreshEvents.forEach((eventName) => {
+      window.addEventListener(eventName, loadPayments);
+    });
 
     return () => {
-      window.removeEventListener(
-        "vertexerp-sales-updated",
-        loadData
-      );
-      window.removeEventListener(
-        "vertexerp-purchases-updated",
-        loadData
-      );
-      window.removeEventListener(
-        "vertexerp-payments-updated",
-        loadData
-      );
-      window.removeEventListener(
-        "vertexerp-active-company-updated",
-        loadData
-      );
+      refreshEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, loadPayments);
+      });
     };
   }, []);
 
-  const ledgerNameById = useMemo(() => {
-    return new Map(ledgers.map((ledger) => [ledger.id, ledger.name]));
-  }, [ledgers]);
-
-  const customerCreditEntries = useMemo(() => {
-    return sales
-      .filter((sale) => isCreditPayment(sale.payment_mode))
-      .filter((sale) => Boolean(sale.customer_id))
-      .map((sale) => ({
-        partyId: sale.customer_id as string,
-        partyName:
-          ledgerNameById.get(sale.customer_id as string) ||
-          "Unknown Customer",
-        amount: toNumber(sale.grand_total),
-      }));
-  }, [sales, ledgerNameById]);
-
-  const supplierCreditEntries = useMemo(() => {
-    return purchases
-      .filter((purchase) => isCreditPayment(purchase.payment_mode))
-      .filter((purchase) => Boolean(purchase.supplier_id))
-      .map((purchase) => ({
-        partyId: purchase.supplier_id as string,
-        partyName:
-          ledgerNameById.get(purchase.supplier_id as string) ||
-          "Unknown Supplier",
-        amount: toNumber(purchase.grand_total),
-      }));
-  }, [purchases, ledgerNameById]);
-
-  const customerBalanceSummary = useMemo(() => {
-    return getBalances(
-      customerCreditEntries,
-      "Customer Receipt",
-      payments
-    );
-  }, [customerCreditEntries, payments]);
-
-  const supplierBalanceSummary = useMemo(() => {
-    return getBalances(
-      supplierCreditEntries,
-      "Supplier Payment",
-      payments
-    );
-  }, [supplierCreditEntries, payments]);
-
-  const customerBalances = useMemo(
+  const availableModes = useMemo(
     () =>
-      customerBalanceSummary.filter((party) => party.outstanding > 0),
-    [customerBalanceSummary]
+      Array.from(
+        new Set(payments.map((payment) => payment.paymentMode).filter(Boolean))
+      ).sort(),
+    [payments]
   );
 
-  const supplierBalances = useMemo(
-    () =>
-      supplierBalanceSummary.filter((party) => party.outstanding > 0),
-    [supplierBalanceSummary]
-  );
+  const filteredPayments = useMemo(() => {
+    const search = searchTerm.trim().toLowerCase();
 
-  const partyOptions = useMemo(() => {
-    const balances =
-      form.type === "Customer Receipt"
-        ? customerBalanceSummary
-        : supplierBalanceSummary;
+    return payments.filter((payment) => {
+      const matchesSearch =
+        !search ||
+        payment.partyName.toLowerCase().includes(search) ||
+        payment.referenceNumber.toLowerCase().includes(search) ||
+        payment.notes.toLowerCase().includes(search) ||
+        payment.paymentMode.toLowerCase().includes(search);
 
-    return balances.filter((party) => {
-      const originalAmountForParty =
-        editingPayment &&
-        editingPayment.type === form.type &&
-        editingPayment.partyId === party.id
-          ? editingPayment.amount
-          : 0;
+      const matchesType =
+        typeFilter === "ALL" || payment.type === typeFilter;
+      const matchesMode =
+        modeFilter === "ALL" || payment.paymentMode === modeFilter;
+      const matchesFromDate = !fromDate || payment.date >= fromDate;
+      const matchesToDate = !toDate || payment.date <= toDate;
 
-      return party.outstanding + originalAmountForParty > 0;
+      return (
+        matchesSearch &&
+        matchesType &&
+        matchesMode &&
+        matchesFromDate &&
+        matchesToDate
+      );
     });
-  }, [
-    customerBalanceSummary,
-    editingPayment,
-    form.type,
-    supplierBalanceSummary,
-  ]);
+  }, [payments, searchTerm, typeFilter, modeFilter, fromDate, toDate]);
 
-  const selectedParty = partyOptions.find(
-    (party) => party.id === form.partyId
-  );
+  const totalReceipts = filteredPayments
+    .filter((payment) => payment.type === "Customer Receipt")
+    .reduce((total, payment) => total + payment.amount, 0);
 
-  const selectedPartyAvailableAmount = selectedParty
-    ? selectedParty.outstanding +
-      (editingPayment &&
-      editingPayment.type === form.type &&
-      editingPayment.partyId === selectedParty.id
-        ? editingPayment.amount
-        : 0)
-    : 0;
+  const totalSupplierPayments = filteredPayments
+    .filter((payment) => payment.type === "Supplier Payment")
+    .reduce((total, payment) => total + payment.amount, 0);
 
-  const totalReceivable = customerBalances.reduce(
-    (total, customer) => total + customer.outstanding,
-    0
-  );
+  const netCashMovement = totalReceipts - totalSupplierPayments;
 
-  const totalPayable = supplierBalances.reduce(
-    (total, supplier) => total + supplier.outstanding,
-    0
-  );
+  const averagePayment =
+    filteredPayments.length > 0
+      ? filteredPayments.reduce(
+          (total, payment) => total + payment.amount,
+          0
+        ) / filteredPayments.length
+      : 0;
 
-  function resetForm(paymentType: PaymentType = "Customer Receipt") {
-    setForm({
-      type: paymentType,
-      partyId: "",
-      date: getToday(),
-      amount: "",
-      paymentMode: "Cash",
-      referenceNumber: "",
-      notes: "",
-    });
+  function resetFilters() {
+    setSearchTerm("");
+    setTypeFilter("ALL");
+    setModeFilter("ALL");
+    setFromDate("");
+    setToDate("");
   }
 
-  function startEditingPayment(payment: Payment) {
-    setEditingPayment(payment);
-    setForm({
-      type: payment.type,
-      partyId: payment.partyId,
-      date: payment.date,
-      amount: String(payment.amount),
-      paymentMode: payment.paymentMode,
-      referenceNumber: payment.referenceNumber,
-      notes: payment.notes,
-    });
+  function exportPayments() {
+    const rows: unknown[][] = [
+      [
+        "Date",
+        "Type",
+        "Party",
+        "Payment Mode",
+        "Reference",
+        "Amount",
+        "Notes",
+      ],
+      ...filteredPayments.map((payment) => [
+        payment.date,
+        payment.type,
+        payment.partyName,
+        payment.paymentMode,
+        payment.referenceNumber,
+        payment.amount,
+        payment.notes,
+      ]),
+      [],
+      ["Customer Receipts", totalReceipts],
+      ["Supplier Payments", totalSupplierPayments],
+      ["Net Cash Movement", netCashMovement],
+    ];
 
-    window.setTimeout(() => {
-      document
-        .getElementById("payment-entry-form")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 0);
+    downloadCsv(
+      `vertexerp-payment-report-${fromDate || "all"}-${toDate || "all"}.csv`,
+      rows
+    );
   }
-
-  function cancelPaymentEdit() {
-    setEditingPayment(null);
-    resetForm();
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const paymentAmount = toNumber(form.amount);
-
-    if (!activeCompanyId) {
-      showMessage(
-        editingPayment
-          ? "Select an active company before updating a payment."
-          : "Select an active company before recording a payment."
-      );
-      return;
-    }
-
-    if (!selectedParty) {
-      showMessage("Please select a customer or supplier.");
-      return;
-    }
-
-    if (!form.date) {
-      showMessage("Please select a payment date.");
-      return;
-    }
-
-    if (paymentAmount <= 0) {
-      showMessage("Enter a valid payment amount.");
-      return;
-    }
-
-    if (paymentAmount > selectedPartyAvailableAmount) {
-      showMessage(
-        `Payment cannot exceed available amount of ${formatCurrency(
-          selectedPartyAvailableAmount
-        )}.`
-      );
-      return;
-    }
-
-    setIsSaving(true);
-
-    try {
-      const supabase = createClient();
-
-      const { error } = editingPayment
-        ? await supabase.rpc("update_payment_with_validation", {
-            p_payment_id: editingPayment.id,
-            p_payment_type: form.type,
-            p_party_id: selectedParty.id,
-            p_payment_date: form.date,
-            p_amount: paymentAmount,
-            p_payment_mode: form.paymentMode,
-            p_reference_number: form.referenceNumber.trim(),
-            p_notes: form.notes.trim(),
-          })
-        : await supabase.rpc("create_payment_with_validation", {
-            p_company_id: activeCompanyId,
-            p_payment_type: form.type,
-            p_party_id: selectedParty.id,
-            p_payment_date: form.date,
-            p_amount: paymentAmount,
-            p_payment_mode: form.paymentMode,
-            p_reference_number: form.referenceNumber.trim(),
-            p_notes: form.notes.trim(),
-          });
-
-      if (error) {
-        throw error;
-      }
-
-      const successMessage = editingPayment
-        ? `Payment of ${formatCurrency(paymentAmount)} updated successfully.`
-        : `${form.type} of ${formatCurrency(
-            paymentAmount
-          )} saved successfully.`;
-
-      setEditingPayment(null);
-      resetForm();
-      await loadData();
-
-      window.dispatchEvent(new Event("vertexerp-payments-updated"));
-      showMessage(successMessage);
-    } catch (error) {
-      showMessage(
-        error instanceof Error
-          ? error.message
-          : editingPayment
-            ? "Payment could not be updated."
-            : "Payment could not be saved."
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function confirmDeletePayment() {
-    const payment = paymentPendingDeletion;
-
-    if (!payment || isDeletingPayment) {
-      return;
-    }
-
-    setIsDeletingPayment(true);
-
-    try {
-      const supabase = createClient();
-
-      const { error } = await supabase.rpc("delete_payment_entry", {
-        p_payment_id: payment.id,
-      });
-
-      if (error) {
-        throw error;
-      }
-
-      await loadData();
-      window.dispatchEvent(new Event("vertexerp-payments-updated"));
-
-      setPaymentPendingDeletion(null);
-
-      showMessage(
-        `Payment of ${formatCurrency(payment.amount)} deleted successfully.`
-      );
-    } catch (error) {
-      showMessage(
-        error instanceof Error
-          ? error.message
-          : "Payment could not be deleted."
-      );
-    } finally {
-      setIsDeletingPayment(false);
-    }
-  }
-
-  const isFormDisabled = isLoading || !activeCompanyId || isSaving;
 
   return (
-    <div className="flex min-h-screen bg-slate-100">
-      <Sidebar />
+    <div className="min-w-0 space-y-6">
+      {message && (
+        <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 font-medium text-violet-700">
+          {message}
+        </div>
+      )}
 
-      <div className="min-w-0 flex-1">
-        <Navbar />
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <article className="rounded-3xl border border-violet-100 bg-gradient-to-br from-white to-violet-50/60 p-5 shadow-xl shadow-violet-100/40 sm:p-6">
+          <p className="font-medium text-slate-600">Customer Receipts</p>
+          <p className="mt-3 break-words text-3xl font-black text-emerald-600 sm:text-4xl">
+            {isLoading ? "..." : formatCurrency(totalReceipts)}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            Money received from customers
+          </p>
+        </article>
 
-        <main className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
-          <div className="mb-6 lg:mb-8">
-            <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
-              💳 Record Payment
-            </h1>
+        <article className="rounded-3xl border border-violet-100 bg-gradient-to-br from-white to-violet-50/60 p-5 shadow-xl shadow-violet-100/40 sm:p-6">
+          <p className="font-medium text-slate-600">Supplier Payments</p>
+          <p className="mt-3 break-words text-3xl font-black text-violet-700 sm:text-4xl">
+            {isLoading ? "..." : formatCurrency(totalSupplierPayments)}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            Money paid to suppliers
+          </p>
+        </article>
 
-            <p className="mt-2 text-base text-slate-600 sm:text-lg">
-              Record customer receipts and supplier payments.
+        <article className="rounded-3xl border border-violet-100 bg-gradient-to-br from-white to-violet-50/60 p-5 shadow-xl shadow-violet-100/40 sm:p-6">
+          <p className="font-medium text-slate-600">Net Cash Movement</p>
+          <p
+            className={`mt-3 break-words text-3xl font-black sm:text-4xl ${
+              netCashMovement >= 0 ? "text-emerald-600" : "text-red-600"
+            }`}
+          >
+            {isLoading ? "..." : formatCurrency(Math.abs(netCashMovement))}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            {netCashMovement >= 0 ? "Net inflow" : "Net outflow"} in filtered
+            entries
+          </p>
+        </article>
+
+        <article className="rounded-3xl border border-violet-100 bg-gradient-to-br from-white to-violet-50/60 p-5 shadow-xl shadow-violet-100/40 sm:p-6">
+          <p className="font-medium text-slate-600">Average Entry</p>
+          <p className="mt-3 break-words text-3xl font-black text-violet-700 sm:text-4xl">
+            {isLoading ? "..." : formatCurrency(averagePayment)}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            Across {filteredPayments.length} filtered entries
+          </p>
+        </article>
+      </section>
+
+      <section className="rounded-3xl border border-violet-100 bg-white p-4 shadow-xl shadow-violet-100/40 sm:p-6">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="relative md:col-span-2">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+            <input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search party, reference, mode or notes..."
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 py-3 pl-12 pr-4 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
+            />
+          </div>
+
+          <select
+            value={typeFilter}
+            onChange={(event) =>
+              setTypeFilter(event.target.value as "ALL" | PaymentType)
+            }
+            className="rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
+          >
+            <option value="ALL">All Payment Types</option>
+            <option value="Customer Receipt">Customer Receipts</option>
+            <option value="Supplier Payment">Supplier Payments</option>
+          </select>
+
+          <select
+            value={modeFilter}
+            onChange={(event) => setModeFilter(event.target.value)}
+            className="rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
+          >
+            <option value="ALL">All Modes</option>
+            {availableModes.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="rounded-xl border border-slate-300 bg-white px-5 py-3 font-bold text-slate-700 transition hover:bg-slate-50"
+          >
+            Reset Filters
+          </button>
+
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(event) => setFromDate(event.target.value)}
+            className="rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
+          />
+
+          <input
+            type="date"
+            value={toDate}
+            onChange={(event) => setToDate(event.target.value)}
+            className="rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
+          />
+
+          <button
+            type="button"
+            onClick={loadPayments}
+            disabled={isLoading}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-5 py-3 font-bold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshCw className={`h-5 w-5 ${isLoading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+
+          <button
+            type="button"
+            onClick={exportPayments}
+            disabled={isLoading || filteredPayments.length === 0}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 font-bold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Download className="h-5 w-5" />
+            Export CSV
+          </button>
+
+          {canViewPayments ? (
+            <Link
+              href="/payments"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 font-bold text-slate-700 transition hover:bg-slate-50"
+            >
+              <WalletCards className="h-5 w-5" />
+              Open Payment Center
+            </Link>
+          ) : (
+            <div className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-5 py-3 font-bold text-slate-500">
+              <WalletCards className="h-5 w-5" />
+              Payment access restricted
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl shadow-violet-100/40">
+        <div className="flex flex-col gap-3 border-b border-violet-200 bg-gradient-to-r from-violet-950 via-violet-800 to-violet-600 px-4 py-5 text-white sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
+          <div>
+            <h2 className="text-xl font-black text-white sm:text-2xl">
+              Payment Entries
+            </h2>
+            <p className="mt-1 text-sm text-violet-100 sm:text-base">
+              {isLoading
+                ? "Loading payment report..."
+                : `${filteredPayments.length} entr${
+                    filteredPayments.length === 1 ? "y" : "ies"
+                  } found`}
             </p>
           </div>
 
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
-            <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-lg sm:p-6">
-              <p className="font-medium text-slate-600">
-                Customer Receivable
-              </p>
+          <span className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold text-white backdrop-blur">
+            Net: {isLoading ? "..." : formatCurrency(netCashMovement)}
+          </span>
+        </div>
 
-              <h2
-                className="mt-3 break-words text-3xl font-bold sm:text-4xl"
-                style={{ color: "#2563eb" }}
-              >
-                {isLoading ? "..." : formatCurrency(totalReceivable)}
-              </h2>
+        <div className="p-4 md:hidden">
+          {isLoading ? (
+            <p className="py-10 text-center text-sm text-slate-500">
+              Loading payment report...
+            </p>
+          ) : filteredPayments.length === 0 ? (
+            <p className="py-10 text-center text-sm text-slate-500">
+              No payment entries match the selected filters.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {filteredPayments.map((payment) => {
+                const isReceipt = payment.type === "Customer Receipt";
 
-              <p className="mt-2 text-sm text-slate-500">
-                Pending amount to collect from customers
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-purple-100 bg-white p-5 shadow-lg sm:p-6">
-              <p className="font-medium text-slate-600">
-                Supplier Payable
-              </p>
-
-              <h2
-                className="mt-3 break-words text-3xl font-bold sm:text-4xl"
-                style={{ color: "#7e22ce" }}
-              >
-                {isLoading ? "..." : formatCurrency(totalPayable)}
-              </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                Pending amount payable to suppliers
-              </p>
-            </div>
-          </section>
-
-          <form
-            id="payment-entry-form"
-            onSubmit={handleSubmit}
-            className="mt-6 rounded-3xl border border-slate-100 bg-white p-4 shadow-xl sm:mt-8 sm:p-6 lg:mt-10 lg:p-8"
-          >
-            <div className="border-b border-slate-200 pb-5 sm:pb-6">
-              <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-                {editingPayment ? "Edit Payment Entry" : "New Payment Entry"}
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-600 sm:text-base">
-                {editingPayment
-                  ? "Update this payment securely. The previous values will be retained in Audit History."
-                  : "Record a full or partial payment against credit transactions."}
-              </p>
-            </div>
-
-            {message && (
-              <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 sm:mt-6 sm:text-base">
-                {message}
-              </div>
-            )}
-
-            {editingPayment && (
-              <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 sm:mt-6 sm:text-base">
-                Editing {editingPayment.type.toLowerCase()} for{" "}
-                <strong>{editingPayment.partyName}</strong>. Save Changes to
-                retain an UPDATE record in Audit History.
-              </div>
-            )}
-
-            {!isLoading && !activeCompanyId && (
-              <div className="mt-5 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700 sm:mt-6 sm:text-base">
-                Select an active company from the <strong>Companies</strong>{" "}
-                page before recording a payment.
-              </div>
-            )}
-
-            <fieldset disabled={isFormDisabled}>
-              <div className="mt-6 grid grid-cols-1 gap-5 sm:mt-8 md:grid-cols-2 xl:grid-cols-3">
-                <div>
-                  <label className="mb-2 block font-semibold text-slate-800">
-                    Transaction Type *
-                  </label>
-
-                  <select
-                    value={form.type}
-                    onChange={(event) =>
-                      setForm((currentForm) => ({
-                        ...currentForm,
-                        type: event.target.value as PaymentType,
-                        partyId: "",
-                        amount: "",
-                      }))
-                    }
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                return (
+                  <article
+                    key={payment.id}
+                    className="rounded-2xl border border-violet-100 bg-violet-50/40 p-4"
                   >
-                    <option value="Customer Receipt">
-                      Customer Receipt
-                    </option>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-lg font-black text-slate-900">
+                          {payment.partyName}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                          {formatDate(payment.date)} · {payment.paymentMode}
+                        </p>
+                      </div>
 
-                    <option value="Supplier Payment">
-                      Supplier Payment
-                    </option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-2 block font-semibold text-slate-800">
-                    {form.type === "Customer Receipt"
-                      ? "Customer *"
-                      : "Supplier *"}
-                  </label>
-
-                  <select
-                    value={form.partyId}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        partyId: event.target.value,
-                        amount: "",
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                  >
-                    <option value="">
-                      Select{" "}
-                      {form.type === "Customer Receipt"
-                        ? "customer"
-                        : "supplier"}
-                    </option>
-
-                    {partyOptions.map((party) => (
-                      <option key={party.id} value={party.id}>
-                        {party.name} — {formatCurrency(party.outstanding)}
-                      </option>
-                    ))}
-                  </select>
-
-                  {!isLoading && partyOptions.length === 0 && (
-                    <p className="mt-2 text-sm font-medium text-orange-600">
-                      No pending outstanding balance found.
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="mb-2 block font-semibold text-slate-800">
-                    Payment Date *
-                  </label>
-
-                  <input
-                    type="date"
-                    value={form.date}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        date: event.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block font-semibold text-slate-800">
-                    Payment Amount *
-                  </label>
-
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    max={selectedPartyAvailableAmount || undefined}
-                    value={form.amount}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        amount: event.target.value,
-                      })
-                    }
-                    placeholder="Enter amount"
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block font-semibold text-slate-800">
-                    Payment Mode
-                  </label>
-
-                  <select
-                    value={form.paymentMode}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        paymentMode: event.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                  >
-                    <option>Cash</option>
-                    <option>UPI</option>
-                    <option>Bank Transfer</option>
-                    <option>Card</option>
-                    <option>Cheque</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-2 block font-semibold text-slate-800">
-                    Reference Number
-                  </label>
-
-                  <input
-                    type="text"
-                    value={form.referenceNumber}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        referenceNumber: event.target.value,
-                      })
-                    }
-                    placeholder="UPI / Cheque / Bank reference"
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                  />
-                </div>
-              </div>
-
-              {selectedParty && (
-                <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:mt-6 sm:p-5">
-                  <p className="text-sm font-bold text-emerald-800">
-                    {editingPayment
-                      ? "Available Amount For This Edit"
-                      : "Available Outstanding Balance"}
-                  </p>
-
-                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                    <p className="text-lg font-bold text-slate-900">
-                      {selectedParty.name}
-                    </p>
+                      <span
+                        className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+                          isReceipt
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-violet-100 text-violet-700"
+                        }`}
+                      >
+                        {isReceipt ? "Receipt" : "Payment"}
+                      </span>
+                    </div>
 
                     <p
-                      className="text-xl font-bold sm:text-2xl"
-                      style={{ color: "#059669" }}
+                      className={`mt-4 text-2xl font-black ${
+                        isReceipt ? "text-emerald-600" : "text-violet-700"
+                      }`}
                     >
-                      {formatCurrency(selectedPartyAvailableAmount)}
+                      {formatCurrency(payment.amount)}
                     </p>
-                  </div>
-                </div>
-              )}
 
-              <div className="mt-5 sm:mt-6">
-                <label className="mb-2 block font-semibold text-slate-800">
-                  Notes
-                </label>
-
-                <textarea
-                  rows={4}
-                  value={form.notes}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      notes: event.target.value,
-                    })
-                  }
-                  placeholder="Optional note for this payment..."
-                  className="w-full resize-none rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                />
-              </div>
-
-              <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:gap-4">
-                <button
-                  type="submit"
-                  className="w-full rounded-xl px-5 py-3 font-bold text-white shadow-lg transition hover:scale-[1.02] active:scale-[0.98] sm:w-auto sm:px-7"
-                  style={{
-                    backgroundColor: "#059669",
-                    color: "#ffffff",
-                  }}
-                >
-                  {isSaving
-                    ? editingPayment
-                      ? "Saving Changes..."
-                      : "Saving Payment..."
-                    : editingPayment
-                      ? "Save Changes"
-                      : "Save Payment"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (editingPayment) {
-                      cancelPaymentEdit();
-                    } else {
-                      resetForm();
-                    }
-                  }}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto sm:px-7"
-                >
-                  {editingPayment ? "Cancel Edit" : "Reset"}
-                </button>
-              </div>
-            </fieldset>
-          </form>
-
-          <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8 lg:mt-10">
-            <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-                  Payment History
-                </h2>
-
-                <p className="mt-1 text-sm text-slate-600 sm:text-base">
-                  Customer receipts and supplier payment entries.
-                </p>
-              </div>
-
-              <span className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700">
-                Entries: {payments.length}
-              </span>
+                    <div className="mt-3 rounded-xl bg-white p-3 text-sm text-slate-600">
+                      <p>
+                        Reference: {payment.referenceNumber || "—"}
+                      </p>
+                      {payment.notes && (
+                        <p className="mt-1 leading-6">{payment.notes}</p>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
+          )}
+        </div>
 
-            <div className="p-4 md:hidden">
+        <div className="hidden max-w-full overflow-x-auto md:block">
+          <table className="w-full min-w-[1050px] table-fixed">
+            <colgroup>
+              <col className="w-[130px]" />
+              <col className="w-[190px]" />
+              <col className="w-[220px]" />
+              <col className="w-[150px]" />
+              <col className="w-[180px]" />
+              <col className="w-[150px]" />
+              <col className="w-[260px]" />
+            </colgroup>
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200 text-left">
+                {[
+                  "Date",
+                  "Type",
+                  "Party",
+                  "Mode",
+                  "Reference",
+                  "Amount",
+                  "Notes",
+                ].map((heading) => (
+                  <th
+                    key={heading}
+                    className="px-6 py-4 text-sm font-bold text-slate-700"
+                  >
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+
+            <tbody>
               {isLoading ? (
-                <div className="py-10 text-center text-sm text-slate-500">
-                  Loading payment history from the cloud database...
-                </div>
-              ) : payments.length === 0 ? (
-                <div className="py-10 text-center text-slate-500">
-                  <p className="text-lg font-semibold text-slate-700">
-                    No payment entries yet
-                  </p>
-
-                  <p className="mt-2 text-sm">
-                    Record a receipt or supplier payment from the form above.
-                  </p>
-                </div>
+                <tr>
+                  <td colSpan={7} className="px-6 py-14 text-center text-slate-500">
+                    Loading payment report...
+                  </td>
+                </tr>
+              ) : filteredPayments.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-14 text-center text-slate-500">
+                    No payment entries match the selected filters.
+                  </td>
+                </tr>
               ) : (
-                <div className="space-y-4">
-                  {payments.map((payment) => {
-                    const isCustomerReceipt =
-                      payment.type === "Customer Receipt";
+                filteredPayments.map((payment) => {
+                  const isReceipt = payment.type === "Customer Receipt";
 
-                    return (
-                      <article
-                        key={payment.id}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-lg font-bold text-slate-900">
-                              {payment.partyName}
-                            </p>
-
-                            <p className="mt-1 text-sm text-slate-500">
-                              {formatDate(payment.date)}
-                            </p>
-                          </div>
-
-                          <span
-                            className={
-                              isCustomerReceipt
-                                ? "shrink-0 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700"
-                                : "shrink-0 rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700"
-                            }
-                          >
-                            {isCustomerReceipt ? "Receipt" : "Payment"}
-                          </span>
-                        </div>
-
-                        <div className="mt-4 grid grid-cols-2 gap-3">
-                          <div className="rounded-xl bg-white p-3">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                              Payment Mode
-                            </p>
-
-                            <p className="mt-1 font-semibold text-slate-800">
-                              {payment.paymentMode}
-                            </p>
-                          </div>
-
-                          <div className="rounded-xl bg-white p-3">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                              Amount
-                            </p>
-
-                            <p
-                              className={
-                                isCustomerReceipt
-                                  ? "mt-1 font-bold text-emerald-700"
-                                  : "mt-1 font-bold text-purple-700"
-                              }
-                            >
-                              {formatCurrency(payment.amount)}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-3 rounded-xl bg-white p-3">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            Reference
-                          </p>
-
-                          <p className="mt-1 break-words font-semibold text-slate-800">
-                            {payment.referenceNumber || "—"}
-                          </p>
-                        </div>
-
-                        {payment.notes && (
-                          <div className="mt-3 rounded-xl bg-white p-3">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                              Notes
-                            </p>
-
-                            <p className="mt-1 text-sm leading-6 text-slate-700">
-                              {payment.notes}
-                            </p>
-                          </div>
-                        )}
-
-                        <div className="mt-4 grid grid-cols-2 gap-3">
-                          <button
-                            type="button"
-                            onClick={() => startEditingPayment(payment)}
-                            className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-bold text-blue-700 transition hover:bg-blue-100"
-                          >
-                            Edit
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setPaymentPendingDeletion(payment)}
-                            className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[1050px]">
-                <thead className="bg-slate-50">
-                  <tr className="border-b border-slate-200 text-left">
-                    <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                      Date
-                    </th>
-
-                    <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                      Type
-                    </th>
-
-                    <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                      Party
-                    </th>
-
-                    <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                      Mode
-                    </th>
-
-                    <th className="px-6 py-4 text-sm font-bold text-slate-700">
-                      Reference
-                    </th>
-
-                    <th className="px-6 py-4 text-right text-sm font-bold text-slate-700">
-                      Amount
-                    </th>
-
-                    <th className="px-6 py-4 text-right text-sm font-bold text-slate-700">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {isLoading ? (
-                    <tr>
-                      <td
-                        colSpan={7}
-                        className="px-6 py-14 text-center text-slate-500"
-                      >
-                        Loading payment history from the cloud database...
+                  return (
+                    <tr
+                      key={payment.id}
+                      className="border-b border-slate-100 transition hover:bg-violet-50/60"
+                    >
+                      <td className="px-6 py-5 text-slate-700">
+                        {formatDate(payment.date)}
                       </td>
-                    </tr>
-                  ) : payments.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={7}
-                        className="px-6 py-14 text-center text-slate-500"
-                      >
-                        <p className="text-lg font-semibold text-slate-700">
-                          No payment entries yet
-                        </p>
-
-                        <p className="mt-2">
-                          Record a receipt or supplier payment from the form
-                          above.
-                        </p>
-                      </td>
-                    </tr>
-                  ) : (
-                    payments.map((payment) => {
-                      const isCustomerReceipt =
-                        payment.type === "Customer Receipt";
-
-                      return (
-                        <tr
-                          key={payment.id}
-                          className="border-b border-slate-100 transition hover:bg-slate-50"
+                      <td className="px-6 py-5">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-bold ${
+                            isReceipt
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-violet-100 text-violet-700"
+                          }`}
                         >
-                          <td className="px-6 py-5 text-slate-700">
-                            {formatDate(payment.date)}
-                          </td>
-
-                          <td className="px-6 py-5">
-                            <span
-                              className={
-                                isCustomerReceipt
-                                  ? "rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700"
-                                  : "rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700"
-                              }
-                            >
-                              {payment.type}
-                            </span>
-                          </td>
-
-                          <td className="px-6 py-5">
-                            <p className="font-bold text-slate-900">
-                              {payment.partyName}
-                            </p>
-
-                            {payment.notes && (
-                              <p className="mt-1 max-w-[220px] truncate text-sm text-slate-500">
-                                {payment.notes}
-                              </p>
-                            )}
-                          </td>
-
-                          <td className="px-6 py-5 text-slate-700">
-                            {payment.paymentMode}
-                          </td>
-
-                          <td className="px-6 py-5 text-slate-700">
-                            {payment.referenceNumber || "—"}
-                          </td>
-
-                          <td
-                            className="px-6 py-5 text-right text-lg font-bold"
-                            style={{
-                              color: isCustomerReceipt
-                                ? "#059669"
-                                : "#7e22ce",
-                            }}
-                          >
-                            {formatCurrency(payment.amount)}
-                          </td>
-
-                          <td className="px-6 py-5">
-                            <div className="flex justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => startEditingPayment(payment)}
-                                className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-100"
-                              >
-                                Edit
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setPaymentPendingDeletion(payment)}
-                                className="rounded-lg px-4 py-2 text-sm font-bold text-white transition hover:scale-[1.03] active:scale-[0.97]"
-                                style={{
-                                  backgroundColor: "#dc2626",
-                                  color: "#ffffff",
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </main>
-      </div>
-
-      <ConfirmDeleteModal
-        isOpen={Boolean(paymentPendingDeletion)}
-        title="Delete payment entry?"
-        description={
-          paymentPendingDeletion
-            ? `This will remove the ${paymentPendingDeletion.type.toLowerCase()} of ${formatCurrency(
-                paymentPendingDeletion.amount
-              )} for ${paymentPendingDeletion.partyName}.`
-            : ""
-        }
-        confirmLabel="Delete Payment"
-        isDeleting={isDeletingPayment}
-        onCancel={() => {
-          if (!isDeletingPayment) {
-            setPaymentPendingDeletion(null);
-          }
-        }}
-        onConfirm={confirmDeletePayment}
-      />
+                          {payment.type}
+                        </span>
+                      </td>
+                      <td className="px-6 py-5 font-bold text-slate-900">
+                        {payment.partyName}
+                      </td>
+                      <td className="px-6 py-5 text-slate-700">
+                        {payment.paymentMode}
+                      </td>
+                      <td className="px-6 py-5 text-slate-700">
+                        {payment.referenceNumber || "—"}
+                      </td>
+                      <td
+                        className={`px-6 py-5 text-right text-lg font-black ${
+                          isReceipt ? "text-emerald-600" : "text-violet-700"
+                        }`}
+                      >
+                        {formatCurrency(payment.amount)}
+                      </td>
+                      <td className="px-6 py-5 text-sm leading-6 text-slate-600">
+                        {payment.notes || "—"}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

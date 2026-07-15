@@ -20,6 +20,9 @@ type LedgerTableProps = {
   ledgers: Ledger[];
   onEditLedger: (ledger: Ledger) => void;
   onDeleteLedger: (id: string) => void;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
 };
 
 function isPartyLedger(group: string) {
@@ -75,22 +78,36 @@ export default function LedgerTable({
   ledgers,
   onEditLedger,
   onDeleteLedger,
+  canCreate,
+  canEdit,
+  canDelete,
 }: LedgerTableProps) {
+  const hasActions = canEdit || canDelete;
+
+  async function handleDelete(ledgerId: string) {
+    if (!canDelete) {
+      window.alert("You do not have permission to delete ledgers.");
+      return;
+    }
+
+    await onDeleteLedger(ledgerId);
+  }
+
   return (
-    <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl sm:mt-8 lg:mt-10">
-      <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
+    <section className="mt-6 min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl shadow-slate-200/60 sm:mt-8 lg:mt-10">
+      <div className="flex flex-col gap-4 bg-gradient-to-r from-violet-950 via-violet-800 to-violet-700 px-4 py-5 text-white sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 lg:py-6">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+          <h2 className="text-xl font-black text-white sm:text-2xl">
             Ledger List
           </h2>
 
-          <p className="mt-1 text-sm text-slate-600 sm:text-base">
+          <p className="mt-1 text-sm text-violet-100 sm:text-base">
             Edit Customer and Supplier State details to prepare
             automatic GST classification.
           </p>
         </div>
 
-        <div className="w-fit rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+        <div className="w-fit rounded-full bg-white/15 px-4 py-2 text-sm font-black text-white ring-1 ring-white/20">
           Total Ledgers: {ledgers.length}
         </div>
       </div>
@@ -102,7 +119,9 @@ export default function LedgerTable({
           </p>
 
           <p className="mt-2 text-sm">
-            Add your first customer, supplier or bank ledger above.
+            {canCreate
+              ? "Add your first customer, supplier or bank ledger above."
+              : "Your current role has read-only access to ledger records."}
           </p>
         </div>
       ) : (
@@ -195,31 +214,41 @@ export default function LedgerTable({
                     </div>
                   )}
 
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => onEditLedger(ledger)}
-                      className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-bold text-violet-700 transition hover:bg-violet-100"
+                  {hasActions && (
+                    <div
+                      className={`mt-4 grid gap-3 ${
+                        canEdit && canDelete ? "grid-cols-2" : "grid-cols-1"
+                      }`}
                     >
-                      Edit Ledger
-                    </button>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => onEditLedger(ledger)}
+                          className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-bold text-violet-700 transition hover:bg-violet-100"
+                        >
+                          Edit Ledger
+                        </button>
+                      )}
 
-                    <button
-                      type="button"
-                      onClick={() => onDeleteLedger(ledger.id)}
-                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
-                    >
-                      Delete Ledger
-                    </button>
-                  </div>
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(ledger.id)}
+                          className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                        >
+                          Delete Ledger
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </article>
               );
             })}
           </div>
 
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[1250px]">
-              <thead className="bg-slate-50">
+          <div className="hidden max-w-full overflow-x-auto md:block">
+            <table className="w-full min-w-[1100px]">
+              <thead className="bg-violet-50">
                 <tr className="border-b border-slate-200 text-left">
                   <Header>Ledger</Header>
                   <Header>Group</Header>
@@ -227,7 +256,7 @@ export default function LedgerTable({
                   <Header>Party State</Header>
                   <Header>GST Number</Header>
                   <Header>GST Setup</Header>
-                  <Header>Action</Header>
+                  {hasActions && <Header>Action</Header>}
                 </tr>
               </thead>
 
@@ -238,7 +267,7 @@ export default function LedgerTable({
                   return (
                     <tr
                       key={ledger.id}
-                      className="border-b border-slate-100 transition hover:bg-blue-50"
+                      className="border-b border-slate-100 transition hover:bg-violet-50/70"
                     >
                       <td className="px-6 py-5">
                         <p className="font-bold text-slate-900">
@@ -288,25 +317,31 @@ export default function LedgerTable({
                         </span>
                       </td>
 
-                      <td className="px-6 py-5">
-                        <div className="flex items-center gap-4">
-                          <button
-                            type="button"
-                            onClick={() => onEditLedger(ledger)}
-                            className="font-semibold text-violet-600 transition hover:text-violet-800"
-                          >
-                            Edit
-                          </button>
+                      {hasActions && (
+                        <td className="px-6 py-5">
+                          <div className="flex items-center gap-4">
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => onEditLedger(ledger)}
+                                className="font-semibold text-violet-600 transition hover:text-violet-800"
+                              >
+                                Edit
+                              </button>
+                            )}
 
-                          <button
-                            type="button"
-                            onClick={() => onDeleteLedger(ledger.id)}
-                            className="font-semibold text-red-500 transition hover:text-red-700"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() => void handleDelete(ledger.id)}
+                                className="font-semibold text-red-500 transition hover:text-red-700"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -321,7 +356,7 @@ export default function LedgerTable({
 
 function Header({ children }: { children: ReactNode }) {
   return (
-    <th className="px-6 py-4 text-sm font-bold text-slate-700">
+    <th className="px-6 py-4 text-sm font-black text-violet-950">
       {children}
     </th>
   );
