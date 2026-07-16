@@ -2,6 +2,10 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 function getSafeNextPath(value: string | null) {
+  if (value === "/auth/update-password") {
+    return value;
+  }
+
   if (
     value &&
     value.startsWith("/") &&

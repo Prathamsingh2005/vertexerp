@@ -343,6 +343,16 @@ export default function AuthPage() {
                       : "new-password"
                   }
                 />
+                {mode === "login" && (
+  <div className="flex justify-end">
+    <Link
+      href="/auth/forgot-password"
+      className="text-sm font-black text-[#673de6] transition hover:text-[#5025d1] hover:underline"
+    >
+      Forgot Password?
+    </Link>
+  </div>
+)}
 
                 {mode === "signup" && (
                   <PasswordField
