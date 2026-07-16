@@ -28,6 +28,7 @@ import {
   Layers3,
   LockKeyhole,
   Mail,
+  Maximize2,
   Menu,
   MessageCircle,
   MonitorSmartphone,
@@ -561,14 +562,22 @@ function ProductShowcase() {
     showcaseItems[0].id
   );
   const [isPaused, setIsPaused] = useState(false);
+  const [isImageOpen, setIsImageOpen] = useState(false);
 
   const visibleItems = useMemo(
-    () => activeGroup === "All" ? showcaseItems : showcaseItems.filter((item) => item.group === activeGroup),
+    () =>
+      activeGroup === "All"
+        ? showcaseItems
+        : showcaseItems.filter((item) => item.group === activeGroup),
     [activeGroup]
   );
 
-  const activeIndex = Math.max(0, visibleItems.findIndex((item) => item.id === activeId));
-  const activeItem = visibleItems[activeIndex] || visibleItems[0];
+  const activeIndex = Math.max(
+    0,
+    visibleItems.findIndex((item) => item.id === activeId)
+  );
+
+  const activeItem = visibleItems[activeIndex] || showcaseItems[0];
 
   useEffect(() => {
     const firstVisibleItem = visibleItems[0];
@@ -582,100 +591,454 @@ function ProductShowcase() {
   }, [activeId, visibleItems]);
 
   useEffect(() => {
-    if (isPaused || visibleItems.length < 2) return;
+    if (isPaused || isImageOpen || visibleItems.length < 2) {
+      return;
+    }
+
     const timer = window.setInterval(() => {
       setActiveId((current) => {
-        const index = visibleItems.findIndex((item) => item.id === current);
-        return visibleItems[(index < 0 ? 0 : index + 1) % visibleItems.length].id;
+        const index = visibleItems.findIndex(
+          (item) => item.id === current
+        );
+
+        const nextIndex =
+          index < 0 ? 0 : (index + 1) % visibleItems.length;
+
+        return visibleItems[nextIndex].id;
       });
     }, 4800);
+
     return () => window.clearInterval(timer);
-  }, [isPaused, visibleItems]);
+  }, [isPaused, isImageOpen, visibleItems]);
+
+  useEffect(() => {
+    if (!isImageOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsImageOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [isImageOpen]);
 
   function selectGroup(group: ShowcaseGroup) {
     setActiveGroup(group);
-    const first = group === "All" ? showcaseItems[0] : showcaseItems.find((item) => item.group === group);
-    if (first) setActiveId(first.id);
+
+    const first =
+      group === "All"
+        ? showcaseItems[0]
+        : showcaseItems.find((item) => item.group === group);
+
+    if (first) {
+      setActiveId(first.id);
+    }
   }
 
   function previous() {
-    setActiveId(visibleItems[(activeIndex - 1 + visibleItems.length) % visibleItems.length].id);
+    const previousIndex =
+      (activeIndex - 1 + visibleItems.length) % visibleItems.length;
+
+    setActiveId(visibleItems[previousIndex].id);
   }
 
   function next() {
-    setActiveId(visibleItems[(activeIndex + 1) % visibleItems.length].id);
+    const nextIndex = (activeIndex + 1) % visibleItems.length;
+    setActiveId(visibleItems[nextIndex].id);
   }
 
   const ActiveIcon = activeItem.icon;
+  const mobileProgress =
+    ((activeIndex + 1) / visibleItems.length) * 100;
 
   return (
-    <div className="mt-14" onMouseEnter={() => setIsPaused(true)} onMouseLeave={() => setIsPaused(false)}>
-      <div className="flex flex-wrap justify-center gap-2">
+    <div
+      className="mt-10 sm:mt-14"
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+      onTouchStart={() => setIsPaused(true)}
+    >
+      <div className="landing-scrollbar-none -mx-4 flex flex-nowrap justify-start gap-2 overflow-x-auto px-4 pb-2 sm:mx-0 sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0">
         {showcaseGroups.map((group) => (
-          <button key={group} type="button" onClick={() => selectGroup(group)} className={`rounded-full border px-4 py-2 text-sm font-black transition ${activeGroup === group ? "border-violet-600 bg-violet-600 text-white shadow-lg shadow-violet-200" : "border-violet-100 bg-white text-slate-600 hover:border-violet-300 hover:text-violet-700"}`}>
+          <button
+            key={group}
+            type="button"
+            onClick={() => selectGroup(group)}
+            className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black transition ${
+              activeGroup === group
+                ? "border-violet-600 bg-violet-600 text-white shadow-lg shadow-violet-200"
+                : "border-violet-100 bg-white text-slate-600 hover:border-violet-300 hover:text-violet-700"
+            }`}
+          >
             {group}
           </button>
         ))}
       </div>
 
-      <div className="mt-7 overflow-hidden rounded-[34px] border border-violet-100 bg-white shadow-[0_30px_90px_rgba(76,29,149,0.13)]">
+      <div className="mt-5 overflow-hidden rounded-[24px] border border-violet-100 bg-white shadow-[0_20px_60px_rgba(76,29,149,0.12)] sm:mt-7 sm:rounded-[34px] sm:shadow-[0_30px_90px_rgba(76,29,149,0.13)]">
         <div className="grid lg:grid-cols-[310px_minmax(0,1fr)]">
-          <aside className="border-b border-violet-100 bg-slate-950 p-4 text-white lg:border-b-0 lg:border-r lg:border-violet-900/60 sm:p-5">
+          <aside className="hidden border-r border-violet-900/60 bg-slate-950 p-5 text-white lg:block">
             <div className="flex items-center justify-between">
-              <div><p className="text-xs font-black uppercase tracking-[0.18em] text-violet-300">Product Tour</p><p className="mt-1 text-sm text-slate-400">{visibleItems.length} real screens</p></div>
-              <button type="button" onClick={() => setIsPaused((v) => !v)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 hover:bg-white/10" aria-label={isPaused ? "Play product tour" : "Pause product tour"}>
-                {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-violet-300">
+                  Product Tour
+                </p>
+                <p className="mt-1 text-sm text-slate-400">
+                  {visibleItems.length} real screens
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsPaused((current) => !current)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 transition hover:bg-white/10"
+                aria-label={
+                  isPaused ? "Play product tour" : "Pause product tour"
+                }
+              >
+                {isPaused ? (
+                  <Play className="h-4 w-4" />
+                ) : (
+                  <Pause className="h-4 w-4" />
+                )}
               </button>
             </div>
 
-            <div className="mt-5 flex gap-2 overflow-x-auto pb-2 lg:max-h-[590px] lg:flex-col lg:overflow-y-auto lg:pr-1">
+            <div className="landing-scrollbar-none mt-5 flex max-h-[590px] flex-col gap-2 overflow-y-auto pr-1">
               {visibleItems.map((item, index) => {
-                const Icon = item.icon; const active = item.id === activeItem.id;
+                const Icon = item.icon;
+                const active = item.id === activeItem.id;
+
                 return (
-                  <button key={item.id} type="button" onClick={() => setActiveId(item.id)} className={`flex min-w-[220px] items-center gap-3 rounded-2xl border px-3 py-3 text-left transition lg:min-w-0 ${active ? "border-violet-400/40 bg-violet-600 text-white shadow-lg" : "border-white/5 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08] hover:text-white"}`}>
-                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${active ? "bg-white/15" : "bg-white/[0.06] text-violet-300"}`}><Icon className="h-5 w-5" /></span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-black">{item.label}</span><span className={`mt-0.5 block truncate text-[10px] font-bold uppercase tracking-[0.12em] ${active ? "text-violet-100" : "text-slate-500"}`}>{item.eyebrow}</span></span>
-                    <span className={`text-xs font-black ${active ? "text-white" : "text-slate-600"}`}>{String(index + 1).padStart(2, "0")}</span>
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setActiveId(item.id)}
+                    className={`flex min-w-0 items-center gap-3 rounded-2xl border px-3 py-3 text-left transition ${
+                      active
+                        ? "border-violet-400/40 bg-violet-600 text-white shadow-lg"
+                        : "border-white/5 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08] hover:text-white"
+                    }`}
+                  >
+                    <span
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                        active
+                          ? "bg-white/15"
+                          : "bg-white/[0.06] text-violet-300"
+                      }`}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </span>
+
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-black">
+                        {item.label}
+                      </span>
+                      <span
+                        className={`mt-0.5 block truncate text-[10px] font-bold uppercase tracking-[0.12em] ${
+                          active
+                            ? "text-violet-100"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        {item.eyebrow}
+                      </span>
+                    </span>
+
+                    <span
+                      className={`text-xs font-black ${
+                        active ? "text-white" : "text-slate-600"
+                      }`}
+                    >
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
                   </button>
                 );
               })}
             </div>
           </aside>
 
-          <div className="min-w-0 bg-gradient-to-br from-[#f7f5ff] via-white to-[#eef2ff] p-4 sm:p-6 lg:p-8">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0 bg-gradient-to-br from-[#f7f5ff] via-white to-[#eef2ff] p-3 sm:p-6 lg:p-8">
+            <div className="rounded-2xl bg-slate-950 p-3 text-white lg:hidden">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-600">
+                  <ActiveIcon className="h-5 w-5" />
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <label
+                    htmlFor="mobile-showcase-screen"
+                    className="block text-[10px] font-black uppercase tracking-[0.16em] text-violet-300"
+                  >
+                    Choose product screen
+                  </label>
+
+                  <select
+                    id="mobile-showcase-screen"
+                    value={activeItem.id}
+                    onChange={(event) =>
+                      setActiveId(
+                        event.target.value as ShowcaseItemId
+                      )
+                    }
+                    className="mt-1 w-full appearance-none bg-transparent text-sm font-black text-white outline-none"
+                  >
+                    {visibleItems.map((item) => (
+                      <option
+                        key={item.id}
+                        value={item.id}
+                        className="bg-slate-950 text-white"
+                      >
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setIsPaused((current) => !current)
+                  }
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5"
+                  aria-label={
+                    isPaused
+                      ? "Play product tour"
+                      : "Pause product tour"
+                  }
+                >
+                  {isPaused ? (
+                    <Play className="h-4 w-4" />
+                  ) : (
+                    <Pause className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-col gap-5 sm:mt-0 xl:flex-row xl:items-start xl:justify-between">
               <div className="max-w-2xl">
-                <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-violet-700 shadow-sm"><ActiveIcon className="h-4 w-4" />{activeItem.eyebrow}</div>
-                <h3 className="mt-4 text-2xl font-black tracking-[-0.03em] text-slate-950 sm:text-3xl">{activeItem.title}</h3>
-                <p className="mt-3 max-w-2xl leading-7 text-slate-600">{activeItem.description}</p>
+                <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-violet-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-violet-700 shadow-sm sm:text-xs sm:tracking-[0.16em]">
+                  <ActiveIcon className="h-4 w-4 shrink-0" />
+                  <span className="truncate">
+                    {activeItem.eyebrow}
+                  </span>
+                </div>
+
+                <h3 className="mt-4 text-xl font-black tracking-[-0.03em] text-slate-950 sm:text-3xl">
+                  {activeItem.title}
+                </h3>
+
+                <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">
+                  {activeItem.description}
+                </p>
               </div>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={previous} className="flex h-11 w-11 items-center justify-center rounded-xl border border-violet-200 bg-white text-violet-700 shadow-sm hover:border-violet-400" aria-label="Previous screen"><ChevronLeft className="h-5 w-5" /></button>
-                <div className="min-w-[78px] text-center text-sm font-black text-slate-500">{activeIndex + 1} / {visibleItems.length}</div>
-                <button type="button" onClick={next} className="flex h-11 w-11 items-center justify-center rounded-xl border border-violet-200 bg-white text-violet-700 shadow-sm hover:border-violet-400" aria-label="Next screen"><ChevronRight className="h-5 w-5" /></button>
+
+              <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start">
+                <button
+                  type="button"
+                  onClick={previous}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-violet-200 bg-white text-violet-700 shadow-sm transition hover:border-violet-400 sm:h-11 sm:w-11"
+                  aria-label="Previous screen"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+
+                <div className="min-w-[72px] text-center text-sm font-black text-slate-500">
+                  {activeIndex + 1} / {visibleItems.length}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={next}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-violet-200 bg-white text-violet-700 shadow-sm transition hover:border-violet-400 sm:h-11 sm:w-11"
+                  aria-label="Next screen"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsImageOpen(true)}
+                  className="inline-flex h-10 items-center gap-2 rounded-xl bg-violet-600 px-3 text-xs font-black text-white shadow-sm transition hover:bg-violet-700 sm:h-11 sm:px-4 sm:text-sm"
+                >
+                  <Maximize2 className="h-4 w-4" />
+                  <span className="hidden min-[390px]:inline">
+                    Full screen
+                  </span>
+                </button>
               </div>
             </div>
 
-            <div className="mt-6 overflow-hidden rounded-[28px] border border-violet-200 bg-slate-950 p-2 shadow-[0_25px_70px_rgba(15,23,42,0.26)] sm:p-3">
-              <div className="flex items-center justify-between rounded-t-[21px] border-b border-white/10 px-4 py-3">
-                <div className="flex gap-2"><span className="h-2.5 w-2.5 rounded-full bg-red-400" /><span className="h-2.5 w-2.5 rounded-full bg-amber-400" /><span className="h-2.5 w-2.5 rounded-full bg-emerald-400" /></div>
-                <p className="max-w-[55%] truncate text-[10px] font-black uppercase tracking-[0.14em] text-violet-100">VertexERP • {activeItem.label}</p>
-                <span className="flex items-center gap-2 text-[10px] font-black text-emerald-300"><span className="h-2 w-2 rounded-full bg-emerald-400" />Live UI</span>
+            <button
+              type="button"
+              onClick={() => setIsImageOpen(true)}
+              className="group mt-5 block w-full overflow-hidden rounded-[20px] border border-violet-200 bg-slate-950 p-1.5 text-left shadow-[0_18px_50px_rgba(15,23,42,0.24)] sm:mt-6 sm:rounded-[28px] sm:p-3 sm:shadow-[0_25px_70px_rgba(15,23,42,0.26)]"
+              aria-label={`Open ${activeItem.label} screenshot in full screen`}
+            >
+              <div className="flex items-center justify-between rounded-t-[15px] border-b border-white/10 px-3 py-2.5 sm:rounded-t-[21px] sm:px-4 sm:py-3">
+                <div className="flex gap-1.5 sm:gap-2">
+                  <span className="h-2 w-2 rounded-full bg-red-400 sm:h-2.5 sm:w-2.5" />
+                  <span className="h-2 w-2 rounded-full bg-amber-400 sm:h-2.5 sm:w-2.5" />
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 sm:h-2.5 sm:w-2.5" />
+                </div>
+
+                <p className="max-w-[52%] truncate text-[8px] font-black uppercase tracking-[0.1em] text-violet-100 sm:text-[10px] sm:tracking-[0.14em]">
+                  VertexERP • {activeItem.label}
+                </p>
+
+                <span className="flex items-center gap-1.5 text-[8px] font-black text-emerald-300 sm:gap-2 sm:text-[10px]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 sm:h-2 sm:w-2" />
+                  Live UI
+                </span>
               </div>
-              <div className="relative aspect-[16/9] overflow-hidden rounded-b-[21px] bg-[#f4f6fb]">
-                <div key={activeItem.id} className="showcase-reveal absolute inset-0"><Image src={activeItem.image} alt={`${activeItem.label} screen in VertexERP`} fill sizes="(max-width: 1024px) 100vw, 900px" unoptimized className="object-contain" /></div>
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/10 via-transparent to-white/5" />
+
+              <div className="relative aspect-[4/3] overflow-hidden rounded-b-[15px] bg-[#f4f6fb] sm:aspect-[16/9] sm:rounded-b-[21px]">
+                <div
+                  key={activeItem.id}
+                  className="showcase-reveal absolute inset-0"
+                >
+                  <Image
+                    src={activeItem.image}
+                    alt={`${activeItem.label} screen in VertexERP`}
+                    fill
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 100vw, 900px"
+                    unoptimized
+                    className="object-cover object-top sm:object-contain"
+                  />
+                </div>
+
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/20 via-transparent to-white/5 sm:from-slate-950/10" />
+
+                <div className="absolute bottom-3 right-3 inline-flex items-center gap-2 rounded-xl bg-slate-950/85 px-3 py-2 text-xs font-black text-white shadow-lg backdrop-blur sm:hidden">
+                  <Maximize2 className="h-4 w-4" />
+                  Tap to expand
+                </div>
+              </div>
+            </button>
+
+            <div className="mt-4 grid gap-2 sm:mt-5 sm:grid-cols-3 sm:gap-3">
+              {activeItem.points.map((point) => (
+                <div
+                  key={point}
+                  className="flex items-start gap-3 rounded-2xl border border-violet-100 bg-white p-3 shadow-sm sm:p-4"
+                >
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                    <Check className="h-4 w-4" />
+                  </span>
+
+                  <p className="text-sm font-bold leading-6 text-slate-700">
+                    {point}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 sm:hidden">
+              <div className="h-1.5 overflow-hidden rounded-full bg-violet-100">
+                <div
+                  className="h-full rounded-full bg-violet-600 transition-[width] duration-500"
+                  style={{ width: `${mobileProgress}%` }}
+                />
               </div>
             </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              {activeItem.points.map((point) => <div key={point} className="flex items-start gap-3 rounded-2xl border border-violet-100 bg-white p-4 shadow-sm"><span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><Check className="h-4 w-4" /></span><p className="text-sm font-bold leading-6 text-slate-700">{point}</p></div>)}
+            <div className="mt-5 hidden gap-1.5 sm:flex">
+              {visibleItems.map((item, index) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setActiveId(item.id)}
+                  className={`h-1.5 flex-1 rounded-full transition ${
+                    index <= activeIndex
+                      ? "bg-violet-600"
+                      : "bg-violet-100 hover:bg-violet-200"
+                  }`}
+                  aria-label={`Open ${item.label}`}
+                />
+              ))}
             </div>
-
-            <div className="mt-5 flex gap-1.5">{visibleItems.map((item, index) => <button key={item.id} type="button" onClick={() => setActiveId(item.id)} className={`h-1.5 flex-1 rounded-full transition ${index <= activeIndex ? "bg-violet-600" : "bg-violet-100 hover:bg-violet-200"}`} aria-label={`Open ${item.label}`} />)}</div>
           </div>
         </div>
       </div>
+
+      {isImageOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex flex-col bg-slate-950/95 p-3 backdrop-blur-md sm:p-5"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${activeItem.label} full-screen screenshot`}
+        >
+          <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-3 pb-3 text-white">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black sm:text-base">
+                VertexERP • {activeItem.label}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Swipe horizontally to inspect the full desktop interface.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsImageOpen(false)}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/10 text-white transition hover:bg-white/20"
+              aria-label="Close full-screen screenshot"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="landing-scrollbar-none mx-auto min-h-0 w-full max-w-[1600px] flex-1 overflow-auto rounded-2xl bg-[#f4f6fb] shadow-2xl">
+            <div className="min-w-[980px]">
+              <Image
+                src={activeItem.image}
+                alt={`${activeItem.label} full VertexERP screen`}
+                width={1600}
+                height={900}
+                unoptimized
+                priority
+                className="h-auto w-full"
+              />
+            </div>
+          </div>
+
+          <div className="mx-auto mt-3 flex w-full max-w-[1600px] items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={previous}
+              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-black text-white"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </button>
+
+            <span className="text-xs font-black text-slate-400">
+              {activeIndex + 1} / {visibleItems.length}
+            </span>
+
+            <button
+              type="button"
+              onClick={next}
+              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-black text-white"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -946,6 +1309,15 @@ export default function LandingPage() {
         .showcase-reveal {
           animation: showcaseReveal 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
           will-change: transform, opacity, filter;
+        }
+
+        .landing-scrollbar-none {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+
+        .landing-scrollbar-none::-webkit-scrollbar {
+          display: none;
         }
 
         .landing-grid {
