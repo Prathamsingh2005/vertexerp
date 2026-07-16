@@ -21,6 +21,7 @@ type CustomerRow = {
   id: string;
   name: string;
   mobile: string | null;
+  email: string | null;
   gst_number: string | null;
   state: string | null;
   state_code: string | null;
@@ -166,6 +167,7 @@ function mapInvoice(row: SaleRow): InvoiceData {
     party: {
       name: customer?.name || "Unknown Customer",
       mobile: customer?.mobile || "",
+      email: customer?.email || "",
       gstNumber: customer?.gst_number || "",
       state: customer?.state || "",
       stateCode: customer?.state_code || "",
@@ -274,6 +276,7 @@ export default function SalesInvoicePage() {
                     id,
                     name,
                     mobile,
+                    email,
                     gst_number,
                     state,
                     state_code

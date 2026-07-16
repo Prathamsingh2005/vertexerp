@@ -21,6 +21,7 @@ import {
   useState,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
+import GSTR2BReconciliationPanel from "./GSTR2BReconciliationPanel";
 
 type ProfileRow = {
   active_company_id: string | null;
@@ -1860,6 +1861,11 @@ export default function GSTReconciliationManager() {
         </div>
       </section>
 
+      <GSTR2BReconciliationPanel
+        fromDate={appliedFromDate}
+        toDate={appliedToDate}
+      />
+
       <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg sm:p-6">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <div className="relative md:col-span-2">
@@ -2085,11 +2091,11 @@ export default function GSTReconciliationManager() {
       <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
         <h2 className="font-black">Important reconciliation scope</h2>
         <p className="mt-2 leading-7">
-          This checker validates operational snapshots stored inside
-          VertexERP. It does not replace GST portal reconciliation,
-          GSTR-2B matching, Input Tax Credit eligibility review,
-          reverse-charge checks, statutory set-off, interest or an
-          accountant&apos;s filing review.
+          This page combines VertexERP operational checks with
+          imported GSTR-2B invoice matching. It remains a review aid:
+          Input Tax Credit eligibility, blocked credits, reverse-charge
+          treatment, amendments, statutory set-off, interest and filing
+          values must still be reviewed by an accountant.
         </p>
       </section>
     </div>
