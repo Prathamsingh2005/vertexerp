@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
@@ -13,22 +13,86 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteTitle = "VertexERP | Business Control Center";
+
+const siteDescription =
+  "Cloud-based billing, inventory, accounting, GST, payments, reports and business management software.";
+
 export const metadata: Metadata = {
   title: {
-    default: "VertexERP | Run your business with confidence",
+    default: siteTitle,
     template: "%s | VertexERP",
   },
-  description:
-    "VertexERP is a cloud business management platform for billing, inventory, accounting, GST, payments, reports and audit controls.",
+
+  description: siteDescription,
+
   applicationName: "VertexERP",
+
+  authors: [
+    {
+      name: "Pratham Consultancy and Services",
+    },
+  ],
+
+  creator: "Pratham Consultancy and Services",
+  publisher: "Pratham Consultancy and Services",
+
+  category: "Business Management Software",
+
   keywords: [
-    "ERP",
+    "VertexERP",
+    "ERP software",
     "billing software",
     "inventory management",
     "accounting software",
-    "GST billing",
-    "business management",
+    "GST billing software",
+    "invoice software",
+    "business management software",
+    "cloud ERP",
+    "payment management",
+    "business reports",
   ],
+
+  icons: {
+    icon: [
+      {
+        url: "/icon.png",
+        type: "image/png",
+      },
+    ],
+    shortcut: "/icon.png",
+    apple: "/icon.png",
+  },
+
+  openGraph: {
+    type: "website",
+    locale: "en_IN",
+    siteName: "VertexERP",
+    title: siteTitle,
+    description: siteDescription,
+  },
+
+  twitter: {
+    card: "summary",
+    title: siteTitle,
+    description: siteDescription,
+  },
+
+  robots: {
+    index: true,
+    follow: true,
+  },
+
+  other: {
+    "support-email": "prathamgaur2005@gmail.com",
+    "support-phone": "+918737072778",
+    "support-whatsapp": "+918737072778",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#6d28d9",
+  colorScheme: "light",
 };
 
 export default function RootLayout({

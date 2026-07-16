@@ -18,12 +18,14 @@ import {
   PackageMinus,
   ReceiptText,
   RotateCcw,
+  Settings2,
   ShieldCheck,
   ShoppingCart,
   UserRoundCog,
   WalletCards,
   X,
 } from "lucide-react";
+
 import type { PermissionCode } from "@/lib/permissions";
 import { usePermissions } from "@/hooks/usePermissions";
 
@@ -62,6 +64,7 @@ const navigationItems: NavigationItem[] = [
     icon: Boxes,
     permission: "inventory.view",
   },
+
   {
     href: "/sales",
     label: "Sales",
@@ -105,6 +108,7 @@ const navigationItems: NavigationItem[] = [
     icon: CircleDollarSign,
     permission: "payments.view",
   },
+
   {
     href: "/accounting",
     label: "Accounting",
@@ -141,11 +145,18 @@ const navigationItems: NavigationItem[] = [
     icon: History,
     permission: "audit.view",
   },
+
+  {
+    href: "/settings",
+    label: "Settings & Support",
+    icon: Settings2,
+    section: "System",
+    exact: true,
+  },
   {
     href: "/settings/team",
     label: "Team Management",
     icon: UserRoundCog,
-    section: "System",
     permission: "team.view",
   },
   {
@@ -186,20 +197,31 @@ function isActiveRoute(
 }
 
 function useDesktopBreakpoint() {
-  const [isDesktop, setIsDesktop] = useState<boolean | null>(null);
+  const [isDesktop, setIsDesktop] = useState<boolean | null>(
+    null
+  );
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(min-width: 1024px)");
+    const mediaQuery = window.matchMedia(
+      "(min-width: 1024px)"
+    );
 
     function updateBreakpoint() {
       setIsDesktop(mediaQuery.matches);
     }
 
     updateBreakpoint();
-    mediaQuery.addEventListener("change", updateBreakpoint);
+
+    mediaQuery.addEventListener(
+      "change",
+      updateBreakpoint
+    );
 
     return () => {
-      mediaQuery.removeEventListener("change", updateBreakpoint);
+      mediaQuery.removeEventListener(
+        "change",
+        updateBreakpoint
+      );
     };
   }, []);
 
@@ -221,7 +243,10 @@ function NavLinks({
     <ul className="space-y-1.5">
       {items.map((item) => {
         const Icon = item.icon;
-        const isActive = isActiveRoute(pathname, item);
+        const isActive = isActiveRoute(
+          pathname,
+          item
+        );
 
         return (
           <li key={item.href}>
@@ -247,7 +272,10 @@ function NavLinks({
                     : "bg-white/[0.06] text-slate-400 group-hover:bg-white/[0.1] group-hover:text-slate-100"
                 }`}
               >
-                <Icon className="h-[18px] w-[18px]" strokeWidth={2.2} />
+                <Icon
+                  className="h-[18px] w-[18px]"
+                  strokeWidth={2.2}
+                />
               </span>
 
               <span>{item.label}</span>
@@ -259,7 +287,11 @@ function NavLinks({
   );
 }
 
-function Brand({ onClick }: { onClick?: () => void }) {
+function Brand({
+  onClick,
+}: {
+  onClick?: () => void;
+}) {
   return (
     <Link
       href="/dashboard"
@@ -268,6 +300,7 @@ function Brand({ onClick }: { onClick?: () => void }) {
     >
       <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-lg font-black text-white shadow-lg shadow-blue-950/50">
         VX
+
         <span className="absolute bottom-1.5 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-amber-300" />
       </div>
 
@@ -275,6 +308,7 @@ function Brand({ onClick }: { onClick?: () => void }) {
         <h1 className="text-xl font-black tracking-tight text-white">
           VertexERP
         </h1>
+
         <p className="mt-0.5 text-xs font-medium text-slate-400">
           Business Control Center
         </p>
@@ -301,8 +335,11 @@ function CloudStatus({
           <p className="text-sm font-bold text-white">
             Cloud sync active
           </p>
+
           <p className="mt-0.5 truncate text-xs text-slate-400">
-            {isLoading ? "Checking access..." : roleName || "No active role"}
+            {isLoading
+              ? "Checking access..."
+              : roleName || "No active role"}
           </p>
         </div>
       </div>
@@ -313,9 +350,17 @@ function CloudStatus({
 export default function Sidebar() {
   const pathname = usePathname();
   const isDesktop = useDesktopBreakpoint();
-  const [isMobileDrawerOpen, setIsMobileDrawerOpen] =
-    useState(false);
-  const { access, can, isLoading } = usePermissions();
+
+  const [
+    isMobileDrawerOpen,
+    setIsMobileDrawerOpen,
+  ] = useState(false);
+
+  const {
+    access,
+    can,
+    isLoading,
+  } = usePermissions();
 
   const visibleItems = useMemo(() => {
     return navigationItems.filter((item) => {
@@ -324,11 +369,17 @@ export default function Sidebar() {
       }
 
       if (isLoading) {
-        return item.href === "/dashboard" || item.href === "/company";
+        return (
+          item.href === "/dashboard" ||
+          item.href === "/company"
+        );
       }
 
       if (!access) {
-        return item.href === "/dashboard" || item.href === "/company";
+        return (
+          item.href === "/dashboard" ||
+          item.href === "/company"
+        );
       }
 
       return can(item.permission);
@@ -370,7 +421,9 @@ export default function Sidebar() {
       return;
     }
 
-    const previousOverflow = document.body.style.overflow;
+    const previousOverflow =
+      document.body.style.overflow;
+
     document.body.style.overflow = "hidden";
 
     function handleEscape(event: KeyboardEvent) {
@@ -379,11 +432,19 @@ export default function Sidebar() {
       }
     }
 
-    window.addEventListener("keydown", handleEscape);
+    window.addEventListener(
+      "keydown",
+      handleEscape
+    );
 
     return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow =
+        previousOverflow;
+
+      window.removeEventListener(
+        "keydown",
+        handleEscape
+      );
     };
   }, [isMobileDrawerOpen]);
 
@@ -402,11 +463,15 @@ export default function Sidebar() {
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
             Workspace
           </p>
+
           <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(74,222,128,0.8)]" />
         </div>
 
         <nav className="min-h-0 flex-1 overflow-y-auto pr-1">
-          <NavLinks pathname={pathname} items={visibleItems} />
+          <NavLinks
+            pathname={pathname}
+            items={visibleItems}
+          />
         </nav>
 
         <div className="mt-4 px-1">
@@ -425,7 +490,9 @@ export default function Sidebar() {
         position: "fixed",
         inset: 0,
         zIndex: 80,
-        pointerEvents: isMobileDrawerOpen ? "auto" : "none",
+        pointerEvents: isMobileDrawerOpen
+          ? "auto"
+          : "none",
       }}
     >
       <button
@@ -438,8 +505,11 @@ export default function Sidebar() {
           width: "100%",
           height: "100%",
           opacity: isMobileDrawerOpen ? 1 : 0,
-          backgroundColor: "rgba(2, 6, 23, 0.64)",
-          backdropFilter: isMobileDrawerOpen ? "blur(3px)" : "none",
+          backgroundColor:
+            "rgba(2, 6, 23, 0.64)",
+          backdropFilter: isMobileDrawerOpen
+            ? "blur(3px)"
+            : "none",
           transition: "opacity 220ms ease",
         }}
       />
@@ -468,7 +538,10 @@ export default function Sidebar() {
             aria-label="Close navigation"
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.07] text-slate-200 transition hover:bg-white/[0.12] active:scale-95"
           >
-            <X className="h-5 w-5" strokeWidth={2.5} />
+            <X
+              className="h-5 w-5"
+              strokeWidth={2.5}
+            />
           </button>
         </div>
 
