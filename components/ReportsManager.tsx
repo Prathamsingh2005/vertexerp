@@ -62,16 +62,31 @@ type ProfileRow = {
   active_company_id: string | null;
 };
 
+type CompanyNameRow = {
+  name: string;
+};
+
 type TrialBalanceRow = {
   account_id: string;
   account_code: string;
   account_name: string;
   account_type: string;
   normal_balance: "Debit" | "Credit";
-  total_debit: number | string | null;
-  total_credit: number | string | null;
+  opening_debit: number | string | null;
+  opening_credit: number | string | null;
+  period_debit: number | string | null;
+  period_credit: number | string | null;
   closing_debit: number | string | null;
   closing_credit: number | string | null;
+};
+
+type TrialBalanceTotals = {
+  openingDebit: number;
+  openingCredit: number;
+  periodDebit: number;
+  periodCredit: number;
+  closingDebit: number;
+  closingCredit: number;
 };
 
 type ProfitLossSummaryRow = {
@@ -259,6 +274,56 @@ function getBalanceLabel(debit: number, credit: number) {
   return "—";
 }
 
+function calculateTrialBalanceTotals(
+  rows: TrialBalanceRow[],
+): TrialBalanceTotals {
+  return rows.reduce(
+    (totals, account) => ({
+      openingDebit:
+        totals.openingDebit + toNumber(account.opening_debit),
+      openingCredit:
+        totals.openingCredit + toNumber(account.opening_credit),
+      periodDebit: totals.periodDebit + toNumber(account.period_debit),
+      periodCredit:
+        totals.periodCredit + toNumber(account.period_credit),
+      closingDebit:
+        totals.closingDebit + toNumber(account.closing_debit),
+      closingCredit:
+        totals.closingCredit + toNumber(account.closing_credit),
+    }),
+    {
+      openingDebit: 0,
+      openingCredit: 0,
+      periodDebit: 0,
+      periodCredit: 0,
+      closingDebit: 0,
+      closingCredit: 0,
+    },
+  );
+}
+
+function escapeCsvValue(value: string | number) {
+  const normalizedValue = String(value ?? "");
+  return `"${normalizedValue.replace(/"/g, '""')}"`;
+}
+
+function escapeHtml(value: string | number) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function createSafeFileName(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "company";
+}
+
 export default function ReportsManager() {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [sales, setSales] = useState<SaleRow[]>([]);
@@ -268,8 +333,11 @@ export default function ReportsManager() {
   const [creditNotes, setCreditNotes] = useState<CreditNoteRow[]>([]);
   const [debitNotes, setDebitNotes] = useState<DebitNoteRow[]>([]);
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
+  const [activeCompanyName, setActiveCompanyName] = useState("");
 
   const [trialBalance, setTrialBalance] = useState<TrialBalanceRow[]>([]);
+  const [trialBalanceSearch, setTrialBalanceSearch] = useState("");
+  const [trialBalanceType, setTrialBalanceType] = useState("All");
   const [profitLossAccounts, setProfitLossAccounts] = useState<
     ProfitLossAccountRow[]
   >([]);
@@ -319,6 +387,7 @@ export default function ReportsManager() {
         setCreditNotes([]);
         setDebitNotes([]);
         setActiveCompanyId(null);
+        setActiveCompanyName("");
         showMessage("Please sign in to view report data.");
         return;
       }
@@ -346,6 +415,7 @@ export default function ReportsManager() {
         setPartyLedgers([]);
         setCreditNotes([]);
         setDebitNotes([]);
+        setActiveCompanyName("");
         showMessage("Select an active company from the Companies page first.");
         return;
       }
@@ -358,6 +428,7 @@ export default function ReportsManager() {
         ledgersResponse,
         creditNotesResponse,
         debitNotesResponse,
+        companyResponse,
       ] = await Promise.all([
         supabase
           .from("products")
@@ -392,6 +463,11 @@ export default function ReportsManager() {
           )
           .eq("company_id", companyId)
           .eq("status", "POSTED"),
+        supabase
+          .from("companies")
+          .select("name")
+          .eq("id", companyId)
+          .maybeSingle(),
       ]);
 
       if (productsResponse.error) {
@@ -422,6 +498,10 @@ export default function ReportsManager() {
         throw debitNotesResponse.error;
       }
 
+      if (companyResponse.error) {
+        throw companyResponse.error;
+      }
+
       setProducts((productsResponse.data || []) as ProductRow[]);
       setSales((salesResponse.data || []) as SaleRow[]);
       setPurchases((purchasesResponse.data || []) as PurchaseRow[]);
@@ -429,6 +509,9 @@ export default function ReportsManager() {
       setPartyLedgers((ledgersResponse.data || []) as LedgerRow[]);
       setCreditNotes((creditNotesResponse.data || []) as CreditNoteRow[]);
       setDebitNotes((debitNotesResponse.data || []) as DebitNoteRow[]);
+      setActiveCompanyName(
+        (companyResponse.data as CompanyNameRow | null)?.name || "Company",
+      );
     } catch (error) {
       setProducts([]);
       setSales([]);
@@ -438,6 +521,7 @@ export default function ReportsManager() {
       setCreditNotes([]);
       setDebitNotes([]);
       setActiveCompanyId(null);
+      setActiveCompanyName("");
 
       showMessage(
         error instanceof Error
@@ -467,7 +551,7 @@ export default function ReportsManager() {
 
       const [trialBalanceResponse, summaryResponse, accountsResponse] =
         await Promise.all([
-          supabase.rpc("get_trial_balance", filters),
+          supabase.rpc("get_trial_balance_detailed", filters),
           supabase.rpc("get_profit_loss_summary", filters),
           supabase.rpc("get_profit_loss_accounts", filters),
         ]);
@@ -753,15 +837,75 @@ export default function ReportsManager() {
     appliedToDate,
   ]);
 
-  const trialBalanceTotals = useMemo(() => {
-    return trialBalance.reduce(
-      (totals, account) => ({
-        debit: totals.debit + toNumber(account.total_debit),
-        credit: totals.credit + toNumber(account.total_credit),
-      }),
-      { debit: 0, credit: 0 },
+  const trialBalanceAccountTypes = useMemo(
+    () =>
+      Array.from(
+        new Set(trialBalance.map((account) => account.account_type)),
+      ).sort((firstType, secondType) => firstType.localeCompare(secondType)),
+    [trialBalance],
+  );
+
+  const filteredTrialBalance = useMemo(() => {
+    const normalizedSearch = trialBalanceSearch.trim().toLowerCase();
+
+    return trialBalance.filter((account) => {
+      const matchesType =
+        trialBalanceType === "All" ||
+        account.account_type === trialBalanceType;
+
+      const matchesSearch =
+        !normalizedSearch ||
+        [
+          account.account_code,
+          account.account_name,
+          account.account_type,
+          account.normal_balance,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedSearch);
+
+      return matchesType && matchesSearch;
+    });
+  }, [trialBalance, trialBalanceSearch, trialBalanceType]);
+
+  const trialBalanceTotals = useMemo(
+    () => calculateTrialBalanceTotals(trialBalance),
+    [trialBalance],
+  );
+
+  const visibleTrialBalanceTotals = useMemo(
+    () => calculateTrialBalanceTotals(filteredTrialBalance),
+    [filteredTrialBalance],
+  );
+
+  const trialBalanceGroupTotals = useMemo(() => {
+    const totalsByType = new Map<
+      string,
+      { accountType: string; closingDebit: number; closingCredit: number }
+    >();
+
+    filteredTrialBalance.forEach((account) => {
+      const currentTotals = totalsByType.get(account.account_type) || {
+        accountType: account.account_type,
+        closingDebit: 0,
+        closingCredit: 0,
+      };
+
+      currentTotals.closingDebit += toNumber(account.closing_debit);
+      currentTotals.closingCredit += toNumber(account.closing_credit);
+      totalsByType.set(account.account_type, currentTotals);
+    });
+
+    return Array.from(totalsByType.values()).sort((firstGroup, secondGroup) =>
+      firstGroup.accountType.localeCompare(secondGroup.accountType),
     );
-  }, [trialBalance]);
+  }, [filteredTrialBalance]);
+
+  const isTrialBalanceBalanced =
+    Math.abs(
+      trialBalanceTotals.closingDebit - trialBalanceTotals.closingCredit,
+    ) < 0.01;
 
   const incomeAccounts = useMemo(
     () =>
@@ -818,6 +962,198 @@ export default function ReportsManager() {
     }
 
     return "All available data";
+  }
+
+  function downloadTrialBalanceCsv() {
+    if (filteredTrialBalance.length === 0) {
+      showMessage("No Trial Balance rows are available to export.");
+      return;
+    }
+
+    const rows = [
+      [
+        "Account Code",
+        "Account Name",
+        "Account Type",
+        "Normal Balance",
+        "Opening Debit",
+        "Opening Credit",
+        "Period Debit",
+        "Period Credit",
+        "Closing Debit",
+        "Closing Credit",
+      ],
+      ...filteredTrialBalance.map((account) => [
+        account.account_code,
+        account.account_name,
+        account.account_type,
+        account.normal_balance,
+        toNumber(account.opening_debit).toFixed(2),
+        toNumber(account.opening_credit).toFixed(2),
+        toNumber(account.period_debit).toFixed(2),
+        toNumber(account.period_credit).toFixed(2),
+        toNumber(account.closing_debit).toFixed(2),
+        toNumber(account.closing_credit).toFixed(2),
+      ]),
+      [
+        "",
+        "VISIBLE TOTAL",
+        "",
+        "",
+        visibleTrialBalanceTotals.openingDebit.toFixed(2),
+        visibleTrialBalanceTotals.openingCredit.toFixed(2),
+        visibleTrialBalanceTotals.periodDebit.toFixed(2),
+        visibleTrialBalanceTotals.periodCredit.toFixed(2),
+        visibleTrialBalanceTotals.closingDebit.toFixed(2),
+        visibleTrialBalanceTotals.closingCredit.toFixed(2),
+      ],
+    ];
+
+    const csvContent = rows
+      .map((row) => row.map(escapeCsvValue).join(","))
+      .join("\n");
+    const blob = new Blob(["\uFEFF", csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const downloadUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const periodSuffix = appliedFromDate || appliedToDate
+      ? `${appliedFromDate || "start"}-to-${appliedToDate || "end"}`
+      : "all-data";
+
+    anchor.href = downloadUrl;
+    anchor.download = `${createSafeFileName(
+      activeCompanyName,
+    )}-trial-balance-${periodSuffix}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(downloadUrl);
+    showMessage("Trial Balance CSV downloaded successfully.");
+  }
+
+  function printTrialBalance() {
+    if (filteredTrialBalance.length === 0) {
+      showMessage("No Trial Balance rows are available to print.");
+      return;
+    }
+
+    const printWindow = window.open("", "_blank", "width=1200,height=800");
+
+    if (!printWindow) {
+      showMessage("Please allow pop-ups to print the Trial Balance.");
+      return;
+    }
+
+    const bodyRows = filteredTrialBalance
+      .map(
+        (account) => `
+          <tr>
+            <td>${escapeHtml(account.account_code)}</td>
+            <td>${escapeHtml(account.account_name)}</td>
+            <td>${escapeHtml(account.account_type)}</td>
+            <td class="number">${escapeHtml(
+              toNumber(account.opening_debit).toFixed(2),
+            )}</td>
+            <td class="number">${escapeHtml(
+              toNumber(account.opening_credit).toFixed(2),
+            )}</td>
+            <td class="number">${escapeHtml(
+              toNumber(account.period_debit).toFixed(2),
+            )}</td>
+            <td class="number">${escapeHtml(
+              toNumber(account.period_credit).toFixed(2),
+            )}</td>
+            <td class="number">${escapeHtml(
+              toNumber(account.closing_debit).toFixed(2),
+            )}</td>
+            <td class="number">${escapeHtml(
+              toNumber(account.closing_credit).toFixed(2),
+            )}</td>
+          </tr>`,
+      )
+      .join("");
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Trial Balance - ${escapeHtml(activeCompanyName)}</title>
+          <style>
+            * { box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+            h1 { margin: 0; font-size: 24px; }
+            .company { margin-top: 6px; font-size: 17px; font-weight: 700; color: #5b21b6; }
+            .period { margin-top: 4px; color: #475569; }
+            .status { margin-top: 12px; display: inline-block; padding: 6px 12px; border-radius: 999px; background: ${
+              isTrialBalanceBalanced ? "#dcfce7" : "#fee2e2"
+            }; color: ${isTrialBalanceBalanced ? "#166534" : "#991b1b"}; font-weight: 700; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; }
+            th, td { border: 1px solid #cbd5e1; padding: 8px; }
+            th { background: #f5f3ff; text-align: left; }
+            .number { text-align: right; white-space: nowrap; }
+            tfoot td { background: #f8fafc; font-weight: 700; }
+            @page { size: landscape; margin: 10mm; }
+          </style>
+        </head>
+        <body>
+          <h1>Trial Balance</h1>
+          <div class="company">${escapeHtml(
+            activeCompanyName || "Company",
+          )}</div>
+          <div class="period">Period: ${escapeHtml(getPeriodText())}</div>
+          <div class="status">${
+            isTrialBalanceBalanced ? "Balanced" : "Needs Review"
+          }</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Account</th>
+                <th>Type</th>
+                <th class="number">Opening Dr</th>
+                <th class="number">Opening Cr</th>
+                <th class="number">Period Dr</th>
+                <th class="number">Period Cr</th>
+                <th class="number">Closing Dr</th>
+                <th class="number">Closing Cr</th>
+              </tr>
+            </thead>
+            <tbody>${bodyRows}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3">Visible Total</td>
+                <td class="number">${visibleTrialBalanceTotals.openingDebit.toFixed(
+                  2,
+                )}</td>
+                <td class="number">${visibleTrialBalanceTotals.openingCredit.toFixed(
+                  2,
+                )}</td>
+                <td class="number">${visibleTrialBalanceTotals.periodDebit.toFixed(
+                  2,
+                )}</td>
+                <td class="number">${visibleTrialBalanceTotals.periodCredit.toFixed(
+                  2,
+                )}</td>
+                <td class="number">${visibleTrialBalanceTotals.closingDebit.toFixed(
+                  2,
+                )}</td>
+                <td class="number">${visibleTrialBalanceTotals.closingCredit.toFixed(
+                  2,
+                )}</td>
+              </tr>
+            </tfoot>
+          </table>
+          <script>
+            window.addEventListener("load", () => {
+              window.print();
+            });
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   }
 
   const dataStatus =
@@ -1139,31 +1475,108 @@ export default function ReportsManager() {
       </section>
 
       <section className="mt-6 min-w-0 overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-xl shadow-violet-100/40 sm:mt-8">
-        <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-              Trial Balance
-            </h2>
-            <p className="mt-1 text-sm text-slate-600 sm:text-base">
-              Debit and credit totals across all active accounting accounts.
-            </p>
+        <div className="border-b border-slate-200 px-4 py-5 sm:px-6 sm:py-6">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+                Trial Balance
+              </h2>
+              <p className="mt-1 text-sm text-slate-600 sm:text-base">
+                Opening balances, selected-period movement and closing balances
+                from posted accounting vouchers.
+              </p>
+              <p className="mt-2 text-sm font-semibold text-violet-700">
+                {activeCompanyName || "Active company"} · {getPeriodText()}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                  isTrialBalanceBalanced
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-red-50 text-red-700"
+                }`}
+              >
+                {isAccountingLoading
+                  ? "Checking..."
+                  : isTrialBalanceBalanced
+                    ? "Balanced"
+                    : "Needs Review"}
+              </span>
+
+              <button
+                type="button"
+                onClick={downloadTrialBalanceCsv}
+                disabled={
+                  isAccountingLoading || filteredTrialBalance.length === 0
+                }
+                className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Download CSV
+              </button>
+
+              <button
+                type="button"
+                onClick={printTrialBalance}
+                disabled={
+                  isAccountingLoading || filteredTrialBalance.length === 0
+                }
+                className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Print Report
+              </button>
+            </div>
           </div>
 
-          <span
-            className={`w-fit rounded-full px-4 py-2 text-sm font-semibold ${
-              Math.abs(trialBalanceTotals.debit - trialBalanceTotals.credit) <
-              0.01
-                ? "bg-emerald-50 text-emerald-700"
-                : "bg-red-50 text-red-700"
-            }`}
-          >
-            {isAccountingLoading
-              ? "Checking..."
-              : Math.abs(trialBalanceTotals.debit - trialBalanceTotals.credit) <
-                  0.01
-                ? "Balanced"
-                : "Needs Review"}
-          </span>
+          <div className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
+            <div className="relative">
+              <span className="absolute left-4 top-3.5 text-violet-400">🔍</span>
+              <input
+                type="text"
+                value={trialBalanceSearch}
+                onChange={(event) =>
+                  setTrialBalanceSearch(event.target.value)
+                }
+                placeholder="Search account code, name or type..."
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 py-3 pl-11 pr-4 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
+              />
+            </div>
+
+            <select
+              value={trialBalanceType}
+              onChange={(event) => setTrialBalanceType(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-violet-500 focus:bg-white focus:ring-4 focus:ring-violet-100"
+            >
+              <option value="All">All Account Types</option>
+              {trialBalanceAccountTypes.map((accountType) => (
+                <option key={accountType} value={accountType}>
+                  {accountType}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {!isAccountingLoading && trialBalanceGroupTotals.length > 0 && (
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              {trialBalanceGroupTotals.map((group) => (
+                <article
+                  key={group.accountType}
+                  className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4"
+                >
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-violet-500">
+                    {group.accountType}
+                  </p>
+                  <p className="mt-2 text-sm font-bold text-slate-800">
+                    Closing {getBalanceLabel(
+                      group.closingDebit,
+                      group.closingCredit,
+                    )}
+                  </p>
+                </article>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="p-4 md:hidden">
@@ -1171,13 +1584,13 @@ export default function ReportsManager() {
             <p className="py-10 text-center text-sm text-slate-500">
               Loading trial balance...
             </p>
-          ) : trialBalance.length === 0 ? (
+          ) : filteredTrialBalance.length === 0 ? (
             <p className="py-10 text-center text-sm text-slate-500">
-              No posted accounting entries are available for this period.
+              No Trial Balance accounts match the current filters.
             </p>
           ) : (
             <div className="space-y-4">
-              {trialBalance.map((account) => {
+              {filteredTrialBalance.map((account) => {
                 const closingDebit = toNumber(account.closing_debit);
                 const closingCredit = toNumber(account.closing_credit);
 
@@ -1200,57 +1613,80 @@ export default function ReportsManager() {
                       </span>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-2 gap-3">
-                      <div className="rounded-xl bg-white p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Total Debit
-                        </p>
-                        <p className="mt-1 font-bold text-slate-900">
-                          {formatCurrency(toNumber(account.total_debit))}
-                        </p>
-                      </div>
-                      <div className="rounded-xl bg-white p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Total Credit
-                        </p>
-                        <p className="mt-1 font-bold text-slate-900">
-                          {formatCurrency(toNumber(account.total_credit))}
-                        </p>
-                      </div>
+                    <div className="mt-4 space-y-3">
+                      <BalancePair
+                        label="Opening"
+                        debit={toNumber(account.opening_debit)}
+                        credit={toNumber(account.opening_credit)}
+                      />
+                      <BalancePair
+                        label="Period"
+                        debit={toNumber(account.period_debit)}
+                        credit={toNumber(account.period_credit)}
+                      />
+                      <BalancePair
+                        label="Closing"
+                        debit={closingDebit}
+                        credit={closingCredit}
+                        emphasized
+                      />
                     </div>
-
-                    <p className="mt-4 rounded-xl bg-white px-3 py-3 text-sm font-semibold text-slate-700">
-                      Closing Balance:{" "}
-                      {getBalanceLabel(closingDebit, closingCredit)}
-                    </p>
                   </article>
                 );
               })}
+
+              <article className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                <p className="font-black text-violet-900">Visible Total</p>
+                <div className="mt-3 space-y-3">
+                  <BalancePair
+                    label="Opening"
+                    debit={visibleTrialBalanceTotals.openingDebit}
+                    credit={visibleTrialBalanceTotals.openingCredit}
+                  />
+                  <BalancePair
+                    label="Period"
+                    debit={visibleTrialBalanceTotals.periodDebit}
+                    credit={visibleTrialBalanceTotals.periodCredit}
+                  />
+                  <BalancePair
+                    label="Closing"
+                    debit={visibleTrialBalanceTotals.closingDebit}
+                    credit={visibleTrialBalanceTotals.closingCredit}
+                    emphasized
+                  />
+                </div>
+              </article>
             </div>
           )}
         </div>
 
         <div className="hidden max-w-full overflow-x-auto md:block">
-          <table className="w-full min-w-[960px]">
+          <table className="w-full min-w-[1320px]">
             <thead className="bg-violet-50/70">
               <tr className="border-b border-slate-200 text-left">
-                <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                <th className="px-5 py-4 text-sm font-bold text-slate-700">
                   Account
                 </th>
-                <th className="px-6 py-4 text-sm font-bold text-slate-700">
+                <th className="px-5 py-4 text-sm font-bold text-slate-700">
                   Type
                 </th>
-                <th className="px-6 py-4 text-right text-sm font-bold text-slate-700">
-                  Total Debit
+                <th className="px-5 py-4 text-right text-sm font-bold text-slate-700">
+                  Opening Dr
                 </th>
-                <th className="px-6 py-4 text-right text-sm font-bold text-slate-700">
-                  Total Credit
+                <th className="px-5 py-4 text-right text-sm font-bold text-slate-700">
+                  Opening Cr
                 </th>
-                <th className="px-6 py-4 text-right text-sm font-bold text-slate-700">
-                  Closing Debit
+                <th className="px-5 py-4 text-right text-sm font-bold text-slate-700">
+                  Period Dr
                 </th>
-                <th className="px-6 py-4 text-right text-sm font-bold text-slate-700">
-                  Closing Credit
+                <th className="px-5 py-4 text-right text-sm font-bold text-slate-700">
+                  Period Cr
+                </th>
+                <th className="px-5 py-4 text-right text-sm font-bold text-slate-700">
+                  Closing Dr
+                </th>
+                <th className="px-5 py-4 text-right text-sm font-bold text-slate-700">
+                  Closing Cr
                 </th>
               </tr>
             </thead>
@@ -1258,73 +1694,67 @@ export default function ReportsManager() {
               {isAccountingLoading ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={8}
                     className="px-6 py-12 text-center text-slate-500"
                   >
                     Loading trial balance...
                   </td>
                 </tr>
-              ) : trialBalance.length === 0 ? (
+              ) : filteredTrialBalance.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={8}
                     className="px-6 py-12 text-center text-slate-500"
                   >
-                    No posted accounting entries are available for this period.
+                    No Trial Balance accounts match the current filters.
                   </td>
                 </tr>
               ) : (
                 <>
-                  {trialBalance.map((account) => (
+                  {filteredTrialBalance.map((account) => (
                     <tr
                       key={account.account_id}
                       className="border-b border-slate-100 transition hover:bg-violet-50"
                     >
-                      <td className="px-6 py-5">
+                      <td className="px-5 py-5">
                         <p className="font-bold text-slate-900">
                           {account.account_name}
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
-                          {account.account_code} · Normal:{" "}
-                          {account.normal_balance}
+                          {account.account_code} · Normal: {account.normal_balance}
                         </p>
                       </td>
-                      <td className="px-6 py-5 text-slate-700">
+                      <td className="px-5 py-5 text-slate-700">
                         {account.account_type}
                       </td>
-                      <td className="px-6 py-5 text-right font-semibold text-slate-900">
-                        {formatCurrency(toNumber(account.total_debit))}
-                      </td>
-                      <td className="px-6 py-5 text-right font-semibold text-slate-900">
-                        {formatCurrency(toNumber(account.total_credit))}
-                      </td>
-                      <td className="px-6 py-5 text-right font-semibold text-violet-700">
-                        {toNumber(account.closing_debit) > 0
-                          ? formatCurrency(toNumber(account.closing_debit))
-                          : "—"}
-                      </td>
-                      <td className="px-6 py-5 text-right font-semibold text-purple-700">
-                        {toNumber(account.closing_credit) > 0
-                          ? formatCurrency(toNumber(account.closing_credit))
-                          : "—"}
-                      </td>
+                      <AmountCell value={toNumber(account.opening_debit)} />
+                      <AmountCell value={toNumber(account.opening_credit)} />
+                      <AmountCell value={toNumber(account.period_debit)} />
+                      <AmountCell value={toNumber(account.period_credit)} />
+                      <AmountCell
+                        value={toNumber(account.closing_debit)}
+                        emphasized
+                      />
+                      <AmountCell
+                        value={toNumber(account.closing_credit)}
+                        emphasized
+                      />
                     </tr>
                   ))}
 
                   <tr className="bg-slate-50">
                     <td
                       colSpan={2}
-                      className="px-6 py-5 font-bold text-slate-900"
+                      className="px-5 py-5 font-black text-slate-900"
                     >
-                      Total
+                      Visible Total
                     </td>
-                    <td className="px-6 py-5 text-right font-bold text-slate-900">
-                      {formatCurrency(trialBalanceTotals.debit)}
-                    </td>
-                    <td className="px-6 py-5 text-right font-bold text-slate-900">
-                      {formatCurrency(trialBalanceTotals.credit)}
-                    </td>
-                    <td colSpan={2} className="px-6 py-5" />
+                    <TotalAmountCell value={visibleTrialBalanceTotals.openingDebit} />
+                    <TotalAmountCell value={visibleTrialBalanceTotals.openingCredit} />
+                    <TotalAmountCell value={visibleTrialBalanceTotals.periodDebit} />
+                    <TotalAmountCell value={visibleTrialBalanceTotals.periodCredit} />
+                    <TotalAmountCell value={visibleTrialBalanceTotals.closingDebit} />
+                    <TotalAmountCell value={visibleTrialBalanceTotals.closingCredit} />
                   </tr>
                 </>
               )}
@@ -1550,5 +1980,69 @@ export default function ReportsManager() {
         </div>
       </section>
     </div>
+  );
+}
+
+function BalancePair({
+  label,
+  debit,
+  credit,
+  emphasized = false,
+}: {
+  label: string;
+  debit: number;
+  credit: number;
+  emphasized?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-xl p-3 ${
+        emphasized ? "bg-violet-100" : "bg-white"
+      }`}
+    >
+      <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-3">
+        <div>
+          <p className="text-xs text-slate-500">Debit</p>
+          <p className="mt-1 font-bold text-slate-900">
+            {debit > 0 ? formatCurrency(debit) : "—"}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-slate-500">Credit</p>
+          <p className="mt-1 font-bold text-slate-900">
+            {credit > 0 ? formatCurrency(credit) : "—"}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AmountCell({
+  value,
+  emphasized = false,
+}: {
+  value: number;
+  emphasized?: boolean;
+}) {
+  return (
+    <td
+      className={`px-5 py-5 text-right font-semibold ${
+        emphasized ? "text-violet-700" : "text-slate-900"
+      }`}
+    >
+      {value > 0 ? formatCurrency(value) : "—"}
+    </td>
+  );
+}
+
+function TotalAmountCell({ value }: { value: number }) {
+  return (
+    <td className="px-5 py-5 text-right font-black text-slate-900">
+      {formatCurrency(value)}
+    </td>
   );
 }
