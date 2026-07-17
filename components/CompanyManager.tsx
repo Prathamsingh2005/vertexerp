@@ -9,6 +9,7 @@ import {
 } from "react";
 import { usePermissions } from "@/hooks/usePermissions";
 import { createClient } from "@/lib/supabase/client";
+import CompanyGSTSettingsCard from "./CompanyGSTSettingsCard";
 
 type CompanyForm = {
   name: string;
@@ -805,6 +806,8 @@ export default function CompanyManager({
           </div>
         )}
       </section>
+
+      <CompanyGSTSettingsCard />
 
       {message && (
         <div className="mt-6 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-medium text-violet-700 sm:mt-8 sm:text-base">

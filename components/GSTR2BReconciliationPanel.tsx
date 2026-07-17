@@ -57,6 +57,12 @@ type PurchaseRow = {
   igst_total: number | string | null;
   cess_total: number | string | null;
   grand_total: number | string | null;
+  reverse_charge_applicable: boolean | null;
+  itc_status: string | null;
+  eligible_cgst: number | string | null;
+  eligible_sgst: number | string | null;
+  eligible_igst: number | string | null;
+  eligible_cess: number | string | null;
   supplier: SupplierRow | SupplierRow[] | null;
   purchase_items: PurchaseItemRow[] | null;
 };
@@ -75,6 +81,11 @@ type BookPurchase = {
   cess: number;
   totalTax: number;
   invoiceValue: number;
+  reverseChargeApplicable: boolean;
+  itcStatus: string;
+  eligibleItc: number;
+  supplierGstinValid: boolean;
+  complianceRisk: boolean;
 };
 
 type ParsedPortalRecord = {
@@ -347,6 +358,12 @@ function normalizeGstin(value: unknown) {
     .trim()
     .toUpperCase()
     .replace(/\s+/g, "");
+}
+
+function isValidGstin(value: unknown) {
+  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(
+    normalizeGstin(value),
+  );
 }
 
 function normalizeInvoiceNumber(value: unknown) {
@@ -1063,6 +1080,12 @@ export default function GSTR2BReconciliationPanel({
           igst_total,
           cess_total,
           grand_total,
+          reverse_charge_applicable,
+          itc_status,
+          eligible_cgst,
+          eligible_sgst,
+          eligible_igst,
+          eligible_cess,
           supplier:ledgers!purchases_supplier_id_fkey(
             id,
             name,
@@ -1113,6 +1136,21 @@ export default function GSTR2BReconciliationPanel({
       const igst = toNumber(row.igst_total);
       const cess = toNumber(row.cess_total);
 
+      const supplierGstin = normalizeGstin(
+        supplier?.gst_number,
+      );
+      const supplierGstinValid = isValidGstin(supplierGstin);
+      const reverseChargeApplicable = Boolean(
+        row.reverse_charge_applicable,
+      );
+      const itcStatus = row.itc_status || "PENDING_REVIEW";
+      const eligibleItc = roundMoney(
+        toNumber(row.eligible_cgst) +
+          toNumber(row.eligible_sgst) +
+          toNumber(row.eligible_igst) +
+          toNumber(row.eligible_cess),
+      );
+
       return {
         id: row.id,
         billNumber: row.bill_number || "",
@@ -1121,9 +1159,7 @@ export default function GSTR2BReconciliationPanel({
         ),
         purchaseDate: row.purchase_date || "",
         supplierName: supplier?.name || "Supplier",
-        supplierGstin: normalizeGstin(
-          supplier?.gst_number
-        ),
+        supplierGstin,
         taxableValue: roundMoney(taxableValue),
         igst: roundMoney(igst),
         cgst: roundMoney(cgst),
@@ -1133,6 +1169,15 @@ export default function GSTR2BReconciliationPanel({
         invoiceValue: roundMoney(
           toNumber(row.grand_total)
         ),
+        reverseChargeApplicable,
+        itcStatus,
+        eligibleItc,
+        supplierGstinValid,
+        complianceRisk:
+          !reverseChargeApplicable &&
+          !supplierGstinValid &&
+          (itcStatus === "ELIGIBLE" ||
+            itcStatus === "PARTIAL"),
       };
     });
 
@@ -1193,11 +1238,11 @@ export default function GSTR2BReconciliationPanel({
       throw error;
     }
 
-    const purchaseById = new Map(
+    const purchaseById = new Map<string, BookPurchase>(
       currentPurchases.map((purchase) => [
         purchase.id,
         purchase,
-      ])
+      ]),
     );
 
     const mapped = (
@@ -1630,6 +1675,17 @@ export default function GSTR2BReconciliationPanel({
   const currentRecords =
     preview.length > 0 ? preview : savedRecords;
 
+  const purchaseById = useMemo(
+    () =>
+      new Map<string, BookPurchase>(
+        purchases.map((purchase) => [
+          purchase.id,
+          purchase,
+        ]),
+      ),
+    [purchases],
+  );
+
   const counts = useMemo(() => {
     return currentRecords.reduce(
       (result, record) => {
@@ -1646,7 +1702,20 @@ export default function GSTR2BReconciliationPanel({
           record.matchStatus === "MATCHED" &&
           isPotentialItcAvailable(record)
         ) {
-          result.potentialItc += tax;
+          result.portalMatchedItc += tax;
+
+          const purchase = purchaseById.get(
+            record.matchedPurchaseId,
+          );
+
+          if (purchase?.complianceRisk) {
+            result.complianceRiskRows += 1;
+          } else if (purchase) {
+            result.matchedEligibleItc += Math.min(
+              tax,
+              purchase.eligibleItc,
+            );
+          }
         }
 
         return result;
@@ -1658,10 +1727,12 @@ export default function GSTR2BReconciliationPanel({
         MISSING_IN_BOOKS: 0,
         DUPLICATE: 0,
         UNMATCHED: 0,
-        potentialItc: 0,
+        portalMatchedItc: 0,
+        matchedEligibleItc: 0,
+        complianceRiskRows: 0,
       }
     );
-  }, [currentRecords]);
+  }, [currentRecords, purchaseById]);
 
   const matchedPurchaseIds = useMemo(
     () =>
@@ -1681,7 +1752,7 @@ export default function GSTR2BReconciliationPanel({
     return purchases.filter(
       (purchase) =>
         !matchedPurchaseIds.has(purchase.id) &&
-        purchase.supplierGstin &&
+        purchase.supplierGstinValid &&
         purchase.totalTax > 0
     );
   }, [
@@ -1822,7 +1893,7 @@ export default function GSTR2BReconciliationPanel({
         "09ABCDE1234F1Z5",
         "Sample Supplier",
         "INV-001",
-        "01/07/2026",
+        "2026-07-01",
         1180,
         "Uttar Pradesh",
         "No",
@@ -2091,7 +2162,7 @@ export default function GSTR2BReconciliationPanel({
       </div>
 
       <div className="border-t border-slate-200 p-4 sm:p-6">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
           <SummaryCard
             title="Portal Records"
             value={counts.total}
@@ -2121,14 +2192,36 @@ export default function GSTR2BReconciliationPanel({
             className="border-red-200 bg-red-50 text-red-700"
           />
           <SummaryCard
-            title="Potential Matched ITC"
-            value={counts.potentialItc}
-            detail="Review eligibility before claiming"
+            title="Portal Matched GST"
+            value={counts.portalMatchedItc}
+            detail="Matched and available in portal data"
             icon={<CheckCircle2 className="h-5 w-5" />}
             className="border-blue-200 bg-blue-50 text-blue-700"
             isCurrency
           />
+          <SummaryCard
+            title="Matched & Eligible ITC"
+            value={counts.matchedEligibleItc}
+            detail="Protected by book ITC classification"
+            icon={<CheckCircle2 className="h-5 w-5" />}
+            className="border-indigo-200 bg-indigo-50 text-indigo-700"
+            isCurrency
+          />
         </div>
+
+        {counts.complianceRiskRows > 0 && (
+          <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-900">
+            <p className="font-black">
+              {counts.complianceRiskRows} matched purchase bill(s) are excluded
+              from eligible ITC
+            </p>
+            <p className="mt-1">
+              These bills are marked Eligible or Partially Eligible without a
+              valid Supplier GSTIN under normal charge. Correct the supplier
+              ledger or change the ITC treatment before claiming credit.
+            </p>
+          </div>
+        )}
 
         <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-end">
           <div className="relative flex-1">
@@ -2382,7 +2475,9 @@ export default function GSTR2BReconciliationPanel({
       <div className="border-t border-amber-200 bg-amber-50 p-5 text-amber-900 sm:p-6">
         <p className="font-black">Compliance note</p>
         <p className="mt-1 text-sm leading-6">
-          “Potential Matched ITC” is a reconciliation aid, not a
+          “Portal Matched GST” confirms portal reconciliation, while
+          “Matched & Eligible ITC” also applies the VertexERP book
+          classification and supplier-GSTIN guardrail. Neither figure is a
           final legal eligibility decision. Reverse charge,
           blocked credits, time limits, supplier compliance,
           amendments and accountant review must still be

@@ -2,6 +2,10 @@
 
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import PurchaseGSTComplianceFields, {
+  DEFAULT_PURCHASE_GST_COMPLIANCE,
+  type PurchaseGstComplianceValue,
+} from "./PurchaseGSTComplianceFields";
 
 type Product = {
   id: string;
@@ -96,6 +100,11 @@ type EditablePurchase = {
   supplierId: string;
   supplierName: string;
   items: EditablePurchaseItem[];
+  reverseChargeApplicable: boolean;
+  itcStatus: PurchaseGstComplianceValue["itcStatus"];
+  itcEligibilityPercentage: number;
+  itcIneligibilityReason: string;
+  itcNotes: string;
 };
 
 function getToday() {
@@ -180,6 +189,12 @@ function getTaxTypeLabel(taxType: TaxType) {
   return "GST Setup Pending";
 }
 
+function isValidGstin(value: string) {
+  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(
+    String(value || "").trim().toUpperCase(),
+  );
+}
+
 type PurchaseFormProps = {
   canCreate: boolean;
   canEdit: boolean;
@@ -208,6 +223,8 @@ export default function PurchaseForm({
   });
 
   const [items, setItems] = useState<PurchaseItemForm[]>([createEmptyItem()]);
+  const [gstCompliance, setGstCompliance] =
+    useState<PurchaseGstComplianceValue>(DEFAULT_PURCHASE_GST_COMPLIANCE);
 
   function showMessage(nextMessage: string) {
     setMessage(nextMessage);
@@ -367,6 +384,14 @@ export default function PurchaseForm({
           : [createEmptyItem()],
       );
 
+      setGstCompliance({
+        reverseChargeApplicable: Boolean(purchase.reverseChargeApplicable),
+        itcStatus: purchase.itcStatus || "PENDING_REVIEW",
+        itcEligibilityPercentage: Number(purchase.itcEligibilityPercentage || 0),
+        itcIneligibilityReason: purchase.itcIneligibilityReason || "",
+        itcNotes: purchase.itcNotes || "",
+      });
+
       window.setTimeout(() => {
         document.getElementById("purchase-bill-form")?.scrollIntoView({
           behavior: "smooth",
@@ -385,6 +410,39 @@ export default function PurchaseForm({
   const selectedSupplier = suppliers.find(
     (supplier) => supplier.id === form.supplierId,
   );
+
+  const selectedSupplierHasValidGstin = isValidGstin(
+    selectedSupplier?.gst || "",
+  );
+
+  useEffect(() => {
+    if (
+      selectedSupplier &&
+      !selectedSupplierHasValidGstin &&
+      !gstCompliance.reverseChargeApplicable
+    ) {
+      setGstCompliance((current) => {
+        if (
+          current.itcStatus !== "ELIGIBLE" &&
+          current.itcStatus !== "PARTIAL"
+        ) {
+          return current;
+        }
+
+        return {
+          ...current,
+          itcStatus: "PENDING_REVIEW",
+          itcEligibilityPercentage: 0,
+          itcIneligibilityReason: "",
+        };
+      });
+    }
+  }, [
+    selectedSupplier?.id,
+    selectedSupplier?.gst,
+    selectedSupplierHasValidGstin,
+    gstCompliance.reverseChargeApplicable,
+  ]);
 
   const itemBaseCalculations = useMemo(() => {
     return items.map((item) => {
@@ -541,6 +599,7 @@ export default function PurchaseForm({
       supplierId: "",
     });
     setItems([createEmptyItem()]);
+    setGstCompliance(DEFAULT_PURCHASE_GST_COMPLIANCE);
   }
 
   function cancelPurchaseEdit() {
@@ -619,6 +678,30 @@ export default function PurchaseForm({
       return;
     }
 
+    if (
+      totals.gstTotal > 0 &&
+      !gstCompliance.reverseChargeApplicable &&
+      !selectedSupplierHasValidGstin &&
+      (gstCompliance.itcStatus === "ELIGIBLE" ||
+        gstCompliance.itcStatus === "PARTIAL")
+    ) {
+      showMessage(
+        "Eligible or Partially Eligible ITC cannot be saved for an unregistered supplier under normal charge. Add a valid Supplier GSTIN, enable RCM only when legally applicable, or keep ITC Pending Review / Ineligible / Not Applicable.",
+      );
+      return;
+    }
+
+    if (
+      totals.gstTotal <= 0 &&
+      (gstCompliance.itcStatus === "ELIGIBLE" ||
+        gstCompliance.itcStatus === "PARTIAL")
+    ) {
+      showMessage(
+        "This bill has no GST amount. Choose Not Applicable instead of Eligible ITC.",
+      );
+      return;
+    }
+
     const enteredBillNumber = form.billNumber.trim();
 
     if (editingPurchase && !enteredBillNumber) {
@@ -647,13 +730,31 @@ export default function PurchaseForm({
       amount: item.amount,
     }));
 
+    if (
+      gstCompliance.itcStatus === "PARTIAL" &&
+      (gstCompliance.itcEligibilityPercentage <= 0 ||
+        gstCompliance.itcEligibilityPercentage >= 100)
+    ) {
+      showMessage("Partial ITC percentage must be greater than 0 and less than 100.");
+      return;
+    }
+
+    if (
+      (gstCompliance.itcStatus === "INELIGIBLE" ||
+        gstCompliance.itcStatus === "PARTIAL") &&
+      !gstCompliance.itcIneligibilityReason.trim()
+    ) {
+      showMessage("Select an ITC ineligibility or restriction reason.");
+      return;
+    }
+
     setIsSaving(true);
 
     try {
       const supabase = createClient();
 
       const { error } = editingPurchase
-        ? await supabase.rpc("update_purchase_with_stock", {
+        ? await supabase.rpc("update_purchase_with_gst_compliance", {
             p_purchase_id: editingPurchase.id,
             p_supplier_id: selectedSupplier.id,
             p_bill_number: billNumber,
@@ -664,8 +765,16 @@ export default function PurchaseForm({
             p_discount_total: totals.discountTotal,
             p_grand_total: totals.grandTotal,
             p_items: purchaseItems,
+            p_reverse_charge_applicable:
+              gstCompliance.reverseChargeApplicable,
+            p_itc_status: gstCompliance.itcStatus,
+            p_itc_eligibility_percentage:
+              gstCompliance.itcEligibilityPercentage,
+            p_itc_ineligibility_reason:
+              gstCompliance.itcIneligibilityReason || null,
+            p_itc_notes: gstCompliance.itcNotes || null,
           })
-        : await supabase.rpc("create_purchase_with_stock", {
+        : await supabase.rpc("create_purchase_with_gst_compliance", {
             p_company_id: activeCompanyId,
             p_supplier_id: selectedSupplier.id,
             p_bill_number: billNumber,
@@ -676,6 +785,14 @@ export default function PurchaseForm({
             p_discount_total: totals.discountTotal,
             p_grand_total: totals.grandTotal,
             p_items: purchaseItems,
+            p_reverse_charge_applicable:
+              gstCompliance.reverseChargeApplicable,
+            p_itc_status: gstCompliance.itcStatus,
+            p_itc_eligibility_percentage:
+              gstCompliance.itcEligibilityPercentage,
+            p_itc_ineligibility_reason:
+              gstCompliance.itcIneligibilityReason || null,
+            p_itc_notes: gstCompliance.itcNotes || null,
           });
 
       if (error) {
@@ -905,6 +1022,23 @@ export default function PurchaseForm({
           />
         </div>
 
+        {selectedSupplier &&
+          totals.gstTotal > 0 &&
+          !selectedSupplierHasValidGstin &&
+          !gstCompliance.reverseChargeApplicable && (
+            <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-900">
+              <p className="font-black">
+                Normal ITC protection is active
+              </p>
+              <p className="mt-1">
+                {selectedSupplier.name} does not have a valid GSTIN. Eligible
+                and Partially Eligible ITC are blocked unless a valid Supplier
+                GSTIN is added. Turn on RCM only for a legally notified reverse
+                charge purchase.
+              </p>
+            </div>
+          )}
+
         <div className="mt-8 min-w-0 sm:mt-10">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -1116,6 +1250,18 @@ export default function PurchaseForm({
             </table>
           </div>
         </div>
+
+        <PurchaseGSTComplianceFields
+          value={gstCompliance}
+          onChange={setGstCompliance}
+          cgstTotal={totals.cgstTotal}
+          sgstTotal={totals.sgstTotal}
+          igstTotal={totals.igstTotal}
+          cessTotal={0}
+          supplierName={selectedSupplier?.name || ""}
+          supplierGstin={selectedSupplier?.gst || ""}
+          disabled={isFormDisabled}
+        />
 
         <div className="mt-6 max-w-none rounded-2xl border border-violet-100 bg-violet-50/70 p-5 sm:mt-8 sm:p-6 md:ml-auto md:max-w-lg">
           <TotalRow label="Gross Subtotal" value={totals.subtotal} />

@@ -92,6 +92,13 @@ type PurchaseRow = {
   igst_total: number | string | null;
   cess_total: number | string | null;
   grand_total: number | string | null;
+  reverse_charge_applicable: boolean | null;
+  itc_status: string | null;
+  itc_eligibility_percentage: number | string | null;
+  eligible_cgst: number | string | null;
+  eligible_sgst: number | string | null;
+  eligible_igst: number | string | null;
+  eligible_cess: number | string | null;
   supplier: LedgerRow | LedgerRow[] | null;
   purchase_items: SourceItemRow[] | null;
 };
@@ -159,6 +166,7 @@ type IssueCategory =
   | "TAX_SPLIT"
   | "TAX_CALCULATION"
   | "SOURCE_LINK"
+  | "ITC_COMPLIANCE"
   | "STATUS";
 
 type AuditItem = {
@@ -199,6 +207,10 @@ type AuditDocument = {
   headerIgstTotal: number;
   headerCessTotal: number;
   headerGrandTotal: number;
+  reverseChargeApplicable: boolean;
+  itcStatus: string;
+  itcEligibilityPercentage: number;
+  eligibleItc: number;
   items: AuditItem[];
 };
 
@@ -289,6 +301,12 @@ function getJoinedLedger(
   return Array.isArray(ledger) ? ledger[0] || null : ledger;
 }
 
+function isValidGstin(value: string) {
+  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(
+    String(value || "").trim().toUpperCase(),
+  );
+}
+
 function getTaxTypeLabel(taxType: string) {
   if (taxType === "INTRA_STATE") {
     return "Intra-State";
@@ -319,6 +337,7 @@ function getCategoryLabel(category: IssueCategory) {
     TAX_SPLIT: "GST Tax Split",
     TAX_CALCULATION: "Tax Calculation",
     SOURCE_LINK: "Source Link",
+    ITC_COMPLIANCE: "ITC Compliance",
     STATUS: "Document Status",
   };
 
@@ -613,6 +632,51 @@ function buildIssues(documents: AuditDocument[]) {
           `${document.partyName} is currently treated as an unregistered party.`,
           "Confirm that the party is genuinely unregistered. Add GSTIN in the ledger if it is a registered business.",
           documentTax
+        )
+      );
+    }
+
+    if (
+      document.documentType === "PURCHASE" &&
+      documentTax > TOLERANCE &&
+      !document.reverseChargeApplicable &&
+      !isValidGstin(document.partyGstin) &&
+      (document.itcStatus === "ELIGIBLE" ||
+        document.itcStatus === "PARTIAL")
+    ) {
+      issues.push(
+        createIssue(
+          document,
+          "ERROR",
+          "ITC_COMPLIANCE",
+          "Eligible ITC recorded against an unregistered supplier",
+          `${document.partyName} does not have a valid GSTIN, but this purchase is marked ${document.itcStatus.replaceAll(
+            "_",
+            " ",
+          )} with ${formatCurrency(document.eligibleItc)} stored as eligible ITC.`,
+          "Add the valid Supplier GSTIN and re-save the purchase, or change ITC to Pending Review, Ineligible, or Not Applicable. Enable RCM only when the supply is legally notified under reverse charge.",
+          document.eligibleItc || documentTax,
+        )
+      );
+    }
+
+    if (
+      document.documentType === "PURCHASE" &&
+      document.reverseChargeApplicable &&
+      (document.itcStatus === "ELIGIBLE" ||
+        document.itcStatus === "PARTIAL")
+    ) {
+      issues.push(
+        createIssue(
+          document,
+          "WARNING",
+          "ITC_COMPLIANCE",
+          "RCM ITC needs tax-payment verification",
+          `This purchase is marked under RCM and currently carries ${formatCurrency(
+            document.eligibleItc,
+          )} as eligible ITC.`,
+          "Confirm that reverse-charge tax was paid through the required cash route and that all ITC conditions are satisfied before claiming the credit.",
+          document.eligibleItc,
         )
       );
     }
@@ -1102,6 +1166,13 @@ export default function GSTReconciliationManager() {
             igst_total,
             cess_total,
             grand_total,
+            reverse_charge_applicable,
+            itc_status,
+            itc_eligibility_percentage,
+            eligible_cgst,
+            eligible_sgst,
+            eligible_igst,
+            eligible_cess,
             supplier:ledgers!purchases_supplier_id_fkey(
               id,
               name,
@@ -1376,6 +1447,10 @@ export default function GSTReconciliationManager() {
           headerIgstTotal: toNumber(sale.igst_total),
           headerCessTotal: toNumber(sale.cess_total),
           headerGrandTotal: toNumber(sale.grand_total),
+          reverseChargeApplicable: false,
+          itcStatus: "NOT_APPLICABLE",
+          itcEligibilityPercentage: 0,
+          eligibleItc: 0,
           items: mapSourceItems(sale.sale_items || []),
         });
       });
@@ -1408,6 +1483,18 @@ export default function GSTReconciliationManager() {
           headerIgstTotal: toNumber(purchase.igst_total),
           headerCessTotal: toNumber(purchase.cess_total),
           headerGrandTotal: toNumber(purchase.grand_total),
+          reverseChargeApplicable: Boolean(
+            purchase.reverse_charge_applicable,
+          ),
+          itcStatus: purchase.itc_status || "PENDING_REVIEW",
+          itcEligibilityPercentage: toNumber(
+            purchase.itc_eligibility_percentage,
+          ),
+          eligibleItc:
+            toNumber(purchase.eligible_cgst) +
+            toNumber(purchase.eligible_sgst) +
+            toNumber(purchase.eligible_igst) +
+            toNumber(purchase.eligible_cess),
           items: mapSourceItems(purchase.purchase_items || []),
         });
       });
@@ -1440,6 +1527,10 @@ export default function GSTReconciliationManager() {
           headerIgstTotal: toNumber(note.igst_total),
           headerCessTotal: toNumber(note.cess_total),
           headerGrandTotal: toNumber(note.grand_total),
+          reverseChargeApplicable: false,
+          itcStatus: "NOT_APPLICABLE",
+          itcEligibilityPercentage: 0,
+          eligibleItc: 0,
           items: mapReturnItems(note.credit_note_items || []),
         });
       });
@@ -1476,6 +1567,10 @@ export default function GSTReconciliationManager() {
           headerIgstTotal: toNumber(note.igst_total),
           headerCessTotal: toNumber(note.cess_total),
           headerGrandTotal: toNumber(note.grand_total),
+          reverseChargeApplicable: false,
+          itcStatus: "NOT_APPLICABLE",
+          itcEligibilityPercentage: 0,
+          eligibleItc: 0,
           items: mapReturnItems(note.debit_note_items || []),
         });
       });

@@ -31,6 +31,11 @@ type Purchase = {
   discountTotal: number;
   grandTotal: number;
   createdAt: string;
+  reverseChargeApplicable: boolean;
+  itcStatus: "PENDING_REVIEW" | "ELIGIBLE" | "INELIGIBLE" | "PARTIAL" | "NOT_APPLICABLE";
+  itcEligibilityPercentage: number;
+  itcIneligibilityReason: string;
+  itcNotes: string;
 };
 
 type ProfileRow = {
@@ -46,6 +51,11 @@ type PurchaseRow = {
   gst_total: number | string | null;
   discount_total: number | string | null;
   grand_total: number | string | null;
+  reverse_charge_applicable: boolean | null;
+  itc_status: string | null;
+  itc_eligibility_percentage: number | string | null;
+  itc_ineligibility_reason: string | null;
+  itc_notes: string | null;
   created_at: string;
   supplier_id: string | null;
   supplier:
@@ -116,6 +126,11 @@ function mapPurchaseRow(row: PurchaseRow): Purchase {
     discountTotal: Number(row.discount_total || 0),
     grandTotal: Number(row.grand_total || 0),
     createdAt: row.created_at || "",
+    reverseChargeApplicable: Boolean(row.reverse_charge_applicable),
+    itcStatus: (row.itc_status || "PENDING_REVIEW") as Purchase["itcStatus"],
+    itcEligibilityPercentage: Number(row.itc_eligibility_percentage || 0),
+    itcIneligibilityReason: row.itc_ineligibility_reason || "",
+    itcNotes: row.itc_notes || "",
   };
 }
 
@@ -192,6 +207,11 @@ export default function PurchaseTable({
             gst_total,
             discount_total,
             grand_total,
+            reverse_charge_applicable,
+            itc_status,
+            itc_eligibility_percentage,
+            itc_ineligibility_reason,
+            itc_notes,
             created_at,
             supplier_id,
             supplier:ledgers!purchases_supplier_id_fkey(

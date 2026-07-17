@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import GSTComplianceOverview from "./GSTComplianceOverview";
 
 type ProfileRow = {
   active_company_id: string | null;
@@ -1046,6 +1047,11 @@ export default function GSTReportsManager() {
 
   return (
     <div className="min-w-0 space-y-6">
+      <GSTComplianceOverview
+        fromDate={appliedFromDate}
+        toDate={appliedToDate}
+      />
+
       <section className="rounded-3xl border border-violet-100 bg-gradient-to-br from-[#2f1c6a] to-[#673de6] p-5 text-white shadow-xl sm:p-7">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
