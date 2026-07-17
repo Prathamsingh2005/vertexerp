@@ -13,6 +13,7 @@ import {
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import GSTComplianceOverview from "./GSTComplianceOverview";
+import GSTR3BTableWiseReport from "./GSTR3BTableWiseReport";
 
 type ProfileRow = {
   active_company_id: string | null;
@@ -1048,6 +1049,11 @@ export default function GSTReportsManager() {
   return (
     <div className="min-w-0 space-y-6">
       <GSTComplianceOverview
+        fromDate={appliedFromDate}
+        toDate={appliedToDate}
+      />
+
+      <GSTR3BTableWiseReport
         fromDate={appliedFromDate}
         toDate={appliedToDate}
       />
