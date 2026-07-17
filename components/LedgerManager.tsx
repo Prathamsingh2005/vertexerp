@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import LedgerForm, {
   type EditableLedger,
   type LedgerInput,
+  type OpeningBalanceSide,
 } from "./LedgerForm";
 import LedgerTable from "./LedgerTable";
 import { createClient } from "@/lib/supabase/client";
@@ -15,6 +16,8 @@ type LedgerRow = {
   name: string;
   ledger_type: string;
   opening_balance: number | string | null;
+  opening_balance_side: OpeningBalanceSide | null;
+  opening_balance_date: string | null;
   mobile: string | null;
   email: string | null;
   gst_number: string | null;
@@ -32,6 +35,7 @@ type CompanyRow = {
   name: string;
   state: string | null;
   state_code: string | null;
+  financial_year_start: string | null;
 };
 
 type LedgerManagerProps = {
@@ -42,7 +46,11 @@ type LedgerManagerProps = {
 };
 
 const LEDGER_SELECT =
-  "id, name, ledger_type, opening_balance, mobile, email, gst_number, state, state_code, pincode, address";
+  "id, name, ledger_type, opening_balance, opening_balance_side, opening_balance_date, mobile, email, gst_number, state, state_code, pincode, address";
+
+function getDefaultSide(group: string): OpeningBalanceSide {
+  return group === "Supplier" ? "Credit" : "Debit";
+}
 
 function mapLedgerRow(row: LedgerRow): Ledger {
   return {
@@ -50,6 +58,9 @@ function mapLedgerRow(row: LedgerRow): Ledger {
     name: row.name || "",
     group: row.ledger_type || "Other",
     openingBalance: Number(row.opening_balance || 0),
+    openingBalanceSide:
+      row.opening_balance_side || getDefaultSide(row.ledger_type),
+    openingBalanceDate: row.opening_balance_date || "",
     mobile: row.mobile || "",
     email: row.email || "",
     gst: row.gst_number || "",
@@ -84,6 +95,10 @@ export default function LedgerManager({
   const [activeCompanyState, setActiveCompanyState] = useState("");
   const [activeCompanyStateCode, setActiveCompanyStateCode] =
     useState("");
+  const [
+    activeCompanyFinancialYearStart,
+    setActiveCompanyFinancialYearStart,
+  ] = useState("");
   const [editingLedgerId, setEditingLedgerId] = useState<string | null>(
     null
   );
@@ -99,6 +114,7 @@ export default function LedgerManager({
   function notifyLedgerUpdate() {
     window.dispatchEvent(new Event("vertexerp-ledgers-updated"));
     window.dispatchEvent(new Event("vertexerp-gst-data-updated"));
+    window.dispatchEvent(new Event("vertexerp-accounting-updated"));
   }
 
   async function loadLedgers() {
@@ -118,6 +134,7 @@ export default function LedgerManager({
         setActiveCompanyName("");
         setActiveCompanyState("");
         setActiveCompanyStateCode("");
+        setActiveCompanyFinancialYearStart("");
         setEditingLedgerId(null);
         showMessage("Please sign in before managing ledgers.");
         return;
@@ -144,6 +161,7 @@ export default function LedgerManager({
         setActiveCompanyName("");
         setActiveCompanyState("");
         setActiveCompanyStateCode("");
+        setActiveCompanyFinancialYearStart("");
         showMessage("Select an active company from the Companies page first.");
         return;
       }
@@ -156,7 +174,7 @@ export default function LedgerManager({
           .order("created_at", { ascending: false }),
         supabase
           .from("companies")
-          .select("name, state, state_code")
+          .select("name, state, state_code, financial_year_start")
           .eq("id", companyId)
           .maybeSingle(),
       ]);
@@ -174,6 +192,9 @@ export default function LedgerManager({
       setActiveCompanyName(company?.name || "");
       setActiveCompanyState(company?.state || "");
       setActiveCompanyStateCode(company?.state_code || "");
+      setActiveCompanyFinancialYearStart(
+        company?.financial_year_start || ""
+      );
       setLedgers(
         ((ledgerResponse.data || []) as LedgerRow[]).map(mapLedgerRow)
       );
@@ -222,6 +243,8 @@ export default function LedgerManager({
       const searchableText = [
         ledger.name,
         ledger.group,
+        ledger.openingBalanceSide,
+        ledger.openingBalanceDate,
         ledger.mobile,
         ledger.email,
         ledger.gst,
@@ -255,6 +278,27 @@ export default function LedgerManager({
   function validateLedgerInput(ledgerInput: LedgerInput) {
     if (!ledgerInput.name.trim()) {
       return "Please enter a ledger name.";
+    }
+
+    if (
+      !Number.isFinite(ledgerInput.openingBalance) ||
+      ledgerInput.openingBalance < 0
+    ) {
+      return "Opening Balance cannot be negative.";
+    }
+
+    if (
+      ledgerInput.openingBalance > 0 &&
+      !ledgerInput.openingBalanceDate
+    ) {
+      return "Please select the Opening Balance Date.";
+    }
+
+    if (
+      ledgerInput.openingBalanceSide !== "Debit" &&
+      ledgerInput.openingBalanceSide !== "Credit"
+    ) {
+      return "Opening Balance Side must be Debit or Credit.";
     }
 
     if (
@@ -310,24 +354,30 @@ export default function LedgerManager({
       const supabase = createClient();
 
       const commonPayload = {
-        name: ledgerInput.name.trim(),
-        mobile: ledgerInput.mobile.trim() || null,
-        email: ledgerInput.email.trim() || null,
-        gst_number:
+        p_company_id: activeCompanyId,
+        p_name: ledgerInput.name.trim(),
+        p_opening_balance: Number(ledgerInput.openingBalance || 0),
+        p_opening_balance_side: ledgerInput.openingBalanceSide,
+        p_opening_balance_date:
+          ledgerInput.openingBalanceDate ||
+          activeCompanyFinancialYearStart ||
+          null,
+        p_mobile: ledgerInput.mobile.trim() || null,
+        p_email: ledgerInput.email.trim() || null,
+        p_gst_number:
           ledgerInput.gst.trim().toUpperCase() || null,
-        state: ledgerInput.state.trim() || null,
-        state_code: ledgerInput.stateCode.trim() || null,
-        pincode: ledgerInput.pincode.trim() || null,
-        address: ledgerInput.address.trim() || null,
+        p_state: ledgerInput.state.trim() || null,
+        p_state_code: ledgerInput.stateCode.trim() || null,
+        p_pincode: ledgerInput.pincode.trim() || null,
+        p_address: ledgerInput.address.trim() || null,
       };
 
       if (editingLedgerId) {
         const { data, error } = await supabase
-          .from("ledgers")
-          .update(commonPayload)
-          .eq("id", editingLedgerId)
-          .eq("company_id", activeCompanyId)
-          .select(LEDGER_SELECT)
+          .rpc("update_ledger_with_opening_balance", {
+            ...commonPayload,
+            p_ledger_id: editingLedgerId,
+          })
           .single();
 
         if (error) {
@@ -343,19 +393,17 @@ export default function LedgerManager({
         );
         setEditingLedgerId(null);
         notifyLedgerUpdate();
-        showMessage("Ledger and GST details updated successfully.");
+        showMessage(
+          "Ledger and opening balance voucher updated successfully."
+        );
         return true;
       }
 
       const { data, error } = await supabase
-        .from("ledgers")
-        .insert({
-          company_id: activeCompanyId,
-          ledger_type: ledgerInput.group,
-          opening_balance: Number(ledgerInput.openingBalance || 0),
+        .rpc("create_ledger_with_opening_balance", {
           ...commonPayload,
+          p_ledger_type: ledgerInput.group,
         })
-        .select(LEDGER_SELECT)
         .single();
 
       if (error) {
@@ -368,7 +416,9 @@ export default function LedgerManager({
       ]);
 
       notifyLedgerUpdate();
-      showMessage("Ledger saved to the cloud database successfully.");
+      showMessage(
+        "Ledger and opening balance voucher saved successfully."
+      );
       return true;
     } catch (error) {
       showMessage(
@@ -410,8 +460,13 @@ export default function LedgerManager({
       return;
     }
 
+    if (!activeCompanyId) {
+      showMessage("Select an active company first.");
+      return;
+    }
+
     const shouldDelete = window.confirm(
-      "Delete this ledger? This action cannot be undone."
+      "Delete this ledger? The linked opening voucher will be voided. Ledgers used by business transactions cannot be deleted."
     );
 
     if (!shouldDelete) {
@@ -421,11 +476,13 @@ export default function LedgerManager({
     try {
       const supabase = createClient();
 
-      const { error } = await supabase
-        .from("ledgers")
-        .delete()
-        .eq("id", ledgerId)
-        .eq("company_id", activeCompanyId);
+      const { error } = await supabase.rpc(
+        "delete_ledger_with_opening_balance",
+        {
+          p_company_id: activeCompanyId,
+          p_ledger_id: ledgerId,
+        }
+      );
 
       if (error) {
         throw error;
@@ -440,7 +497,7 @@ export default function LedgerManager({
       }
 
       notifyLedgerUpdate();
-      showMessage("Ledger deleted successfully.");
+      showMessage("Ledger deleted and opening voucher voided.");
     } catch (error) {
       showMessage(
         error instanceof Error
@@ -471,6 +528,9 @@ export default function LedgerManager({
                 {activeCompanyStateCode
                   ? ` · State Code ${activeCompanyStateCode}`
                   : ""}
+                {activeCompanyFinancialYearStart
+                  ? ` · FY starts ${activeCompanyFinancialYearStart}`
+                  : ""}
               </p>
             )}
           </div>
@@ -478,7 +538,7 @@ export default function LedgerManager({
           <div className="flex flex-wrap gap-2">
             <span className="w-fit rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-black text-white backdrop-blur">
               {activeCompanyId
-                ? "Ledgers are saved in cloud"
+                ? "Ledgers and opening vouchers are synced"
                 : "Select a company first"}
             </span>
 
@@ -520,6 +580,9 @@ export default function LedgerManager({
             isSaving={isSaving}
             canCreate={canCreate}
             canEdit={canEdit}
+            defaultOpeningBalanceDate={
+              activeCompanyFinancialYearStart
+            }
           />
         </div>
       )}

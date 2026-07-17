@@ -1,12 +1,15 @@
 "use client";
 
 import { type ReactNode } from "react";
+import type { OpeningBalanceSide } from "./LedgerForm";
 
 type Ledger = {
   id: string;
   name: string;
   group: string;
   openingBalance: number;
+  openingBalanceSide: OpeningBalanceSide;
+  openingBalanceDate: string;
   mobile: string;
   email: string;
   gst: string;
@@ -50,7 +53,37 @@ function getGroupStyle(group: string) {
 }
 
 function formatCurrency(amount: number) {
-  return `₹${Number(amount || 0).toLocaleString("en-IN")}`;
+  return `₹${Number(amount || 0).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatDate(dateValue: string) {
+  if (!dateValue) {
+    return "—";
+  }
+
+  const parsedDate = new Date(`${dateValue}T00:00:00`);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return dateValue;
+  }
+
+  return parsedDate.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatOpeningBalance(ledger: Ledger) {
+  if (!ledger.openingBalance) {
+    return "₹0";
+  }
+
+  return `${formatCurrency(ledger.openingBalance)} ${
+    ledger.openingBalanceSide === "Credit" ? "Cr" : "Dr"
+  }`;
 }
 
 function getGstStateStatus(ledger: Ledger) {
@@ -102,8 +135,7 @@ export default function LedgerTable({
           </h2>
 
           <p className="mt-1 text-sm text-violet-100 sm:text-base">
-            Edit Customer and Supplier State details to prepare
-            automatic GST classification.
+            Opening balances are synchronized with posted accounting vouchers.
           </p>
         </div>
 
@@ -158,7 +190,12 @@ export default function LedgerTable({
                   <div className="mt-4 grid grid-cols-2 gap-3">
                     <InfoBox
                       label="Opening Balance"
-                      value={formatCurrency(ledger.openingBalance)}
+                      value={formatOpeningBalance(ledger)}
+                    />
+
+                    <InfoBox
+                      label="Opening Date"
+                      value={formatDate(ledger.openingBalanceDate)}
                     />
 
                     <div className="rounded-xl bg-white p-3">
@@ -247,12 +284,13 @@ export default function LedgerTable({
           </div>
 
           <div className="hidden max-w-full overflow-x-auto md:block">
-            <table className="w-full min-w-[1100px]">
+            <table className="w-full min-w-[1240px]">
               <thead className="bg-violet-50">
                 <tr className="border-b border-slate-200 text-left">
                   <Header>Ledger</Header>
                   <Header>Group</Header>
                   <Header>Opening Balance</Header>
+                  <Header>Opening Date</Header>
                   <Header>Party State</Header>
                   <Header>GST Number</Header>
                   <Header>GST Setup</Header>
@@ -290,7 +328,11 @@ export default function LedgerTable({
                       </td>
 
                       <td className="px-6 py-5 font-bold text-slate-900">
-                        {formatCurrency(ledger.openingBalance)}
+                        {formatOpeningBalance(ledger)}
+                      </td>
+
+                      <td className="px-6 py-5 text-slate-700">
+                        {formatDate(ledger.openingBalanceDate)}
                       </td>
 
                       <td className="px-6 py-5">

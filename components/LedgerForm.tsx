@@ -1,11 +1,15 @@
 "use client";
 
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
+
+export type OpeningBalanceSide = "Debit" | "Credit";
 
 export type LedgerInput = {
   name: string;
   group: string;
   openingBalance: number;
+  openingBalanceSide: OpeningBalanceSide;
+  openingBalanceDate: string;
   mobile: string;
   email: string;
   gst: string;
@@ -26,12 +30,15 @@ type LedgerFormProps = {
   isSaving: boolean;
   canCreate: boolean;
   canEdit: boolean;
+  defaultOpeningBalanceDate?: string;
 };
 
 type LedgerFormState = {
   name: string;
   group: string;
   openingBalance: string;
+  openingBalanceSide: OpeningBalanceSide;
+  openingBalanceDate: string;
   mobile: string;
   email: string;
   gst: string;
@@ -83,18 +90,30 @@ const INDIA_STATES = [
   { code: "38", name: "Ladakh" },
 ] as const;
 
-const INITIAL_FORM: LedgerFormState = {
-  name: "",
-  group: "Customer",
-  openingBalance: "",
-  mobile: "",
-  email: "",
-  gst: "",
-  state: "",
-  stateCode: "",
-  pincode: "",
-  address: "",
-};
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getDefaultOpeningBalanceSide(group: string): OpeningBalanceSide {
+  return group === "Supplier" ? "Credit" : "Debit";
+}
+
+function createInitialForm(defaultOpeningBalanceDate?: string): LedgerFormState {
+  return {
+    name: "",
+    group: "Customer",
+    openingBalance: "",
+    openingBalanceSide: "Debit",
+    openingBalanceDate: defaultOpeningBalanceDate || todayIsoDate(),
+    mobile: "",
+    email: "",
+    gst: "",
+    state: "",
+    stateCode: "",
+    pincode: "",
+    address: "",
+  };
+}
 
 function isPartyLedger(group: string) {
   return group === "Customer" || group === "Supplier";
@@ -113,8 +132,14 @@ export default function LedgerForm({
   isSaving,
   canCreate,
   canEdit,
+  defaultOpeningBalanceDate,
 }: LedgerFormProps) {
-  const [form, setForm] = useState<LedgerFormState>(INITIAL_FORM);
+  const initialForm = useMemo(
+    () => createInitialForm(defaultOpeningBalanceDate),
+    [defaultOpeningBalanceDate]
+  );
+
+  const [form, setForm] = useState<LedgerFormState>(initialForm);
   const [message, setMessage] = useState("");
 
   const isEditing = Boolean(editingLedger);
@@ -122,7 +147,7 @@ export default function LedgerForm({
 
   useEffect(() => {
     if (!editingLedger) {
-      setForm(INITIAL_FORM);
+      setForm(initialForm);
       setMessage("");
       return;
     }
@@ -131,6 +156,11 @@ export default function LedgerForm({
       name: editingLedger.name,
       group: editingLedger.group,
       openingBalance: String(editingLedger.openingBalance || ""),
+      openingBalanceSide: editingLedger.openingBalanceSide,
+      openingBalanceDate:
+        editingLedger.openingBalanceDate ||
+        defaultOpeningBalanceDate ||
+        todayIsoDate(),
       mobile: editingLedger.mobile,
       email: editingLedger.email,
       gst: editingLedger.gst,
@@ -140,7 +170,7 @@ export default function LedgerForm({
       address: editingLedger.address,
     });
     setMessage("");
-  }, [editingLedger]);
+  }, [editingLedger, defaultOpeningBalanceDate, initialForm]);
 
   function showMessage(nextMessage: string) {
     setMessage(nextMessage);
@@ -184,6 +214,7 @@ export default function LedgerForm({
     setForm((current) => ({
       ...current,
       group,
+      openingBalanceSide: getDefaultOpeningBalanceSide(group),
       gst: isPartyLedger(group) ? current.gst : "",
       state: isPartyLedger(group) ? current.state : "",
       stateCode: isPartyLedger(group) ? current.stateCode : "",
@@ -194,6 +225,16 @@ export default function LedgerForm({
   function validateForm() {
     if (!form.name.trim()) {
       return "Please enter a ledger name.";
+    }
+
+    const openingBalance = Number(form.openingBalance || 0);
+
+    if (!Number.isFinite(openingBalance) || openingBalance < 0) {
+      return "Opening Balance cannot be negative.";
+    }
+
+    if (openingBalance > 0 && !form.openingBalanceDate) {
+      return "Please select the Opening Balance Date.";
     }
 
     if (partyLedger && !form.stateCode) {
@@ -248,6 +289,11 @@ export default function LedgerForm({
       name: form.name.trim(),
       group: form.group,
       openingBalance: Number(form.openingBalance) || 0,
+      openingBalanceSide: form.openingBalanceSide,
+      openingBalanceDate:
+        form.openingBalanceDate ||
+        defaultOpeningBalanceDate ||
+        todayIsoDate(),
       mobile: form.mobile.trim(),
       email: form.email.trim(),
       gst: form.gst.trim().toUpperCase(),
@@ -258,7 +304,7 @@ export default function LedgerForm({
     });
 
     if (saved && !isEditing) {
-      setForm(INITIAL_FORM);
+      setForm(initialForm);
     }
   }
 
@@ -268,7 +314,7 @@ export default function LedgerForm({
       return;
     }
 
-    setForm(INITIAL_FORM);
+    setForm(initialForm);
     setMessage("");
   }
 
@@ -282,13 +328,13 @@ export default function LedgerForm({
         <div className="absolute left-0 top-0 h-1.5 w-full bg-gradient-to-r from-fuchsia-500 via-violet-400 to-indigo-400" />
         <div className="relative z-10">
           <h2 className="text-xl font-black text-white sm:text-2xl">
-            {isEditing ? "Edit Ledger & GST Setup" : "Add New Ledger"}
+            {isEditing ? "Edit Ledger & Opening Balance" : "Add New Ledger"}
           </h2>
 
           <p className="mt-1 text-sm text-violet-100 sm:text-base">
             {isEditing
-              ? "Update party state, GST identity and contact details."
-              : "Create a customer, supplier, bank, cash or expense ledger."}
+              ? "Update party details and synchronize the opening accounting voucher."
+              : "Create a ledger with an automatically posted opening balance voucher."}
           </p>
         </div>
 
@@ -302,6 +348,15 @@ export default function LedgerForm({
           {message}
         </div>
       )}
+
+      <div className="mb-5 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm leading-6 text-violet-900">
+        <p className="font-black">Opening Balance Accounting</p>
+        <p className="mt-1 text-violet-700">
+          Customer, Cash, Bank and Expense ledgers normally use Debit.
+          Supplier ledgers normally use Credit. Saving or editing the amount
+          automatically synchronizes a balanced Opening Balance voucher.
+        </p>
+      </div>
 
       {partyLedger && (
         <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -341,12 +396,37 @@ export default function LedgerForm({
           type="number"
           value={form.openingBalance}
           placeholder="₹ 0.00"
-          disabled={isEditing}
           min="0"
+          inputMode="decimal"
           onChange={(value) =>
             setForm((current) => ({
               ...current,
               openingBalance: value,
+            }))
+          }
+        />
+
+        <SelectField
+          label="Opening Balance Side"
+          value={form.openingBalanceSide}
+          options={["Debit", "Credit"]}
+          onChange={(value) =>
+            setForm((current) => ({
+              ...current,
+              openingBalanceSide: value as OpeningBalanceSide,
+            }))
+          }
+        />
+
+        <Field
+          label="Opening Balance Date"
+          type="date"
+          value={form.openingBalanceDate}
+          placeholder=""
+          onChange={(value) =>
+            setForm((current) => ({
+              ...current,
+              openingBalanceDate: value,
             }))
           }
         />
@@ -436,8 +516,9 @@ export default function LedgerForm({
 
       {isEditing && (
         <p className="mt-4 text-sm font-medium text-amber-700">
-          Ledger Group and Opening Balance are locked during edit to
-          protect existing transactions and accounting history.
+          Ledger Group remains locked to protect transaction history. Opening
+          Balance, side and date can be changed and will update the linked
+          accounting voucher.
         </p>
       )}
 
