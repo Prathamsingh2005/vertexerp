@@ -6,7 +6,10 @@ import Navbar from "@/components/Navbar";
 import ReportsManager from "@/components/ReportsManager";
 import { usePermissions } from "@/hooks/usePermissions";
 
-type ReportPermission = "reports.view" | "gst_reports.view";
+type ReportPermission =
+  | "reports.view"
+  | "gst_reports.view"
+  | "accounting.view";
 
 type ReportCard = {
   icon: string;
@@ -91,6 +94,15 @@ const reportCards: ReportCard[] = [
     permission: "reports.view",
   },
   {
+    icon: "⚖️",
+    title: "Balance Sheet",
+    description:
+      "Assets, liabilities, equity and accumulated profit or loss as on date.",
+    href: "/reports/balance-sheet",
+    action: "Open Balance Sheet",
+    permission: "accounting.view",
+  },
+  {
     icon: "💳",
     title: "Payment Report",
     description:
@@ -111,12 +123,18 @@ export default function ReportsPage() {
 
   const canViewReports = can("reports.view");
   const canViewGstReports = can("gst_reports.view");
-  const canOpenReportsCenter = canViewReports || canViewGstReports;
+  const canViewAccounting = can("accounting.view");
+  const canOpenReportsCenter =
+    canViewReports || canViewGstReports || canViewAccounting;
 
-  const visibleReportCards = reportCards.filter((report) =>
-    report.permission === "gst_reports.view"
-      ? canViewGstReports
-      : canViewReports
+  const permissionAccess: Record<ReportPermission, boolean> = {
+    "reports.view": canViewReports,
+    "gst_reports.view": canViewGstReports,
+    "accounting.view": canViewAccounting,
+  };
+
+  const visibleReportCards = reportCards.filter(
+    (report) => permissionAccess[report.permission],
   );
 
   return (
@@ -158,11 +176,13 @@ export default function ReportsPage() {
                 </p>
 
                 <p className="mt-1 text-sm text-violet-100">
-                  {canViewReports
-                    ? "Business reports access"
-                    : canViewGstReports
-                      ? "GST reports access"
-                      : "No reports access"}
+                  {canViewAccounting
+                    ? "Accounting and business reports access"
+                    : canViewReports
+                      ? "Business reports access"
+                      : canViewGstReports
+                        ? "GST reports access"
+                        : "No reports access"}
                 </p>
               </div>
             </div>
@@ -185,8 +205,8 @@ export default function ReportsPage() {
                 Reports access is restricted
               </h2>
               <p className="mx-auto mt-2 max-w-xl text-slate-600">
-                Your current role does not include business or GST report
-                permissions for the active company.
+                Your current role does not include business, accounting or GST
+                report permissions for the active company.
               </p>
             </div>
           ) : (
@@ -263,8 +283,8 @@ export default function ReportsPage() {
               ) : (
                 <div className="mt-6 rounded-3xl border border-violet-100 bg-white p-6 text-center shadow-xl shadow-violet-100/40 sm:mt-8">
                   <p className="font-semibold text-slate-700">
-                    Your role has GST report access only. Use the GST Reports
-                    shortcut above.
+                    Use the accounting or GST report shortcuts available for
+                    your active role.
                   </p>
                 </div>
               )}
