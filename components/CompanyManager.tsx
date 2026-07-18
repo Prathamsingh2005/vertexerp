@@ -5,11 +5,11 @@ import {
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { usePermissions } from "@/hooks/usePermissions";
 import { createClient } from "@/lib/supabase/client";
-import CompanyGSTSettingsCard from "./CompanyGSTSettingsCard";
 
 type CompanyForm = {
   name: string;
@@ -27,11 +27,13 @@ type CompanyForm = {
 
 type Company = CompanyForm & {
   id: string;
+  ownerId: string;
   createdAt: string;
 };
 
 type CompanyRow = {
   id: string;
+  owner_id: string;
   name: string;
   legal_name: string | null;
   trade_name: string | null;
@@ -117,7 +119,10 @@ const EMPTY_FORM: CompanyForm = {
 };
 
 const COMPANY_SELECT =
-  "id, name, legal_name, trade_name, gst_number, pan_number, email, phone, city, state, state_code, address, created_at";
+  "id, owner_id, name, legal_name, trade_name, gst_number, pan_number, email, phone, city, state, state_code, address, created_at";
+
+const COMPANY_DRAFT_STORAGE_PREFIX =
+  "vertexerp-company-form-draft-v1";
 
 function toNumber(value: unknown) {
   const parsed = Number(value);
@@ -127,6 +132,7 @@ function toNumber(value: unknown) {
 function mapCompany(row: CompanyRow): Company {
   return {
     id: row.id,
+    ownerId: row.owner_id,
     name: row.name ?? "",
     legalName: row.legal_name ?? "",
     tradeName: row.trade_name ?? "",
@@ -152,6 +158,62 @@ function isValidPan(value: string) {
   return /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(value);
 }
 
+function getCompanyDraftStorageKey(userId: string) {
+  return `${COMPANY_DRAFT_STORAGE_PREFIX}:${userId}`;
+}
+
+function hasCompanyDraft(form: CompanyForm) {
+  return Object.values(form).some((value) => value.trim().length > 0);
+}
+
+function isCompanyForm(value: unknown): value is CompanyForm {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return Object.keys(EMPTY_FORM).every(
+    (key) => typeof candidate[key] === "string",
+  );
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (error && typeof error === "object") {
+    const candidate = error as {
+      message?: unknown;
+      details?: unknown;
+      hint?: unknown;
+      code?: unknown;
+    };
+
+    const parts = [
+      typeof candidate.message === "string"
+        ? candidate.message
+        : "",
+      typeof candidate.details === "string"
+        ? candidate.details
+        : "",
+      typeof candidate.hint === "string"
+        ? candidate.hint
+        : "",
+      typeof candidate.code === "string"
+        ? `Code: ${candidate.code}`
+        : "",
+    ].filter(Boolean);
+
+    if (parts.length > 0) {
+      return parts.join(" · ");
+    }
+  }
+
+  return fallback;
+}
+
 export default function CompanyManager({
   searchQuery = "",
 }: CompanyManagerProps) {
@@ -165,9 +227,15 @@ export default function CompanyManager({
     null
   );
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<
+    "success" | "error" | "info"
+  >("info");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isDraftReady, setIsDraftReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUpdatingActive, setIsUpdatingActive] = useState(false);
+  const messageTimerRef = useRef<number | null>(null);
   const { can } = usePermissions();
 
   // Company creation is account-level. Supabase only allows inserts where
@@ -176,9 +244,35 @@ export default function CompanyManager({
   const canEditCompany = can("company.edit");
   const canDeleteCompany = can("company.delete");
 
-  function showMessage(text: string) {
+  function showMessage(
+    text: string,
+    tone: "success" | "error" | "info" = "info",
+    autoClear = tone !== "error",
+  ) {
+    if (messageTimerRef.current !== null) {
+      window.clearTimeout(messageTimerRef.current);
+      messageTimerRef.current = null;
+    }
+
+    setMessageTone(tone);
     setMessage(text);
-    window.setTimeout(() => setMessage(""), 4500);
+
+    if (autoClear) {
+      messageTimerRef.current = window.setTimeout(() => {
+        setMessage("");
+        messageTimerRef.current = null;
+      }, 5000);
+    }
+  }
+
+  function clearCompanyDraft() {
+    if (!currentUserId) {
+      return;
+    }
+
+    window.localStorage.removeItem(
+      getCompanyDraftStorageKey(currentUserId),
+    );
   }
 
   function notifyCompanyChange() {
@@ -187,6 +281,7 @@ export default function CompanyManager({
   }
 
   function resetForm() {
+    clearCompanyDraft();
     setForm(EMPTY_FORM);
     setEditingCompanyId(null);
   }
@@ -237,6 +332,7 @@ export default function CompanyManager({
 
     try {
       const { supabase, user } = await getSignedInUser();
+      setCurrentUserId(user.id);
 
       const [companyResponse, profileResponse] = await Promise.all([
         supabase
@@ -284,9 +380,9 @@ export default function CompanyManager({
       setActiveCompanyId(null);
       setGstReadiness(null);
       showMessage(
-        error instanceof Error
-          ? error.message
-          : "Companies could not be loaded."
+        getErrorMessage(error, "Companies could not be loaded."),
+        "error",
+        false,
       );
     } finally {
       setIsLoading(false);
@@ -297,12 +393,122 @@ export default function CompanyManager({
     loadCompanies();
   }, []);
 
+  useEffect(() => {
+    if (!currentUserId || isDraftReady) {
+      return;
+    }
+
+    try {
+      const savedDraft = window.localStorage.getItem(
+        getCompanyDraftStorageKey(currentUserId),
+      );
+
+      if (savedDraft) {
+        const parsedDraft = JSON.parse(savedDraft) as {
+          form?: unknown;
+          editingCompanyId?: unknown;
+        };
+
+        if (isCompanyForm(parsedDraft.form)) {
+          setForm(parsedDraft.form);
+
+          if (
+            typeof parsedDraft.editingCompanyId === "string" ||
+            parsedDraft.editingCompanyId === null
+          ) {
+            setEditingCompanyId(parsedDraft.editingCompanyId);
+          }
+
+          showMessage(
+            "Your unsaved company draft was restored.",
+            "info",
+          );
+        }
+      }
+    } catch {
+      window.localStorage.removeItem(
+        getCompanyDraftStorageKey(currentUserId),
+      );
+    } finally {
+      setIsDraftReady(true);
+    }
+  }, [currentUserId, isDraftReady]);
+
+  useEffect(() => {
+    if (!currentUserId || !isDraftReady || isSaving) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const storageKey =
+        getCompanyDraftStorageKey(currentUserId);
+
+      if (!hasCompanyDraft(form) && !editingCompanyId) {
+        window.localStorage.removeItem(storageKey);
+        return;
+      }
+
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          form,
+          editingCompanyId,
+          savedAt: new Date().toISOString(),
+        }),
+      );
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    currentUserId,
+    editingCompanyId,
+    form,
+    isDraftReady,
+    isSaving,
+  ]);
+
+  useEffect(() => {
+    if (!hasCompanyDraft(form) || isSaving) {
+      return;
+    }
+
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener(
+        "beforeunload",
+        handleBeforeUnload,
+      );
+    };
+  }, [form, isSaving]);
+
+  useEffect(() => {
+    return () => {
+      if (messageTimerRef.current !== null) {
+        window.clearTimeout(messageTimerRef.current);
+      }
+    };
+  }, []);
+
   const activeCompany = useMemo(
     () =>
       companies.find(
         (company) => company.id === activeCompanyId
       ) ?? null,
     [companies, activeCompanyId]
+  );
+
+  const ownedCompanyCount = useMemo(
+    () =>
+      companies.filter(
+        (company) => company.ownerId === currentUserId,
+      ).length,
+    [companies, currentUserId],
   );
 
   const filteredCompanies = useMemo(() => {
@@ -445,15 +651,21 @@ export default function CompanyManager({
       return;
     }
 
+    setMessage("");
+
     const validationMessage = validateForm();
 
     if (validationMessage) {
-      showMessage(validationMessage);
+      showMessage(validationMessage, "error", false);
       return;
     }
 
-    if (!editingCompanyId && companies.length >= 5) {
-      showMessage("You can create a maximum of 5 companies.");
+    if (!editingCompanyId && ownedCompanyCount >= 5) {
+      showMessage(
+        "You can create a maximum of 5 owned companies.",
+        "error",
+        false,
+      );
       return;
     }
 
@@ -535,7 +747,8 @@ export default function CompanyManager({
       if (!activeCompanyId) {
         await setActiveCompany(savedCompany.id);
         showMessage(
-          `Company saved. ${savedCompany.name} is now your active company.`
+          `Company saved. ${savedCompany.name} is now your active company.`,
+          "success",
         );
         return;
       }
@@ -548,13 +761,14 @@ export default function CompanyManager({
       showMessage(
         wasEditing
           ? "Company and GST details updated successfully."
-          : "Company saved to the cloud successfully."
+          : "Company saved to the cloud successfully.",
+        "success",
       );
     } catch (error) {
       showMessage(
-        error instanceof Error
-          ? error.message
-          : "Company could not be saved."
+        getErrorMessage(error, "Company could not be saved."),
+        "error",
+        false,
       );
     } finally {
       setIsSaving(false);
@@ -610,9 +824,12 @@ export default function CompanyManager({
       );
     } catch (error) {
       showMessage(
-        error instanceof Error
-          ? error.message
-          : "Active company could not be updated."
+        getErrorMessage(
+          error,
+          "Active company could not be updated.",
+        ),
+        "error",
+        false,
       );
     } finally {
       setIsUpdatingActive(false);
@@ -807,11 +1024,38 @@ export default function CompanyManager({
         )}
       </section>
 
-      <CompanyGSTSettingsCard />
-
       {message && (
-        <div className="mt-6 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-medium text-violet-700 sm:mt-8 sm:text-base">
-          {message}
+        <div
+          role={messageTone === "error" ? "alert" : "status"}
+          aria-live="polite"
+          className={`fixed right-4 top-20 z-[70] max-w-[calc(100vw-2rem)] rounded-2xl border px-5 py-4 text-sm font-bold shadow-2xl sm:right-6 sm:max-w-md sm:text-base ${
+            messageTone === "error"
+              ? "border-red-200 bg-red-50 text-red-700"
+              : messageTone === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-violet-200 bg-violet-50 text-violet-700"
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <span aria-hidden="true">
+              {messageTone === "error"
+                ? "⚠️"
+                : messageTone === "success"
+                  ? "✅"
+                  : "ℹ️"}
+            </span>
+
+            <p className="min-w-0 flex-1 break-words">{message}</p>
+
+            <button
+              type="button"
+              onClick={() => setMessage("")}
+              aria-label="Close message"
+              className="shrink-0 rounded-lg px-2 py-1 text-current transition hover:bg-black/5"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       )}
 
@@ -859,6 +1103,13 @@ export default function CompanyManager({
           Company State is required for automatic CGST/SGST or
           IGST classification. GSTIN is optional, but when entered,
           its first two digits must match the selected State Code.
+        </div>
+
+        <div className="mb-5 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-800">
+          <strong>Draft protection active:</strong> entered details are
+          automatically saved in this browser and restored after a reload or
+          browser-tab switch. The draft clears only after a successful save or
+          Reset.
         </div>
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -992,9 +1243,24 @@ export default function CompanyManager({
           />
         </div>
 
+        {message && (
+          <div
+            className={`mt-6 rounded-2xl border px-4 py-3 text-sm font-bold ${
+              messageTone === "error"
+                ? "border-red-200 bg-red-50 text-red-700"
+                : messageTone === "success"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-violet-200 bg-violet-50 text-violet-700"
+            }`}
+          >
+            {message}
+          </div>
+        )}
+
         <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:gap-4">
           <button
             type="submit"
+            aria-busy={isSaving}
             disabled={isSaving || isLoading}
             className="w-full rounded-xl bg-violet-600 px-5 py-3 font-semibold text-white shadow-lg transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-7"
           >
@@ -1034,7 +1300,8 @@ export default function CompanyManager({
           </div>
 
           <div className="rounded-full bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-700">
-            Total Companies: {companies.length} / 5
+            Owned Companies: {ownedCompanyCount} / 5 · Available:{" "}
+            {companies.length}
           </div>
         </div>
 
