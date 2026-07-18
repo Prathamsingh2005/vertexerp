@@ -747,6 +747,13 @@ export default function OutstandingPage() {
                   </p>
                 </div>
 
+                <Link
+                  href="/outstanding/aging"
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-white/30 bg-white/10 px-6 py-3 font-black text-white backdrop-blur transition hover:-translate-y-0.5 hover:bg-white/20 sm:w-auto"
+                >
+                  📅 Open Aging Report
+                </Link>
+
                 {canRecordPayment && (
                   <Link
                     href="/payments"
