@@ -103,6 +103,15 @@ const reportCards: ReportCard[] = [
     permission: "accounting.view",
   },
   {
+    icon: "🏦",
+    title: "Cash & Bank Book",
+    description:
+      "Opening balance, receipts, payments and running Cash or Bank balance.",
+    href: "/reports/cash-bank-book",
+    action: "Open Cash & Bank Book",
+    permission: "accounting.view",
+  },
+  {
     icon: "💳",
     title: "Payment Report",
     description:
