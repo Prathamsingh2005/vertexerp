@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import AccountingManager from "@/components/AccountingManager";
@@ -45,20 +46,31 @@ export default function AccountingPage() {
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-white/15 bg-slate-950/25 px-5 py-4 backdrop-blur">
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-200">
-                  Active Access
-                </p>
+              <div className="flex flex-col gap-3">
+                <div className="rounded-2xl border border-white/15 bg-slate-950/25 px-5 py-4 backdrop-blur">
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-200">
+                    Active Access
+                  </p>
 
-                <p className="mt-1 text-lg font-black">
-                  {isPermissionLoading
-                    ? "Loading..."
-                    : access?.roleName || "No active role"}
-                </p>
+                  <p className="mt-1 text-lg font-black">
+                    {isPermissionLoading
+                      ? "Loading..."
+                      : access?.roleName || "No active role"}
+                  </p>
 
-                <p className="mt-1 text-sm text-violet-100">
-                  {hasWriteAccess ? "Operational access" : "Read-only access"}
-                </p>
+                  <p className="mt-1 text-sm text-violet-100">
+                    {hasWriteAccess ? "Operational access" : "Read-only access"}
+                  </p>
+                </div>
+
+                {canViewAccounting && (
+                  <Link
+                    href="/accounting/bank-reconciliation"
+                    className="inline-flex items-center justify-center rounded-xl border border-white/25 bg-white/10 px-5 py-3 font-black text-white backdrop-blur transition hover:-translate-y-0.5 hover:bg-white/20"
+                  >
+                    🏦 Bank Reconciliation
+                  </Link>
+                )}
               </div>
             </div>
           </section>
@@ -102,6 +114,30 @@ export default function AccountingPage() {
                   </p>
                 </div>
               )}
+
+              <section className="mt-6 rounded-3xl border border-violet-100 bg-white p-5 shadow-xl shadow-violet-100/40 sm:mt-8 sm:p-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-violet-500">
+                      Banking Control
+                    </p>
+                    <h2 className="mt-1 text-xl font-black text-slate-950 sm:text-2xl">
+                      Bank Reconciliation
+                    </h2>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Match imported bank statements with posted ERP Bank Book
+                      transactions.
+                    </p>
+                  </div>
+
+                  <Link
+                    href="/accounting/bank-reconciliation"
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-violet-600 px-5 py-3 font-black text-white shadow-lg shadow-violet-200 transition hover:-translate-y-0.5 hover:bg-violet-700 sm:w-auto"
+                  >
+                    Open Bank Reconciliation →
+                  </Link>
+                </div>
+              </section>
 
               <div className="mt-6 sm:mt-8">
                 <AccountingManager

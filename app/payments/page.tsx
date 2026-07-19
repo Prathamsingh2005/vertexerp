@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import { createClient } from "@/lib/supabase/client";
@@ -854,20 +855,31 @@ export default function PaymentsPage() {
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-white/15 bg-slate-950/25 px-5 py-4 backdrop-blur">
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-200">
-                  Active Access
-                </p>
+              <div className="flex flex-col gap-3">
+                <div className="rounded-2xl border border-white/15 bg-slate-950/25 px-5 py-4 backdrop-blur">
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-200">
+                    Active Access
+                  </p>
 
-                <p className="mt-1 text-lg font-black">
-                  {isPermissionLoading
-                    ? "Loading..."
-                    : access?.roleName || "No active role"}
-                </p>
+                  <p className="mt-1 text-lg font-black">
+                    {isPermissionLoading
+                      ? "Loading..."
+                      : access?.roleName || "No active role"}
+                  </p>
 
-                <p className="mt-1 text-sm text-violet-100">
-                  {hasWriteAccess ? "Operational access" : "Read-only access"}
-                </p>
+                  <p className="mt-1 text-sm text-violet-100">
+                    {hasWriteAccess ? "Operational access" : "Read-only access"}
+                  </p>
+                </div>
+
+                {can("accounting.view") && (
+                  <Link
+                    href="/accounting/bank-reconciliation"
+                    className="inline-flex items-center justify-center rounded-xl border border-white/25 bg-white/10 px-5 py-3 font-black text-white backdrop-blur transition hover:-translate-y-0.5 hover:bg-white/20"
+                  >
+                    🏦 Open Bank Reconciliation
+                  </Link>
+                )}
               </div>
             </div>
           </section>
